@@ -1,0 +1,8 @@
+<h3 class="bt3" id="sigil_toc_id_171">10.9.4　设备填充码</h3>
+<p class="zw">与驱动程序填充码不同，应用给设备对象的填充码是按需加载和应用的。NT内核导出的KseQueryDeviceData函数可供驱动程序检查是否需要为设备对象应用填充码（请注意，KseQueryDeviceFlags也是导出的函数，不过该API仅仅是第一个API的子集）。用户模式应用程序也可以通过NtQuerySystemInformation API配合SystemDeviceDataInformation信息类查询设备填充码。设备填充码始终存储在三个不同的位置，会按照下列顺序查询。</p>
+<p class="zw">1）HKLM\System\CurrentControlSet\Control\Compatibility\Device注册表根键下，以设备的PNP硬件ID为名的键，并使用“!”替代“\”符号（这是为了避免与注册表产生混淆）。设备键下的值指定了设备被查询的填充码数据（对某些设备类来说，通常是一种标记，即Flag）。</p>
+<p class="zw">2）内核填充码缓存。内核填充码引擎实现了一种填充码缓存（通过KSE_CACHE数据结构公开），其目的是加快设备标记和数据的搜索速度。</p>
+<p class="zw">3）填充码数据库文件中，使用KDEVICE设备标签。根标签和其他很多标签（如设备描述、制造商名称、GUID等）包含子NAME标签，这个标签中包含以&lt;DataName: HardwareID&gt;形式组成的字符串。KFLAG或KDATA子标签包含设备的填充码数据值。</p>
+<p class="zw">如果设备填充码不在缓存中，而在SDB文件中，那么也会加入缓存。这样未来的查询速度可以更快，并且不再需要访问填充码数据库文件。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"89b4888a-9a39-47e4-a3ef-e6e0929c62be","id":"d4207ce3-3954-4375-a143-69f6137be655"}</p>

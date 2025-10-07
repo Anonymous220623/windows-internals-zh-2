@@ -1,0 +1,28 @@
+<h3 class="bt3" id="sigil_toc_id_89">9.3.2　VSM提供的服务及其要求</h3>
+<p class="zw">基于虚拟机监控程序构建的虚拟安全模式（VSM）为Windows生态提供了下列服务。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">隔离</strong>。IUM为每个在VTL 1下运行的软件提供了基于硬件的隔离环境。安全内核所管理的安全设备会与系统的其他部分隔离，并运行在VTL 1用户模式下。运行在VTL 1下的软件通常会将不能被截取或泄露的机密数据存储在VTL 0下。凭据保护（credential guard）功能就大量使用了该服务，该功能可以将所有系统凭据存储在运行于VTL 1用户模式下的LsaIso Trustlet内存地址空间中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">对VTL 0的控制</strong>。虚拟机监控程序实施的代码完整性（Hypervisor Enforced Code Integrity，HVCI）可检查常规操作系统加载并运行的每个模块的完整性和签名。完整性检查完全在VTL 1下进行（可访问所有的VTL 0物理内存），任何VTL 0软件都无法干扰签名检查。此外，HVCI&nbsp;保证了包含可执行代码的所有常规模式内存页都会被标记为不可写（该功能也叫W^X，HVCI和W^X详见卷1第7章）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">安全拦截</strong>。VSM提供的机制可以让较高的VTL锁定某些关键系统资源，防止其被较低的VTL访问。HyperGuard大量使用了安全拦截，该功能可阻止对操作系统的关键组件进行恶意修改，以此为VTL 0内核提供一层额外的保护。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">基于</strong><strong>VBS</strong><strong style="color:#0092dd">的隔区</strong>。安全隔区（security enclave）是用户模式进程地址空间中一块隔离的内存区域。这种内存隔区甚至无法被更高的特权级别访问。该技术最初的实现需要使用硬件组件对属于进程的内存加密，而基于VBS的隔区，则可以由VSM对隔区的隔离性提供保证。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">内核控制流防护</strong>。在启用HVCI的情况下，VSM可以为常规世界中的每个内存模块（以及NT内核本身）提供控制流防护（Control Flow Guard，CFG）。运行在常规世界中的内核模式软件可以对位图获得只读访问的权限，因此，攻击措施将无法修改这些内容。也正因如此，Windows中的内核CFG也被称为安全内核CFG（SKCFG）。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　CFG是微软对控制流完整性的实现结果，这种技术可以防止各类恶意攻击对程序的执行流进行重定向。用户模式和内核模式CFG的详情可参阅卷1第7章。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">安全设备</strong>。安全设备是一种全新类型的设备，其映射和管理工作完全由VTL 1下的安全内核负责。此类设备的驱动程序完全在VTL 1用户模式下运行，会使用安全内核提供的服务映射设备I/O空间。</p>
+<p class="zw">为了正确启用并正常运行，VSM对硬件有一些要求。宿主机系统必须支持虚拟化扩展（Intel VT-x、AMD SVM或ARM TrustZone）和SLAT。如果系统处理器不具备上述一种硬件功能，那么VSM将无法运行。虽然其他一些硬件功能并不严格要求，但如果不支持，VSM的某些安全权限可能将无法保证。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 为防范物理设备的DMA攻击，必须具备IOMMU。如果系统处理器不具备IOMMU，那么VSM依然可以运行，但容易受到此类物理设备的攻击。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 为保护启动虚拟机监控程序和安全内核所需的引导链，必须具备启用安全启动（secure boot）功能的UEFI BIOS。如果不启用安全启动，那么系统的启动过程将容易受到攻击，这种攻击可能修改虚拟机监控程序和安全内核的完整性，甚至在这些功能开始执行前进行篡改。</p>
+<p class="zw">其他组件是可选的，但如果有这些组件，将大幅改善系统的整体安全性和响应性。TPM就是一个很好的例子。安全内核会使用TPM存储主加密密钥并执行安全运行（也叫DRTM，详见第12章）。还有一个硬件组件可以改善VSM的响应性，那就是处理器对基于模式的执行控制（Mode-Based Execute Control，MBEC）提供的硬件支持：当启用HVCI以保护内核模式中用户模式页的执行状态时，就会用到MBEC。通过使用硬件MBEC，虚拟机监控程序可以根据特定VTL的CPL（内核或用户）域设置物理内存页的可执行状态。这样，属于用户模式应用程序的内存将以物理的方式标记为只能由用户模式下的代码执行（内核漏洞将不再执行自己位于用户模式应用程序内存中的代码）。如果不支持硬件MBEC，则虚拟机监控程序需要模拟MBEC，为此需要为VTL 0使用两个不同的SLAT表，并在代码执行改变了CPL安全域时进行切换（从用户模式切换至内核模式，或反之，这种情况下都会产生VMEXIT）。有关HVCI的详情请参阅卷1第7章。</p>
+<p class="zwtsh">实验：检测VBS及其提供的服务</p>
+<p class="zwts1">我们将在第12章讨论VSM启动策略并介绍如何手动启用或禁用基于虚拟化的安全性。在这个实验中，我们将检查虚拟机监控程序和安全内核所提供各类功能的状态。VBS是一种不对用户直接可见的技术，默认安装的Windows中提供的系统信息工具可显示有关安全内核及其相关技术的详细信息。我们可以在搜索框中输入<strong>msinfo32</strong>运行该工具。请以管理员身份运行该工具，某些信息仅供具备完整特权的用户账户查看。</p>
+<p class="zwts1">从下图可知，VBS已启用，并且包含HVCI（显示为“虚拟机监控程序实施的代码完整性”）、UEFI运行时虚拟化（显示为“UEFI只读”）、MBEC（显示为“基于模式的执行控制”）。然而，下图所示的系统未启用安全启动，也不包含可用的IOMMU（在“基于虚拟化的安全性可用安全属性”这一行下显示为“DMA保护”）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2120.png" style="width: 100%" />
+<p class="zwts1">有关如何启用、禁用、锁定VBS配置的详细信息请参阅第12章的“理解VSM策略”实验。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"8d678365-710a-474d-8760-6f5e8321ff41","id":"746562cb-623d-4b51-ba0a-7f2ee55f01ff"}</p>

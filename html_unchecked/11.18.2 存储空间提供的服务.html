@@ -1,0 +1,82 @@
+<h3 class="bt3" id="sigil_toc_id_326">11.18.2　存储空间提供的服务</h3>
+<p class="zw">存储空间支持不同类型的磁盘配置功能。借助该功能，用户可以创建完全由快速磁盘（SSD、NVMe、PM）、慢速磁盘，甚至混合使用所有可支持类型的磁盘（混合配置）创建的虚拟磁盘。对于混合部署，即使混合使用不同类型的存储设备，存储空间依然可通过下列两个功能创建快速又高效的集群。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">服务器缓存：</strong>存储空间可以从集群中隐藏一个快速驱动器，并将其用作慢速驱动器的缓存。存储空间支持使用PM磁盘作为NVMe或SSD硬盘的缓存，NVMe硬盘可以用作SSD硬盘的缓存，而SSD硬盘可以用作传统机械硬盘的缓存。与分层磁盘不同，这种缓存对虚拟卷上的文件系统是不可见的。这意味着缓存并不知道某个文件的访问频率是否高于其他文件。存储空间通过采用日志记录冷热块的方式为虚拟磁盘实现了一种高速缓存。热块代表文件中频繁被系统访问的部分（文件的范围），而冷块代表文件中很少被访问的部分。该日志将缓存实现为一种队列，热块始终位于队列头部，冷块则位于尾部。这样，如果缓存被装满，冷块就可以从缓存中移除，并放入慢速存储中保存，而热块通常会在缓存中驻留更长的时间。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">分层：</strong>存储空间可以创建分层磁盘，并由ReFS和NTFS负责管理。ReFS可支持SMR磁盘，但NTFS只支持由存储空间提供的分层磁盘。文件系统会跟踪冷热块，并根据文件使用情况对带进行旋转（详见上文“ReFS对分层卷和SMR的支持”一节）。存储空间还使得文件系统驱动程序可以支持固定（pin）功能，该功能可以将文件固定在快速存储层并始终锁定到这里，直到解除锁定。这种情况下将永远不执行带旋转。在执行操作系统升级的过程中，Windows会使用固定功能将新文件固定到快速存储层中。</p>
+<p class="zw">如上文所述，存储空间的设计目标之一在于灵活性。存储空间支持创建可扩展的虚拟磁盘，但在集群的底层设备上只消耗实际分配的空间。此类虚拟磁盘也叫精简预配（thin provisioned）磁盘。在固定预配的磁盘中，需要一次性从底层存储集群分配全部空间；而在精简预配磁盘中，只需要分配实际使用的空间，这样就可以创建出远大于底层存储集群容量的虚拟磁盘。当可用空间减少时，系统管理员可以向集群动态添加磁盘。存储空间会自动将新添加的物理磁盘包含到池中，并将已分配的块重新分配到新增的磁盘上。</p>
+<p class="zw">存储空间可通过碎片（slab）支持精简预配磁盘。碎片是一种分配单位，类似于ReFS中容器的概念，但会应用于更底层的堆栈：碎片是虚拟磁盘的分配单位，而非文件系统中的概念。默认情况下，每个碎片大小为256&nbsp;MB，但如果底层存储集群允许（例如集群有大量可用空间），碎片可以更大。存储空间核心会跟踪虚拟磁盘中的每个碎片，并能使用自己的分配器动态分配或释放碎片。值得注意的是，每个碎片都可以看成一个可靠性点：在镜像和奇偶校验配置中，每个碎片中存储的数据都会自动在整个集群中进行复制。</p>
+<p class="zw">当创建精简预配磁盘时，依然需要指定一个“大小”。文件系统需要知道虚拟磁盘的大小，随后才能正确格式化新卷并创建所需的元数据。卷就绪后，存储空间只有在新数据实际写入磁盘时才会分配碎片，这种方法也叫“写入时分配”。请注意，预配类型对卷上的文件系统是不可见的，因此文件系统并不知道底层磁盘到底是精简预配还是固定预配。</p>
+<p class="zw">存储空间通过镜像和奇偶校验机制消除了可能的单点故障。在由多个磁盘组成的大型存储集群中，通常使用RAID 6作为主要的奇偶校验解决方案。RAID 6最多可承受两个底层设备故障，还可无须用户介入无缝重建数据。然而，当集群遇到一个（或两个）故障点后，重建阵列所需的时间（平均修复时间，即MTTR）很长，往往会导致严重的性能降级。</p>
+<p class="zw">存储空间通过使用本地重建代码（Local Reconstruction Code，LRC）算法解决了这个问题，该算法减少了重建大型磁盘阵列所需的读取次数，但代价是增加了一个额外的奇偶校验单元。如图11-96所示，LRC算法将磁盘阵列拆分成不同的行，并为每一行增加了一个奇偶校验单元。如果一块磁盘出现故障，则只需要读取该行中的其他磁盘，因此故障阵列的重建速度更快，效率更高。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3740.png" style="width: 100%" />
+<p class="图题">图11-96　RAID 6奇偶校验和LRC算法</p>
+<p class="zw">图11-96展示了在由八块硬盘组成的集群中，典型的RAID 6奇偶校验实现和LRC算法实现之间的差异。在RAID 6配置中，如果一块（或两块）磁盘出现故障，为了正确重建丢失的信息，其他六块硬盘都需要读取；但在LRC中，只需要读取与故障磁盘位于同一行中的其他磁盘。</p>
+<p class="zwtsh">实验：创建分层卷</p>
+<p class="zwts1">服务器和客户端版本的Windows 10均原生支持存储空间。我们可以使用图形用户界面或Windows PowerShell创建分层磁盘。在这个实验中，我们将创建虚拟分层磁盘，为此需要准备一台工作站系统，除了Windows引导磁盘外，该系统必须有一块空的SSD和一块空的机械硬盘（HDD）。为了完成测试，我们可以使用Hyper-V模拟出类似的配置。在这种情况下，需要在SSD上创建一个虚拟磁盘文件，并在机械硬盘上创建另一个虚拟磁盘文件。</p>
+<p class="zwts1">首先要以管理员身份打开&nbsp;Windows PowerShell。为此请右键点击开始菜单，选择“Windows PowerShell<strong style="color:#0092dd">（管理员）</strong>”。请验证系统已识别出已安装磁盘的类型：</p>
+<pre class="代码无行号"><code>PS C:\&gt; Get-PhysicalDisk | FT DeviceId, FriendlyName, UniqueID, Size, MediaType, CanPool
+DeviceId FriendlyName            UniqueID                     Size MediaType CanPool 
+-------- ------------             -------                     ----- --------- -------
+2        Samsung SSD 960 EVO 1TB eui.0025385C61B074F7 1000204886016 SSD         False 
+0        Micron 1100 SATA 512GB  500A071516EBA521      512110190592 SSD         True 
+1        TOSHIBA DT01ACA200      500003F9E5D69494     2000398934016 HDD         True </code></pre>
+<p class="zwts1">在上述范例中，系统已经识别出两块&nbsp;SSD&nbsp;和一块机械硬盘。请确认空磁盘的&nbsp;CanPool&nbsp;值设置为&nbsp;True。如果不为&nbsp;True，则意味着磁盘上包含有效分区，需要将　 其删除。如果在虚拟化环境中进行实验，系统可能会无法正确识别底层磁盘的介质类型。</p>
+<pre class="代码无行号"><code>PS C:\&gt; Get-PhysicalDisk | FT DeviceId, FriendlyName, UniqueID, Size, MediaType, CanPool
+　
+DeviceId FriendlyName      UniqueID                                 Size MediaType CanPool 
+-------- ------------      ------------                             ---- --------- -------
+2        Msft Virtual Disk 600224802F4EE1E6B94595687DDE774B  137438953472 Unspecified  True
+1        Msft Virtual Disk 60022480170766A9A808A30797285D77 1099511627776 Unspecified  True
+0        Msft Virtual Disk 6002248048976A586FE149B00A43FC73  274877906944 Unspecified  False</code></pre>
+<p class="zwts1">在这种情况下，我们可以手动指定磁盘类型，为此请运行Set-PhysicalDisk -UniqueId (Get-PhysicalDisk)[&lt;IDX&gt;].UniqueID -MediaType &lt;Type&gt;命令，其中IDX是上述输出结果中的行号，MediaType是SSD或HDD（取决于磁盘类型）。例如：</p>
+<pre class="代码无行号"><code>PS C:\&gt; Set-PhysicalDisk -UniqueId (Get-PhysicalDisk)[0].UniqueID -MediaType SSD
+PS C:\&gt; Set-PhysicalDisk -UniqueId (Get-PhysicalDisk)[1].UniqueID -MediaType HDD
+PS C:\&gt; Get-PhysicalDisk | FT DeviceId, FriendlyName, UniqueID, Size, MediaType, CanPool
+　
+DeviceId FriendlyName      UniqueID                                 Size MediaType CanPool
+-------- ------------      --------                                 ---- --------- -------
+2        Msft Virtual Disk 600224802F4EE1E6B94595687DDE774B  137438953472 SSD        True 
+1        Msft Virtual Disk 60022480170766A9A808A30797285D77 1099511627776 HDD        True 
+0        Msft Virtual Disk 6002248048976A586FE149B00A43FC73  274877906944 Unspecified False</code></pre>
+<p class="zwts1">随后需要创建存储池，其中将包含构成新虚拟磁盘的所有物理磁盘。接着还需要创建存储层。在本例中，我们将存储池的名称设置为DefaultPool：</p>
+<pre class="代码无行号"><code>PS C:\&gt; New-StoragePool -StorageSubSystemId (Get-StorageSubSystem).UniqueId -FriendlyName 
+DeafultPool -PhysicalDisks (Get-PhysicalDisk -CanPool $true) 
+　
+FriendlyName OperationalStatus HealthStatus IsPrimordial IsReadOnly    Size AllocatedSize 
+------------ ----------------- ------------ ------------ ----------    ---- -------------
+Pool         OK                 Healthy     False             1.12 TB        512 MB 
+　
+PS C:\&gt; Get-StoragePool DefaultPool | New-StorageTier -FriendlyName SSD -MediaType SSD 
+... 
+PS C:\&gt; Get-StoragePool DefaultPool | New-StorageTier -FriendlyName HDD -MediaType HDD 
+... </code></pre>
+<p class="zwts1">最后，可以创建虚拟分层卷，为此需要分配名称并指定每一层的大小。本例中，我们创建了一个名为TieredVirtualDisk的分层卷，其中包含一个120&nbsp;GB的性能层和一个1000&nbsp;GB的容量层：</p>
+<pre class="代码无行号"><code>PS C:\&gt; $SSD = Get-StorageTier -FriendlyName SSD 
+PS C:\&gt; $HDD = Get-StorageTier -FriendlyName HDD 
+PS C:\&gt; Get-StoragePool Pool | New-VirtualDisk -FriendlyName "TieredVirtualDisk" 
+-ResiliencySettingName "Simple" -StorageTiers $SSD, $HDD -StorageTierSizes 128GB, 1000GB
+... 
+PS C:\&gt; Get-VirtualDisk | FT FriendlyName, OperationalStatus, HealthStatus, Size, 
+FootprintOnPool 
+　
+FriendlyName      OperationalStatus HealthStatus          Size FootprintOnPool 
+------------      ----------------- ------------          ---- ---------------
+TieredVirtualDisk OK                Healthy      1202590842880   1203664584704 </code></pre>
+<p class="zwts1">创建好虚拟磁盘后还需要创建分区，并通过常规的方式（例如使用磁盘管理控制台或Format工具）格式化新建的卷。卷格式化完毕后，即可使用fsutil.exe工具验证底层卷是否为分层卷：</p>
+<pre class="代码无行号"><code>PS E:\&gt; fsutil tiering regionList e: 
+Total Number of Regions for this volume: 2 
+Total Number of Regions returned by this operation: 2 
+　
+   Region # 0: 
+        Tier ID: {448ABAB8-F00B-42D6-B345-C8DA68869020} 
+        Name: TieredVirtualDisk-SSD 
+        Offset: 0x0000000000000000 
+        Length: 0x0000001dff000000 
+　
+Region # 1: 
+        Tier ID: {16A7BB83-CE3E-4996-8FF3-BEE98B68EBE4} 
+        Name: TieredVirtualDisk-HDD 
+        Offset: 0x0000001dff000000 
+        Length: 0x000000f9ffe00000 </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"3af1ebcc-631c-4579-97a1-9d5f48a875c1","id":"c7ace536-c28a-426b-9694-aedad40b9e7e"}</p>

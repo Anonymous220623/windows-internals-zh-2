@@ -1,0 +1,82 @@
+<h3 class="bt3" id="sigil_toc_id_134">10.2.12　共享服务进程</h3>
+<p class="zw">用专用进程运行每个服务，而不是尽可能让多个服务共享同一个进程，会导致系统资源的浪费。然而共享进程意味着如果进程中的任何一个服务出现了会导致进程退出的Bug，该进程中的所有服务都将终止。</p>
+<p class="zw">Windows的自带服务有些运行在自己的进程中，有些与其他服务共享进程。例如，LSASS进程中就包含了很多与安全性有关的服务，如安全账户管理器（SamSs）服务、网络登录（Netlogon）服务、加密文件系统（EFS）服务，以及下一代加密（CNG）密钥隔离（KeyIso）服务。</p>
+<p class="zw">另外还有一个名为Service Host（SvcHost，%SystemRoot%\System32\Svchost.exe）的通用进程包含了很多服务，同时SvcHost的多个实例会以不同的进程运行。通过SvcHost进程运行的服务包括电话（TapiSrv）、远程过程调用（RpcSs），以及远程访问连接管理器（RasMan）等。Windows会将运行在SvcHost中的服务以DLL形式实现，并会在服务的注册表键中包含一个ImagePath定义，其具体形式为%SystemRoot%\System32\svchost.exe –k netsvcs。这些服务的注册表键中还必须在Parameters子键下包含一个名为ServiceDll的值，其数值指向服务的DLL文件。</p>
+<p class="zw">所有共享同一个SvcHost进程的服务需要指定相同的参数（例如上文例子中的–k netsvcs），这样它们才能在SCM的映像数据库中使用同一个项。当SCM在服务启动过程中遇到第一个具备特定SvcHost ImagePath参数的服务时，它会新建一个映像数据库项，并使用这些参数启动一个SvcHost进程。用-k开关指定的参数将成为整个服务组的名称。在创建新的共享托管进程时，SCM将解析整个命令行的内容。正如“服务登录”一节所述，如果数据库中的其他服务共享相同的ImagePath值，其服务SID会被加入新建的托管进程的组SID列表中。</p>
+<p class="zw">新建的&nbsp;SvcHost&nbsp;进程会接收命令行中指定的服务组，并在HKLM\SOFTWARE\ Microsoft\Windows NT\CurrentVersion\Svchost下查找具备相同名称的值。SvcHost会读取该值的内容，将其解析为一个服务名称列表，并在SvcHost向SCM注册时通知SCM自己托管了这些服务。</p>
+<p class="zw">当SCM在服务启动过程中遇到另一个共享服务（通过检查服务的Type值），并且该服务的ImagePath与自己映像数据库中现有的项匹配，此时就不需要再启动另一个进程，而是可以直接将该服务的启动命令发送给自己针对相同ImagePath值已经启动的SvcHost进程。现有SvcHost进程读取服务注册表键中的ServiceDll参数，在自己的令牌中启用新服务组SID，并将DLL载入自己的进程即可启动新的服务。</p>
+<p class="zw">表10-12列出了Windows中的所有默认服务组，以及为每个服务组注册的部分服务。</p>
+<p class="表题">表10-12　主要的服务组</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">服务组</p> </th> 
+   <th> <p class="bt">服务</p> </th> 
+   <th> <p class="bt">备注</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LocalService</p> </td> 
+   <td> <p class="bg">Network Store Interface、Windows Diagnostic Host、Windows Time、COM+ Event System、HTTP Auto-Proxy Service、Software Protection Platform UI Notification、Thread Order Service、LLDT Discovery、SSL、FDP Host、WebClient</p> </td> 
+   <td> <p class="bg">使用Local Service账户运行，在不同端口上使用网络，或完全不使用网络的服务（因此不进行限制）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LocalServiceAndNo-<br> Impersonation</p> </td> 
+   <td> <p class="bg">UPnP and SSDP、Smart Card、TPM、Font Cache、<br> Function Discovery、AppID、qWAVE、Windows<br> Connect Now、Media Center Extender、Adaptive Brightness</p> </td> 
+   <td> <p class="bg">使用Local Service账户运行，在一组固定端口上使用网络的服务。使用“写入-限制”令牌运行的服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LocalServiceNetwork-<br> Restricted</p> </td> 
+   <td> <p class="bg">DHCP、Event Logger、Windows Audio、NetBIOS、<br> Security Center、Parental Controls、HomeGroup Provider</p> </td> 
+   <td> <p class="bg">使用Local Service账户运行，在一组固定端口上使用网络的服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LocalServiceNoNetwork</p> </td> 
+   <td> <p class="bg">Diagnostic Policy Engine、Base Filtering Engine、<br> Performance Logging and Alerts、Windows<br> Firewall、WWAN AutoConfig</p> </td> 
+   <td> <p class="bg">使用Local Service账户运行，但完全不使用网络的服务。使用“写入-限制”令牌运行的服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LocalSystemNetwork-<br> Restricted</p> </td> 
+   <td> <p class="bg">DWM、WDI System Host、Network Connections、<br> Distributed Link Tracking、Windows Audio<br> Endpoint、Wired/WLAN AutoConfig、Pnp-X、</p> </td> 
+   <td> <p class="bg">使用Local System账户运行，在一组固定端口上使用网络的服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td></td> 
+   <td> <p class="bg">HID Access、User-Mode Driver Framework Service、<br> Superfetch、Portable Device Enumerator、<br> HomeGroup Listener、Tablet Input、Program<br> Compatibility、Offline Files</p> </td> 
+   <td></td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">NetworkService</p> </td> 
+   <td> <p class="bg">Cryptographic Services、DHCP Client、Terminal Services、WorkStation、Network Access Protection、<br> NLA、DNS Client、Telephony、Windows Event Collector、WinRM</p> </td> 
+   <td> <p class="bg">使用Network Service账户运行，在不同端口上使用网络，或完全不使用网络的服务（或没有强制的网络限制）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">NetworkServiceAndNo-<br> Impersonation</p> </td> 
+   <td> <p class="bg">KTM for DTC</p> </td> 
+   <td> <p class="bg">使用Network Service账户运行，在一组固定端口上使用网络的服务。使用“写入-限制”令牌运行的服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">NetworkServiceNetwork-<br> Restricted</p> </td> 
+   <td> <p class="bg">IPSec Policy Agent</p> </td> 
+   <td> <p class="bg">使用Network Service账户运行，在一组固定端口上使用网络的服务</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">Svchost服务拆分</h4>
+<p class="zw">如上文所述，通过一个共享的托管进程运行多个服务可以节约系统资源，但一个很大的不足之处在于：一个服务中出现未能妥善处理的错误就可能导致托管进程中的所有其他服务被终止。为了解决此问题，Windows 10创作者更新（RS2）引入了Svchost服务拆分（Svchost service splitting）功能。</p>
+<p class="zw">当SCM启动时，会从注册表读取三个值，这三个值表示服务的全局提交限制（分为低上限、中上限、硬上限）。当系统内存不足时，SCM会使用这些值来发送“资源不足”消息。随后SCM会从HKLM\SYSTEM\ CurrentControlSet\Control\SvcHostSplitThresholdInKB注册表值中读取Svchost服务拆分阈值。该值决定了当系统物理内存的最小数量（以KB为单位）达到多少时才会启用Svchost服务拆分（客户端系统的默认值为3.5&nbsp;GB，服务器系统的默认值为大约3.7&nbsp;GB）。随后，SCM会使用GlobalMemoryStatusEx API获取系统物理内存总数，并将其与之前从注册表中读取的阈值进行比较。如果物理内存总数高于阈值，就会（通过设置一个内部全局变量）启用Svchost服务拆分。</p>
+<p class="zw">启用Svchost服务拆分后，会修改SCM为共享服务启动Svchost托管进程时的行为。如上文“服务启动”一节所述，如果一个服务允许进行拆分，SCM将不在自己的数据库中搜索现有映像记录。这意味着尽管服务被标记为共享，但依然会用私有的托管进程来启动（并且服务类型会变为SERVICE_WIN32_OWN_PROCESS）。只有在符合下列情况时，才允许进行服务拆分。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Svchost服务拆分被全局启用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 服务未被标记为关键服务。如果一个服务的下一次恢复操作被设置为重启动计算机，那么这样的服务就被视作关键服务（详见上文“服务故障”一节的介绍）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 服务托管进程的名称为Svchost.exe。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 未通过服务控制键中的SvcHostSplitDisable注册表值明确禁用服务拆分。</p>
+<p class="zw">内存管理器提供的内存压缩与合并等技术有助于尽可能节约系统工作集。这也解释了Svchost服务拆分功能背后的一个动机。就算在系统中新建了很多进程，内存管理器也可以保证托管进程的所有物理页面依然处于共享状态，尽可能减少对系统资源的用量。内存合并、压缩以及内存共享等机制请参阅卷1第5章。</p>
+<p class="zwtsh">实验：操作Svchost服务拆分</p>
+<p class="zwts1">如果使用具备至少4GB内存的Windows 10工作站，在打开任务管理器后可能会注意到目前正在执行大量Svchost.exe进程实例。如上文所述，这并不会造成内存浪费的问题，但可能有人会想知道该如何禁用Svchost拆分。首先请打开任务管理器并统计系统中当前运行的Svchost进程实例数量。在Windows 10的2019年5月更新（19H1）版本中，应该有大约80个Svchost进程实例。我们可以用管理员身份打开PowerShell窗口，并运行下列命令轻松统计出确切数字：</p>
+<pre class="代码无行号"><code>(get-process -Name "svchost" | measure).Count </code></pre>
+<p class="zwts1">在示例所用的系统中，上述命令返回的结果是85个。</p>
+<p class="zwts1">打开注册表编辑器（在搜索框中输入regedit.exe）并打开HKLM\SYSTEM\ CurrentControlSet\Control键。请记录SvcHostSplitThresholdInKB这个DWORD值的当前数据。要全局禁用Svchost服务拆分，我们需要将该注册表值的数据修改为0（双击该注册表值，并输入0即可修改）。修改结束后重启动系统并重新统计Svchost进程实例的数量。发现此时系统运行的实例数量少了很多：</p>
+<pre class="代码无行号"><code>PS C:\&gt; (get-process -Name "svchost" | measure).Count 
+26 </code></pre>
+<p class="zwts1">要恢复至修改前的状态，请将SvcHostSplitThresholdInKB注册表值的数据还原。通过修改这个DWORD值，我们还可以进一步优化，决定当系统中的物理内存数量达到多少后才可以启用Svchost拆分。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":11,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"e0a31eea-81cd-4e4d-af48-6a2b63e9aefb"}</p>

@@ -1,0 +1,5 @@
+<h3 class="bt3" id="sigil_toc_id_142">10.3.3　任务计划程序COM接口</h3>
+<p class="zw">如上文所述，COM任务需要遵循明确定义的接口要求，UBPM会通过该接口控制任务的状态转换。当UBPM决定何时启动任务并管理任务的所有状态时，所有其他用于注册、删除，或手动启动和停止任务的接口都将由任务计划程序在自己的客户端DLL（Taskschd.dll）中实现。</p>
+<p class="zw">ITaskService是一种中央接口，客户端可以通过它连接到任务计划程序并执行各种操作，如枚举已注册的任务、获取任务存储实例（由ITaskFolder COM接口表示），以及启用、禁用、删除或注册任务及其相关的所有触发器和操作（为此要使用ITaskDefinition COM接口）。当客户端应用程序首次通过COM调用一个任务计划程序API时，系统会将任务计划程序客户端DLL（Taskschd.dll）加载到客户端进程的地址空间（按照COM合约的要求：任务计划程序COM对象需要位于进程内的COM服务器中）。该COM API是通过将请求使用RPC调用路由至任务计划程序服务实现的，该服务会分别处理每个请求，并在需要时将其转发给UBPM。任务计划程序COM架构可供用户通过PowerShell等脚本语言（使用ScheduledTasks cmdlet）或VBScript与其交互。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"30d37bf5-6705-42ec-a13a-437f2515e861","id":"d526d083-8493-4d01-9ed8-79c3dad8b564"}</p>

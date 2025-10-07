@@ -1,0 +1,45 @@
+<h3 class="bt3" id="sigil_toc_id_138">10.2.16　受保护服务</h3>
+<p class="zw">卷1第3章详细介绍了受保护进程以及轻量级受保护进程（Protected Processes Light，PPL）的架构。Windows 8.1的服务控制管理器还为受保护服务提供了支持。截至撰写这部分内容，服务可以获得Windows、Windows light（Windows轻型）、Antimalware light（反恶意软件轻型）以及App（应用）四个级别的保护。服务控制程序可以使用ChangeServiceConfig2 API（配合SERVICE_CONFIG_LAUNCH_PROTECTED信息级别）指定为服务提供的保护。服务的重要可执行文件（或共享服务的库）必须具备正确的签名才能以受保护服务的方式运行，并且需要遵循与受保护进程相似的规则（意味着系统会检查数字签名的EKU和根证书，进而生成最大签名方级别，详见卷1第3章）。</p>
+<p class="zw">以受保护形式启动的服务托管进程，可保证相对其他非受保护进程获得某种形式的保护。其他进程在试图访问受保护服务的托管进程时，基于保护级别，将无法获得某些访问权限（该机制与标准受保护进程完全相同，一个最典型的例子是：非受保护进程无法向受保护进程注入任何代码）。</p>
+<p class="zw">即便使用SYSTEM账户启动的进程也无法访问受保护进程。不过SCM依然能够完整访问受保护服务的托管进程。因此Wininit.exe在启动SCM时会指定用户模式最大保护级别：WinTcb Light（WinTcb轻型）。图10-24展示了SCM主可执行文件services.exe的数字签名，其中包括Windows TCB组件EKU（1.3.6.1.4.1.311.10.3.23）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2344.png" style="width: 100%" />
+<p class="图题">图10-24 服务控制管理器主可执行文件（services.exe）的数字签名</p>
+<p class="zw">第二层保护由服务控制管理器提供。当客户端请求对受保护服务执行某个操作时，SCM会调用ScCheckServiceProtectedProcess例程，借此检查调用方是否有足够的访问权限针对目标服务执行所请求的权限。表&nbsp;10-13&nbsp;列出了非受保护进程向受保护服务发出请求时会被拒绝的操作。</p>
+<p class="表题">表10-13　从非受保护客户端向受保护服务发出请求后的被拒绝操作列表</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">被调用的API名称</p> </th> 
+   <th> <p class="bt">操作</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ChangeServiceConfig[2]</p> </td> 
+   <td> <p class="bg">更改服务配置</p> </td> 
+   <td> <p class="bg">对受保护服务的配置进行任何更改均会失败</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SetServiceObjectSecurity</p> </td> 
+   <td> <p class="bg">为服务设置新的安全描述符</p> </td> 
+   <td> <p class="bg">拒绝向受保护服务应用新的安全描述符（这会减少服务攻击面）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DeleteService</p> </td> 
+   <td> <p class="bg">删除服务</p> </td> 
+   <td> <p class="bg">非受保护进程无法删除受保护服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ControlService</p> </td> 
+   <td> <p class="bg">向服务发送控制代码</p> </td> 
+   <td> <p class="bg">非受保护调用方仅允许使用Service-defined控制代码和SERVICE_CONTROL_INTERROGATE。Antimalware之外其他受保护级别允许使用SERVICE_CONTROL_STOP</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">ScCheckServiceProtectedProcess函数会在调用方指定的服务句柄中查找服务记录，如果服务不受保护，则会授予访问权。如果服务受保护，则会模拟客户端进程令牌，获取服务保护级别，然后实施下列规则。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果请求的是一个STOP控制请求并且目标服务并未受到Antimalware级别的保护，将允许访问（Antimalware级别的受保护服务无法被非受保护进程停止）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果客户端的令牌组中包含TrustedInstaller服务SID，或客户端被设置为令牌用户，SCM会忽略客户端的进程保护状态允许访问。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 否则会调用RtlTestProtectedAccess，由后者执行与受保护进程相同的检查。只有在客户端进程具备与目标服务兼容的保护级别时才会允许访问。例如，受保护的Windows进程始终可以针对所有保护级别的服务执行操作，而反恶意软件PPL只能针对Antimalware和App级别的受保护服务执行操作。</p>
+<p class="zw">需要注意的是，对于任何以TrustedInstaller虚拟服务账户运行的客户端进程，都不会进行上述最后一项检查。这是设计使然。当Windows Update安装更新时，需要能够启动、停止并控制任何类型的服务，而不要求自己必须具备强数字签名（这种要求会让Windows Update暴露在本不该存在的攻击面下）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":15,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"573dc06b-f7a7-4829-a2a1-ab2be6d75795"}</p>

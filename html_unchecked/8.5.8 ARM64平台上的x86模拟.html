@@ -1,0 +1,129 @@
+<h3 class="bt3" id="sigil_toc_id_29">8.5.8　ARM64平台上的x86模拟</h3>
+<p class="zw">x86-on-ARM64 CPU模拟器（Xtajit.dll）与上文介绍的其他二进制转换器均不相同，这主要是因为它无法通过硬件直接执行x86指令。ARM64处理器完全无法理解任何x86指令。因此x86-on-ARM模拟器实现了一套完整的x86模拟器和实时编译器，借此转换AArch64代码中的x86操作码块，并直接执行转换后的代码块。</p>
+<p class="zw">在为新的WoW64进程调用模拟器进程初始化函数（BtCpuProcessInit）时，会将HKLM\SOFTWARE\Microsoft\Wow64\x86\xtajit路径与主进程映像的名称相结合，为该进程构建实时编译器的主注册表键。如果该键已存在，则模拟器会从中查询多种配置信息（最常用的信息包括多处理器兼容性和JIT块阈值大小。请注意，模拟器还会通过应用程序的兼容性数据库查询配置信息）。随后模拟器会分配并编译Syscall页面，顾名思义，该页面会用于发出x86 Syscall（随后在Wow64Transition变量的影响下，该页面会被链接至Ntdll）。至此，模拟器即可确定该进程是否可以使用XTA缓存。</p>
+<p class="zw">模拟器使用两种缓存来存储预编译的代码块：为每个线程分配的内部缓存，其中包含模拟器在编译供线程执行的x86代码过程中生成的代码块（这些代码块也叫实时编译块）；由XtaCache管理的外部XTA缓存，其中包含由XtaCache服务为x86映像延迟生成的所有实时编译的块。每个映像的XTA缓存存储在一个外部缓存文件（下面将介绍相关信息）中。进程初始化例程还会分配CHPE位图，该位图涵盖可能被32位进程使用的整个4&nbsp;GB地址空间。这个位图可以使用一位来代表包含CHPE代码的内存页面（下文还将详细讨论CHPE）。</p>
+<p class="zw">模拟器线程初始化例程（BtCpuThreadInit）初始化编译器，并在原生栈上分配每个线程的CPU状态，原生栈是一个包含每线程编译器状态的重要数据结构，其中包括x86线程上下文、x86代码发射器（Emitter）状态、内部代码缓存，以及模拟x86 CPU的配置（段寄存器、FPU状态、模拟的CPUID）。</p>
+<h4 class="bt4 sigil_not_in_toc">模拟器的映像加载通知</h4>
+<p class="zw">与任何其他二进制转换器不同，当新映像被映射到进程地址（包括CHPE Ntdll）空间时，x86-on-ARM64 CPU模拟器必须接收到通知。这是通过WoW64核心实现的，在从32位代码中调用NtMapViewOfSection这个原生API时，它可以进行拦截，并通过导出的BTCpuNotifyMapViewOfSection例程通知Xtajit模拟器。这种通知功能很重要，因为模拟器需要据此更新内部编译器数据，例如：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> CHPE位图（当目标映像包含CHPE代码页时，需要将位设置为1来进行更新）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 内部模拟的CFG（Control Flow Guard，控制流防护）状态。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 映像的XTA缓存状态。</p>
+<p class="zw">尤其是当新加载一个x86或CHPE映像时，模拟器需要（通过注册表和应用程序兼容性填充码）决定是否为该模块使用XTA缓存。如果检查成功，模拟器会向XtaCache服务请求更新后的映像缓存，借此更新全局每个进程的XTA缓存状态。如果XtaCache服务可以识别并打开该映像更新后的缓存文件，则可向模拟器返回一个节对象，该节对象可用于加速映像的执行（节中包含预编译的ARM64代码块）。</p>
+<h4 class="bt4 sigil_not_in_toc">编译的混合可移植可执行文件（CHPE）</h4>
+<p class="zw">在ARM64环境中实时编译x86进程是一项充满挑战性的工作。为了保证应用程序的响应性，编译器必须保留足够的性能。而最主要的问题之一在于两种架构的内存排序机制有很大差异。x86模拟器并不知道原始x86代码是如何设计的，因此不得不在x86映像每次访问内存时频繁用到内存屏障。执行内存屏障，这本身就是一个速度缓慢的操作，平均来说，很多应用程序大约40%的时间都会用于运行操作系统代码。这意味着如果无须模拟操作系统库，那么将会显著改善应用程序的性能。</p>
+<p class="zw">这些因素催生了编译的混合可移植可执行文件（Compiled Hybrid Portable Executable，CHPE）机制。CHPE二进制文件是一种特殊的混合可执行文件，其中同时包含可兼容x86和ARM64的代码，而这些代码是在完全了解原始源代码的情况下生成的（编译器非常确切要在哪里使用内存屏障）。与ARM64兼容的机器代码叫作混合（或CHPE）代码，这些代码依然在AArch64模式下执行，但实际上是按照32位ABI生成的，因此能与x86代码实现更好的互操作性。</p>
+<p class="zw">CHPE二进制文件会被创建为标准的x86可执行文件（其机器ID依然是x86对应的014C），主要区别在于CHPE文件中包含由混合映像（hybrid image）元数据（这些元数据可存储为映像加载配置目录的一部分）中的表所描述的混合代码。当CHPE二进制文件被载入WoW64进程的地址空间时，模拟器将会为每个包含混合元数据中所描述的混合代码的页面设置一个位为“1”，借此更新CHPE位图。当实时编译器编译x86代码块并检测到代码正在试图调用混合函数时，就不再浪费时间进行编译，而是（使用32位栈）直接执行。</p>
+<p class="zw">实时编译的x86代码会按照自定义的ABI来执行，这意味着在ARM64寄存器的使用方式以及参数在不同函数之间的传递方式等方面，并没有什么标准的约定。CHPE代码并不遵循与实时编译代码相同的寄存器约定（尽管混合代码依然会遵循32位ABI）。这意味着我们无法从编译器构建的实时编译代码块直接调用CHPE代码。为了解决这个问题，CHPE二进制文件还包含三种类型的形式转换函数，借此实现CHPE与x86代码的互操作性。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> pop形式转换，可将来自客户端（x86）调用方的传入（或传出）参数转换为CHPE约定，并直接将执行转移至混合代码，借此让x86代码调用混合函数。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> push形式转换，可将来自混合代码的传入（或传出）参数转换为客户端（x86）约定，并调用模拟器以恢复x86代码的执行，借此让CHPE代码调用x86例程。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> export形式转换，这是一种兼容性形式转换，用于为从操作系统模块导出x86函数绕路（detour）以修改其功能的应用程序提供支持。从CHPE模块导出的函数依然包含少量x86代码（通常有8字节），这些代码在语义方面不提供任何功能，但可供外部应用程序插入绕路。</p>
+<p class="zw">x86-on-ARM模拟器会尽最大努力始终加载CHPE系统二进制文件，而非标准的x86二进制文件，但这种做法并非始终可行。如果CHPE二进制文件不存在，则模拟器将从SysWoW64文件夹加载标准x86二进制文件。此时操作系统模块需要进行完全实时编译。</p>
+<p class="zwtsh">实验：转储混合代码地址范围表</p>
+<p class="zwts1">Windows SDK和WDK中提供的Microsoft Incremental linker（link.exe）工具可以显示CHPE映像的映像加载配置目录中所存储的混合元数据中包含的某些信息。有关该工具的更多信息以及安装方法请参阅第9章。</p>
+<p class="zwts1">在这个实验中，我们将转储kernelbase.dll的混合元数据，这个系统库文件在编译时就添加了对CHPE的支持。读者也可以通过其他CHPE库文件执行该实验。在ARM64计算机上安装SDK或WDK后，请打开Visual Studio Developer Command Prompt（如果使用了EWDK的ISO镜像，则请打开LaunchBuildEnv.cmd脚本文件）。随后进入CHPE</p>
+<p class="zwts1">文件夹，并通过下列命令转储kernelbase.dll文件的映像加载配置目录：</p>
+<pre class="代码无行号"><code>cd c:\Windows\SyChpe32 
+link /dump /loadconfig kernelbase.dll &gt; kernelbase_loadconfig.txt </code></pre>
+<p class="zwts1">请注意，在本例中，命令的输出结果已被重定向至kernelbase_load-config.txt文本文件中，因为输出内容太多，所以无法在控制台窗口中直观显示出来。随后请用记事本打开该文本文件，并向下拖动，直到看到类似下面的内容：</p>
+<pre class="代码无行号"><code>Section contains the following hybrid metadata: 
+　
+               4 Version 
+        102D900C Address of WowA64 exception handler function pointer 
+        102D9000 Address of WowA64 dispatch call function pointer 
+        102D9004 Address of WowA64 dispatch indirect call function pointer 
+        102D9008 Address of WowA64 dispatch indirect call function pointer (with CFG check)
+        102D9010 Address of WowA64 dispatch return function pointer 
+        102D9014 Address of WowA64 dispatch leaf return function pointer 
+        102D9018 Address of WowA64 dispatch jump function pointer 
+        102DE000 Address of WowA64 auxiliary import address table pointer 
+        1011DAC8 Hybrid code address range table 
+               4 Hybrid code address range count 
+　
+   Hybrid Code Address Range Table 
+　
+               Address Range 
+          ----------------------
+          x86   10001000 - 1000828F (00001000 - 0000828F) 
+          arm64 1011E2E0 - 1029E09E (0011E2E0 - 0029E09E) 
+          x86   102BA000 - 102BB865 (002BA000 - 002BB865) 
+          arm64 102BC000 - 102C0097 (002BC000 - 002C0097) </code></pre>
+<p class="zwts1">该工具确认了kernelbase.dll在混合代码地址范围表中有四个范围：其中两部分包含x86代码（实际上模拟器并未使用），另外两部分包含CHPE代码（该工具错误地将其显示为“arm64”）。</p>
+<h4 class="bt4 sigil_not_in_toc">XTA缓存</h4>
+<p class="zw">如上述几节所述，x86-on-ARM64模拟器除了使用内部每个线程的缓存外，还使用一种名为XTA缓存的外部全局缓存，该缓存由负责实现延迟实时编译的受保护服务XtaCache所管理。这是一个自启动服务，在启动时会打开（或创建）C:\Windows\XtaCache文件夹，并通过恰当的ACL保护该文件夹（仅XtaCache服务和Administrators组成员可以访问该文件夹）。该服务会通过{BEC19D6F-D7B2-41A8-860C-8787BB964F2D}连接端口启动自己的ALPC服务器，随后在退出前会分配ALPC以及延迟实时编译工作线程。</p>
+<p class="zw">ALPC工作线程负责将所有请求调度给ALPC服务器。尤其是，当模拟器（客户端）在WoW64进程的上下文中运行时，需要连接到XtaCache服务，创建一个跟踪x86进程的全新数据结构，并将其与218&nbsp;KB的已映射内存节一起存储在内部列表中，这个内存节会在客户端与XtaCache之间共享（为该节提供支撑的内存在内部被称为跟踪缓冲区，即Trace buffer）。模拟器会使用这个内存节来发送提示信息，借助这些提示信息可以了解哪些x86代码已通过实时编译而成为可执行应用程序，但目前并不包含在任何缓存中，以及了解这些代码所属的模块ID。内存节中存储的信息会由XTA缓存每秒处理一次，或在缓冲区已满的情况下立即处理一次。这取决于列表中有效项的数量，XtaCache可决定是否直接启动延迟实时编译。</p>
+<p class="zw">当新映像被映射至x86进程后，WoW64层会通知模拟器，并由模拟器向正在寻找已存在XTA缓存文件的XtaCache发送一条消息。为找到缓存文件，XtaCache服务首先需要打开并映射可执行映像，然后计算其哈希值。根据可执行映像的路径及其内部二进制数据可生成两个哈希值。这些哈希值非常重要，可避免执行为可执行映像的老版本编译的实时编译代码块。随后会使用如下命名方案生成XTA缓存文件名称：&lt;module name&gt;.&lt;module header hash&gt;.&lt;module path hash&gt;.&lt;multi/uniproc&gt;.&lt;cache file version&gt;.jc。缓存文件包含所有预编译代码块，后者可直接被模拟器执行。因此，如果存在有效的缓存文件，XtaCache会创建一个文件映射节，并将其注入客户端WoW64进程。</p>
+<p class="zw">延迟实时编译器可看作XtaCache的驱动引擎。当该服务决定调用时，会创建并初始化一个代表实时编译x86模块的新版缓存文件。随后延迟实时编译器会调用XTA脱机编译器（xtac.exe），开始进行延迟编译。编译器会在受保护的低特权环境中启动（AppContainer进程），并以低优先级模式运行。编译器唯一的作用是编译即将由模拟器执行的x86代码。新代码块会被添加到老版缓存文件（如果存在的话）所在位置，并存储于新版缓存文件中。</p>
+<p class="zwtsh">实验：查看XTA缓存</p>
+<p class="zwts1">较新版本的Process Monitor（进程监视器）可在ARM64环境中原生运行。我们可以使用Process Monitor来观察为x86进程生成并使用XTA缓存的过程。在本实验中，我们需要一个运行Windows 10的2019年5月更新（1903）或后续版本的ARM64系统。最开始，必须确保本实验即将使用的x86应用程序还未被系统执行过。在本例中，我们将安装一个旧版本的x86版MPC-HC媒体播放器，该播放器可从https://sourceforge.net/ projects/mpc-hc/files/lat-est/download下载。其他任何x86应用程序同样可用在该实验中。</p>
+<p class="zwts1">安装MPC-HC（或其他x86应用程序），在运行该程序前，首先打开Process Monitor并为XtaCache服务的进程名称（XtaCache.exe，该服务通过自己的进程运行，并未使用共享进程）添加一个过滤器。该过滤器的配置情况可参阅下图。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2815.png" style="width: 100%" />
+<p class="zwts1">如果尚未执行该操作，请从File菜单选择Capture Events开始捕获事件。随后启动MPC-HC并尝试着播放一些视频。退出MPC-HC并在Process Monitor中停止事件捕获。此时Process Monitor已经显示了大量事件信息。我们可以点击工具栏上对应的图标来删除与注册表有关的活动（本实验无须关注注册表活动）以便过滤出需要的结果。</p>
+<p class="zwts1">拖动事件列表会发现，XtaCache服务首先会尝试打开MPC-HC缓存文件，但该文件并不存在，因此尝试失败了。这意味着模拟器将要开始自行编译x86映像并将信息定期发送给XtaCache。随后，XtaCache的工作线程会调用延迟实时编译器，进而创建一个新版的Xta缓存文件并调用Xtac编译器，将缓存文件节映射给其本身以及Xtac。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2822.png" style="width: 100%" />
+<p class="zwts1">重新进行该实验就会发现，Process Monitor中出现了不同的事件：缓存文件会被立即映射给MPC-HC WoW64进程。这样模拟器即可直接开始执行，因此执行速度应该会更快。我们也可以试着删除已生成的XTA缓存文件。随后，如果再次启动MPC-HC x86应用程序，XtaCache服务会自动重建缓存文件。</p>
+<p class="zwts1">然而要注意，%SystemRoot%\XtaCache文件夹受到XtaCache服务所拥有的ACL的妥善保护。要访问该文件夹，需要首先以管理员身份打开命令提示符窗口，然后运行下列命令：</p>
+<pre class="代码无行号"><code>takeown /f c:\windows\XtaCache 
+icacls c:\Windows\XtaCache /grant Administrators:F</code></pre>
+<h4 class="bt4 sigil_not_in_toc">实时编译和执行</h4>
+<p class="zw">为了启动客户进程，x86-on-ARM64 CPU模拟器必须解释或实时编译x86代码。解释客户代码意味着需要每次转换并执行一条机器指令，这是一个缓慢的过程，因此模拟器只支持实时编译策略：借此将x86代码动态地编译为ARM64代码，并将结果存储在客户“代码块”中，直到发生下列这些情况：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 检测到非法的操作码、数据或指令断点。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 遇到一条以已经访问过的代码块为目标的分支指令。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 代码块大于预先确定的限制（512字节）。</p>
+<p class="zw">模拟引擎首先会在本地和XTA缓存中检测（由RVA进行索引的）代码块是否已经存在。如果缓存中存在这样的代码块，则模拟器将直接使用调度程序例程来执行，进而构建出ARM64上下文（其中包含主机寄存器值）并将其存储在64位栈中，随后切换至32位栈并为客户x86线程状态做好准备。此外，它还会准备用于运行实时编译后x86代码（其中也包括x86上下文）的ARM64寄存器。请注意，这方面存在一个明确定义的非标准调用约定：调度程序的作用，类似于负责将执行过程从CHPE转移到x86上下文的Pop形式转换的作用。</p>
+<p class="zw">代码块执行完毕后，调度程序还会执行一系列相反的操作：将新的x86上下文保存在32位栈中，切换回64位栈，并还原老的ARM64上下文（包含模拟器状态信息）。当调度程序退出时，模拟器将能准确得知执行被打断时的确切x86虚拟地址，随后即可从这个新的内存地址重新开始进行模拟。与缓存的项类似，模拟器也会检查目标地址是否指向包含CHPE代码的内存页面（可通过全局CHPE位图得知该信息）。如果包含，那么模拟器将会解析目标函数的pop形式转换，将其地址添加到线程的本地缓存中，并直接开始执行。</p>
+<p class="zw">如果上述两个条件之一得到验证，模拟器即可实现与执行原生映像类似的性能，否则将调用编译器来构建原生转换后的代码块。编译过程分为如下三个阶段：</p>
+<p class="zw">1）<strong style="color:#0092dd">解析</strong>阶段，为需要添加到代码块的每个操作码构建指令描述符。</p>
+<p class="zw">2）<strong style="color:#0092dd">优化</strong>阶段，优化指令流。</p>
+<p class="zw">3）<strong style="color:#0092dd">代码生成</strong>阶段，将最终的ARM64机器码写入新的代码块。</p>
+<p class="zw">随后，生成的代码块会被添加到每线程的本地缓存。请注意，模拟器无法将其添加到XTA缓存，这主要是出于安全性和性能方面的考虑。否则攻击者将污染更高特权进程的缓存（进而导致恶意代码有可能在更高特权进程的上下文中执行）。此外，模拟器没有足够的CPU时间，以便在保证应用程序响应能力的前提下生成高度优化的代码（尽管有一个专门的代码优化阶段）。</p>
+<p class="zw">不过，有关已编译x86代码块的信息，已经与承载该x86代码的二进制文件ID信息一起被插入共享的Trace缓冲区所映射的列表中。在Trace缓冲区的帮助下，XTA缓存的延迟实时编译器知道自己需要对模拟器实时编译的x86代码进行编译。因此它可以生成优化的代码块，并将其加入模块的XTA缓存文件中，随后由模拟器直接执行。因此，x86进程只有首次执行时的速度会略慢于其他时候。</p>
+<h4 class="bt4 sigil_not_in_toc">系统调用和异常调度</h4>
+<p class="zw">在x86-on-ARM64 CPU模拟器中，当x86线程执行系统调用时，它会调用模拟器所分配的Syscall页面中的代码，从而引发0x2E异常。每个x86异常都会迫使代码块退出。当从代码块退出时，根据异常的矢量编号，调度程序会通过内部函数调度异常，进而调用标准的WoW64异常处理程序或系统调用调度程序。相关内容已在上文有关AMD64平台上进行x86模拟的章节中讨论过。</p>
+<p class="zwtsh">实验：在ARM64环境中调试WoW64</p>
+<p class="zwts1">较新版本的WinDbg（Windows调试器）可以调试任何模拟器中运行的机器代码。这意味着在ARM64系统中，我们可以调试原生ARM64、ARM Thumb-2以及x86应用程序；而在AMD64系统中，我们只能调试32位和64位的x86程序。调试器还能轻松地在原生64位和32位栈之间切换，借此我们可以同时调试原生（包括WoW64层和模拟器）以及客户端代码（此外，调试器还支持CHPE）。</p>
+<p class="zwts1">在这个实验中，我们将使用ARM64计算机启动x86应用程序，并在ARM64、ARM Thumb-2和x86这三个执行模式之间切换。对于该实验，我们需要安装最新版的调试工具，该工具已包含在WDK或SDK中。安装其中任何一个工具包后，请打开ARM64版本的Windbg（位于开始菜单中）。</p>
+<p class="zwts1">在启动调试会话前，我们应该禁用XtaJit模拟器生成的异常，例如数据未对齐（data misaligned）和页面内I/O错误（in-page I/O error）（这些异常已经被模拟器本身处理过了）。为此请在Debug菜单中点击Event Filters，随后从列表中选择Data Misaligned事件并选中Execution组所对应的Ignore选项。请针对In-page I/O错误重复执行该操作。最后我们的配置应该类似下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2829.png" style="width: 100%" />
+<p class="zwts1">点击Close，并在调试器主界面上选中File菜单下的Open Executable。接着选择一个位于%SystemRoot%\SysWOW64文件夹下的32位x86可执行文件（本例中我们将使用notepad.exe，但其他任意x86应用程序都可以使用）。另外请通过View菜单打开Disassembly窗口。如果符号已经正确配置（有关配置符号的方法请参阅https://docs. microsoft.com/windows-hardware/drivers/debugger/symbol-path），随后应该能看到第一个原生Ntdll断点，我们可以使用k命令显示栈信息加以确认：</p>
+<pre class="代码无行号"><code>0:000&gt; k 
+# Child-SP          RetAddr           Call Site 
+00 00000000`001eec70 00007ffb`bd47de00 ntdll!LdrpDoDebuggerBreak+0x2c 
+01 00000000`001eec90 00007ffb`bd47133c ntdll!LdrpInitializeProcess+0x1da8 
+02 00000000`001ef580 00007ffb`bd428180 ntdll!_LdrpInitialize+0x491ac 
+03 00000000`001ef660 00007ffb`bd428134 ntdll!LdrpInitialize+0x38 
+04 00000000`001ef680 00000000`00000000 ntdll!LdrInitializeThunk+0x14 </code></pre>
+<p class="zwts1">此时模拟器尚未加载：NT内核已将原生和CHPE版Ntdll映射至目标二进制文件，而WoW64核心二进制文件已经在断点之前被原生Ntdll通过LdrpLoadWow64函数加载。我们可以（使用lm命令）枚举当前已加载的模块，并通过.f+命令移动到栈的下一个帧，借此确认这一点。在Disassembly窗口中，应当能看到LdrpLoadWow64例程的调用：</p>
+<pre class="代码无行号"><code>00007ffb`bd47dde4 97fed31b bl        ntdll!LdrpLoadWow64 (00007ffb`bd432a50) </code></pre>
+<p class="zwts1">随后使用g命令（或F5键）恢复执行。我们应该能看到有多个模块被载入进程地址空间，并且这一次会在x86上下文中引发另一个断点。如果使用k命令再次显示栈信息，应该可以注意到会显示一个新列。此外调试器还会在自己的提示符中添加“x86”的字样：</p>
+<pre class="代码无行号"><code>0:000:x86&gt; k 
+ #   Arch ChildEBP RetAddr 
+00    x86 00acf7b8 77006fb8 ntdll_76ec0000!LdrpDoDebuggerBreak+0x2b 
+01   CHPE 00acf7c0 77006fb8 ntdll_76ec0000!#LdrpDoDebuggerBreak$push_thunk+0x48
+02   CHPE 00acf820 76f44054 ntdll_76ec0000!#LdrpInitializeProcess+0x20ec 
+03   CHPE 00acfad0 76f43e9c ntdll_76ec0000!#_LdrpInitialize+0x1a4 
+04   CHPE 00acfb60 76f43e34 ntdll_76ec0000!#LdrpInitialize+0x3c 
+05   CHPE 00acfb80 76ffc3cc ntdll_76ec0000!LdrInitializeThunk+0x14 </code></pre>
+<p class="zwts1">如果将新老两个栈进行比较就会发现，栈地址发生了巨大的变化（因为进程现在正在使用32位栈执行）。另外请注意，某些函数前面显示了#符号，WinDbg使用该符号代表包含CHPE代码的函数。至此，我们可以像常规x86操作系统中那样以步进的方式执行x86代码。模拟器会负责模拟并隐藏所有细节。若要观察模拟器的运行方式，我们需要使用.effmach命令转移至64位上下文。该命令可接收不同的参数，“x86”代表32位x86上下文，“arm64”或“amd64”（取决于目标平台）代表原生64位上下文，“arm”代表32位ARM Thumb2上下文，“CHPE”代表32位CHPE上下文。本例中可使用“arm64”参数切换至64位栈：</p>
+<pre class="代码无行号"><code>0:000:x86&gt; .effmach arm64 
+Effective machine: ARM 64-bit (AArch64) (arm64) 
+0:000&gt; k 
+ # Child-SP         RetAddr            Call Site 
+00 00000000`00a8df30 00007ffb`bd3572a8 wow64!Wow64pNotifyDebugger+0x18f54 
+01 00000000`00a8df60 00007ffb`bd3724a4 wow64!Wow64pDispatchException+0x108 
+02 00000000`00a8e2e0 00000000`76e1e9dc wow64!Wow64RaiseException+0x84 
+03 00000000`00a8e400 00000000`76e0ebd8 xtajit!BTCpuSuspendLocalThread+0x24c 
+04 00000000`00a8e4c0 00000000`76de04c8 xtajit!BTCpuResetFloatingPoint+0x4828 
+05 00000000`00a8e530 00000000`76dd4bf8 xtajit!BTCpuUseChpeFile+0x9088 
+06 00000000`00a8e640 00007ffb`bd3552c4 xtajit!BTCpuSimulate+0x98 
+07 00000000`00a8e6b0 00007ffb`bd353788 wow64!RunCpuSimulation+0x14 
+08 00000000`00a8e6c0 00007ffb`bd47de38 wow64!Wow64LdrpInitialize+0x138 
+09 00000000`00a8e980 00007ffb`bd47133c ntdll!LdrpInitializeProcess+0x1de0 
+0a 00000000`00a8f270 00007ffb`bd428180 ntdll!_LdrpInitialize+0x491ac 
+0b 00000000`00a8f350 00007ffb`bd428134 ntdll!LdrpInitialize+0x38 
+0c 00000000`00a8f370 00000000`00000000 ntdll!LdrInitializeThunk+0x14 </code></pre>
+<p class="zwts1">通过这两个栈可以看到，模拟器原本在执行CHPE代码，随后调用了一个push形式转换借此重启动对LdrpDoDebuggerBreak这个x86函数的模拟，进而借助Wow64pNotifyDebugger例程向调试器告知一个异常（通过原生Wow64RaiseException管理）。通过使用Windbg的.effmach命令，即可调试包括原生、CHPE以及x86代码在内的不同上下文。借助g @$exentry命令，即可移动到Notepad的x86入口点并继续运行x86代码或模拟器本身的调试会话。大家也可以在其他环境中重复进行该实验，例如对SysArm32下的应用进行调试。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"14224151-eb07-4e67-90f1-8b8528879ccb","id":"49deff79-c2e6-4e94-9846-33994b12c105"}</p>

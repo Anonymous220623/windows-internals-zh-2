@@ -1,0 +1,17 @@
+<h3 class="bt3" id="sigil_toc_id_351">12.1.23　安全模式下加载的驱动程序</h3>
+<p class="zw">Windows如何知道在标准安全模式和带网络的安全模式下需要加载哪些设备驱动程序和服务呢？答案位于HKLM\SYSTEM\ CurrentControlSet\Control\SafeBoot注册表键中。该键包含Minimal和Network子键，每个子键下还包含多个子键，其中指定了设备驱动程序、服务或驱动程序组的名称。例如，BasicDisplay.sys子键指定了启动配置中需要包含的基础显示设备驱动程序。该驱动程序为任何兼容PC的显示适配器提供了最基础的图形化服务。系统会使用该驱动程序作为安全模式下的显示驱动程序，以替代虽然可以驱动适配器的高级硬件功能，但可能存在问题而导致系统无法启动的“高级”驱动程序。SafeBoot键下的每个子键都用一个默认值描述了子键对应的内容，例如，BasicDisplay.sys子键的默认值就是Driver（驱动程序）。</p>
+<p class="zw">Boot文件系统子键的默认值为Driver Group（驱动程序组）。当开发者设计设备驱动程序的安装脚本（.inf文件）时，可以指定设备驱动程序属于某个驱动程序组。系统定义的驱动程序组包含在HKLM\SYSTEM\ CurrentControlSet\Control\ServiceGroupOrder键下的List值中。开发者通过指定某个驱动程序作为一个驱动程序组的成员，即可向Windows表明该驱动程序需要在系统启动过程的哪个阶段启动。ServiceGroupOrder键的主要用途是定义驱动程序组的加载顺序，某些类型的驱动程序必须先于或后于其他类型的驱动程序加载。驱动程序配置注册表键下的Group值可将该驱动程序关联给某个组。</p>
+<p class="zw">驱动程序和服务的配置键位于HKLM\SYSTEM\CurrentControlSet\Services之下。查看该键会发现BasicDisplay 键是基础显示设备驱动程序所对应的键，从注册表中可以看到，该驱动程序是Video组的成员。Windows访问系统驱动器所需的任何文件系统驱动程序，只要被放置在Boot文件系统组，就会被自动加载。其他文件系统驱动程序则属于File System组，标准安全模式和带网络的安全模式也会加载这个组的驱动程序。</p>
+<p class="zw">在启动到安全模式后，启动加载器（Winload）会将一个相关开关作为命令行参数传递给内核（Ntoskrnl.exe），此外，还会传递我们在BCD中为要启动的系统指定的其他任何开关。当启动到任何一种安全模式时，Winload会将BCD的safeboot选项设置为描述所选择安全模式类型的值。对于标准安全模式，Winload&nbsp;会将其设置为&nbsp;minimal，带网络的安全模式则会设置为&nbsp;network，带命令提示符的安全模式会设置为&nbsp;minimal&nbsp;并设置alternateshell，目录服务还原模式则会设置为dsrepair。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　关于安全模式在启动过程中排除的驱动程序，存在一个例外。Winload（而非内核）会在启动时加载注册表键中Start值为0的任何驱动程序。Winload并不检查注册表中的SafeBoot键，因为它会假设Start值为0的任何驱动程序都是系统成功启动所必需的。由于Winload不通过检查SafeBoot注册表键来确定要加载的驱动程序，所以Winload会加载所有启动时运行的驱动程序（随后将由Ntoskrnl启动它们）。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">Windows内核会在启动过程的阶段1（Phase1InitializationDiscard，详见上文“内核初始化阶段1”一节）结束时扫描启动参数，以寻找安全模式开关，并根据结果为内部变量InitSafeBootMode设置对应的值。在InitSafeBoot函数中，内核会将InitSafeBootMode值写入注册表HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Option\OptionValue中，这样用户模式组件（如SCM）就可以确定系统所处的启动模式。此外，如果系统以带命令提示符的安全模式启动，内核会将HKLM\SYSTEM\CurrentControlSet\Control\ SafeBoot\ Option\UseAlternateShell值设置为1。内核会将Winload传递给自己的参数并记录到HKLM\ SYSTEM\ CurrentControlSet\Control\SystemStartOptions值中。</p>
+<p class="zw">当I/O管理器内核子系统加载HKLM\SYSTEM\CurrentControlSet\Services指定的设备驱动程序时，I/O管理器会执行IopLoadDriver函数。当即插即用管理器检测到新设备并要动态加载该设备的驱动程序时，即插即用管理器会执行PipCallDriverAddDevice函数。这些函数都会先调用IopSafebootDriverLoad函数，随后才加载目标驱动程序。IopSafebootDriverLoad可以检查InitSafeBootMode的值，并决定是否应该加载该驱动程序。举例来说，如果系统以标准安全模式启动，IopSafebootDriverLoad会查看该驱动程序是否属于Minimal子键下指定的某个组。如果IopSafebootDriverLoad发现这里列出了该驱动程序的组，就会告知调用方该驱动程序可以加载。否则，IopSafebootDriverLoad会在Minimal子键下查找该驱动程序的名称。如果名称被列为子键，那么该驱动程序就可以加载。如果IopSafebootDriverLoad找不到驱动程序组或驱动程序名称子键，则该驱动程序将不被加载。如果系统以带网络的安全模式启动，那么IopSafebootDriverLoad还会针对Network子键执行这样的查找。如果系统未以安全模式启动，则IopSafebootDriverLoad会让所有的驱动程序正常加载。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":22,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"0fee7df1-6d12-4fc4-8271-feb50002d5f8"}</p>

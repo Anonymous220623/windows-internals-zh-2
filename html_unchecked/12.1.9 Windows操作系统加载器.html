@@ -1,0 +1,36 @@
+<h3 class="bt3" id="sigil_toc_id_337">12.1.9　Windows操作系统加载器</h3>
+<p class="zw">Windows操作系统加载器（Winload）是启动管理器所运行的启动应用程序，其用途是加载并正确执行Windows内核。该过程包含很多重要任务。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 为内核创建执行环境。这包括初始化并使用内核的页表，以及创建内存映射。EFI操作系统加载器还会设置并初始化内核的栈、共享用户页、GDT、IDT、TSS以及段选择器。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在磁盘栈初始化之前，将需要执行或访问的所有模块载入内存。其中也包括内核和HAL，因为操作系统加载器一旦交出控制权，就需要由内核与HAL来处理基础服务的早期初始化工作。启动过程中不可缺少的驱动程序和注册表系统配置单元需要载入内存。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 确定是否需要执行Hyper-V和安全内核（VSM），如果需要，则会正确加载并启动它们。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 使用新增的高分辨率启动图形库（BGFX，取代了古老的Bootvid.dll驱动程序）绘制第一个背景动画。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 对于支持Intel TXT的系统，协调安全运行功能的启动序列（有关测量启动、安全运行以及Intel TXT功能的详细介绍请参阅上文）。最初这项任务是在虚拟机监控程序加载器中实现的，但从Windows 10的10月更新（RS5）开始，已被转交给了Winload执行。</p>
+<p class="zw">Windows加载器在每个Windows版本中经历了多次改进和完善。OslMain是主要的加载器函数（被启动管理器调用），它可以（重新）初始化启动库并调用内部的OslpMain。截至撰写这部分内容，启动库支持以下两种执行上下文。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 固件上下文，意味着分页被禁用。实际上分页并未被禁用，而是由执行物理地址一对一映射的固件提供，并且仅固件服务会被用于内存管理。Windows会在启动管理器中使用这种执行上下文。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 应用程序上下文，意味着分页已启用，且由操作系统提供。Windows加载器使用了这个上下文。</p>
+<p class="zw">在由操作系统加载器接管执行过程前，启动管理器会创建并初始化供Windows内核使用的四级x64页表结构，并且只创建自映射和标识映射项。OslMain会在启动前切换至应用程序上下文。OslPrepareTarget例程会从系统根目录的bootstat.dat文件中读取最后一次启动时的启动/关机状态。</p>
+<p class="zw">如果最后一次启动失败了两次以上，则会返回到启动管理器并启动恢复环境，否则会直接读取SYSTEM注册表配置单元的\Windows\System32\Config\System，借此判断为了完成启动需要加载哪些设备驱动程序（配置单元是一种包含注册表子树的文件，有关注册表的详细介绍请参阅第10章）。随后会初始化BGFX显示库（绘制第一个背景图像）并在需要时显示高级选项菜单（详见上文“启动菜单”一节）。NT内核启动过程中所需的重要的数据结构之一Loader Block，会在此时进行分配并填充基本信息，例如，系统配置单元的基址和大小、一个随机熵值（如果可能，则将从TPM查询而来）等。</p>
+<p class="zw">OslInitializeLoaderBlock包含的代码可以查询系统的ACPI BIOS以检索基本设备和配置信息（包括系统CMOS中存储的事件时间和日期信息）。这些信息会被收集到内部数据结构中，并在启动完成后存储在HKLM\HARDWARE\DESCRIPTION注册表键中。这是一个遗留的注册表键，它的存在只是为了保证兼容性。如今，有关硬件的这些信息会存储在即插即用管理器的数据库中。</p>
+<p class="zw">随后，Winload开始从启动卷加载进行内核初始化所必需的文件。启动卷是被启动的系统的系统目录（通常是\Windows）所在的卷。Winload将执行下列步骤。</p>
+<p class="zw">1）判断是否需要加载虚拟机监控程序或安全内核（通过BCD的hypervisorlaunchtype选项和VSM策略决定）。如果需要，则会启动虚拟机监控程序设置过程的阶段0。阶段0会将HV加载器模块（Hvloader.dll）预加载到RAM内存中并执行HvlLoadHypervisor初始化例程。后者将虚拟机监控程序映像（Hvix64.exe、Hvax64.exe或Hvaa64.exe，取决于架构）及其所有依赖项加载并映射到内存。</p>
+<p class="zw">2）枚举所有可被固件枚举的磁盘，并将列表附加给加载器参数块（Loader Parameter Block）。此外，如果在配置数据中进行了指定，还会加载聚合初始计算机配置的配置单元（Imc.hiv）并将其附加给加载器块。</p>
+<p class="zw">3）初始化内核代码完整性模块（CI.dll）并构建CI加载器块。该模块随后会在NT内核与安全内核间共享。</p>
+<p class="zw">4）处理任何未决的固件更新（Windows 10支持通过Windows Update分发固件更新）。</p>
+<p class="zw">5）加载相应的内核和HAL映像（默认为Ntoskrnl.exe和Hal.dll）。如果Winload加载这两个文件失败，则将会显示错误信息。在开始加载这两个模块的依赖项之前，Winload会通过数字证书验证其内容并载入API Set Schema系统文件。这样即可处理API Set的导入了。</p>
+<p class="zw">6）初始化调试器，加载正确的调试器传输。</p>
+<p class="zw">7）如果需要，则加载CPU微码更新模块（Mcupdate.dll）。</p>
+<p class="zw">8）OslpLoadAllModules最后会加载NT内核和HAL依赖的模块：ELAM驱动程序、核心扩展、TPM驱动程序，以及其他需要在启动时运行的驱动程序（会按照顺序加载，文件系统驱动程序会优先加载）。启动设备驱动程序是指启动系统所必需的驱动程序。这些驱动程序的配置存储在SYSTEM注册表配置单元中。每个设备驱动程序都在HKLM\SYSTEM\CurrentControlSet\Services之下有一个注册表子键。例如，Services有一个名为rdyboost、适用于ReadyBoost驱动程序的子键，如图12-8所示（有关Services注册表项的详细介绍，请参阅第10章中的“Windows服务”一节）。所有启动驱动程序的启动值均为SERVICE_BOOT_START (0)。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx932.png" style="width: 100%" />
+<p class="图题">图12-8　ReadyBoost驱动程序的服务设置</p>
+<p class="zw">9）到这一阶段，为了正确分配物理内存，Winload依然使用EFI固件提供的服务（AllocatePages启动服务例程）。虚拟地址转换工作此时由运行在应用程序执行上下文中的启动库负责管理。</p>
+<p class="zw">10）读入用于实现国际化的NLS（国家语言系统）文件。默认情况下，这些文件为l_intl.nls、C_1252.nls和C_437.nls。</p>
+<p class="zw">11）如果评估后的策略需要启动VSM，则会执行安全内核设置工作的阶段0，借此解析VSM加载器支持例程（由Hvloader.dll模块导出）的位置，并加载安全内核模块（Securekernel.exe）及其所有依赖项。</p>
+<p class="zw">12）对于S版本的Windows，还将判断Windows应用程序的最低用户模式可配置代码完整性签名的级别。</p>
+<p class="zw">13）调用OslArchpKernelSetupPhase0例程，执行内核转换所需的内存步骤，例如分配GDT、IDT和TSS，映射HAL虚拟地址空间，分配内核栈、共享用户页以及USB传统交接（legacy handoff）。Winload会使用UEFI的GetMemoryMap设施来获取完整的系统物理内存映射，并将属于EFI运行时代码/数据的每个物理页映射至虚拟内存空间。随后完整的物理映射将被传递给操作系统内核。</p>
+<p class="zw">14）执行VSM设置过程的阶段1，将所需的全部ACPI表从VTL0复制到VTL1内存（该步骤还会创建VTL1页表）。</p>
+<p class="zw">15）虚拟内存转换模块已完全正常运行，因此，Winload将调用ExitBootServices这个UEFI函数来摆脱固件启动服务，并使用UEFI的运行时函数SetVirtualAddressMap将剩余的运行时UEFI服务重映射至所创建的虚拟地址空间。</p>
+<p class="zw">16）如果需要，将启动虚拟机监控程序和安全内核（严格按照该顺序启动）。如果成功，执行控制权将返回给Hyper-V根分区上下文中的Winload（有关Hyper-V的详细信息请参阅第9章）。</p>
+<p class="zw">17）通过OslArchTransferToKernel例程将执行权转交给内核。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":8,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"0138bb42-69b9-40a5-b873-a658f48d4ba0"}</p>

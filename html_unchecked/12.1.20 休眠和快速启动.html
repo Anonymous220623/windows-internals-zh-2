@@ -1,0 +1,30 @@
+<h3 class="bt3" id="sigil_toc_id_348">12.1.20　休眠和快速启动</h3>
+<p class="zw">为了加快系统启动速度，Windows 8引入了一项名为快速启动（fast startup）的新功能（也叫混合启动）。在之前版本的Windows中，如果支持S4系统电源状态（有关电源管理器的详细信息请参阅卷&nbsp;1&nbsp;第&nbsp;6&nbsp;章），Windows允许用户将系统置于休眠（hibernation）模式。为了正确理解快速启动功能，首先需要明确休眠的全过程。</p>
+<p class="zw">当用户或应用程序调用SetSuspendState API时，电源管理器会收到一个工作项。该工作项包含内核初始化电源状态转换所需的全部信息。电源管理器会将未完成的休眠请求通知预取器（prefetcher），并等待其所有未决I/O全部完成。随后它会调用NtSetSystemPowerState这个内核API。</p>
+<p class="zw">NtSetSystemPowerState是对整个休眠过程进行协调的关键函数。该例程可以检查调用方的令牌中是否包含关机特权，与即插即用管理器、注册表以及电源管理器进行同步（这样即可避免同时执行的其他事务可能造成的干扰），并循环处理所有已加载的驱动程序，向它们发出IRP_MN_QUERY_POWER这个IRP。通过这种方式，电源管理器即可告知每个驱动程序电源操作已启动，因此，启动程序对应的设备不能再启动任何I/O操作，也不能执行可能会阻止休眠的其他任何操作。如果上述任何一个请求失败（也许驱动程序正在执行重要的I/O），那么休眠过程都将被中止。</p>
+<p class="zw">电源管理器使用内部例程修改系统启动配置数据（BCD），借此启用“Windows恢复”这个启动应用程序。顾名思义，该应用程序负责恢复休眠的系统（更多细节可参阅上文“Windows启动管理器”一节）。电源管理器将会：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 打开用于启动系统的BCD对象，读取相关的Windows恢复应用程序GUID（存储在一个特殊的未命名的BCD元素中，其值为0x23000003）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 搜索BCD中存储的恢复对象，打开对象并检查其描述符。随后写入BCD的设备和路径元素，将其链接至启动盘上的\Windows\System32\winresume.efi文件，并通过主系统BCD对象填充启动设置（如启动调试器选项）。最后将休眠文件的路径和设备描述符添加到BCD的filepath和filedevice元素中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 更新根启动管理器BCD对象：将所发现的Windows恢复启动应用程序的GUID写入BCD的resumeobject元素，将resume元素设置为1。如果休眠功能用于快速启动功能，还会将hiberboot元素设置为1。</p>
+<p class="zw">随后，电源管理器会将BCD数据刷新到磁盘，计算所有需要写入休眠文件的物理内存范围（该过程极为复杂，本书无法详细介绍），并向每个驱动程序发送一个新的IRP（IRP_MN_SET_POWER函数）。这一次，驱动程序必须将自己的设备置于睡眠状态，已经没有机会让请求失败并停止休眠过程了。系统现在已经准备好可以休眠了，电源管理器将启动一个“睡眠者”线程，其唯一的作用是让计算机断电。随后它将等待另一个事件，只有当恢复操作成功完成（并且系统被用户重新启动）后该事件才会发出信号。</p>
+<p class="zw">睡眠者线程通过DPC例程让所有CPU停止，但运行睡眠者线程的CPU除外，该CPU将负责捕获系统时间，禁用中断，并保存CPU状态。最后睡眠者线程会调用电源状态句柄例程（在HAL中实现），该例程将执行让整个系统处于睡眠状态所需的ACPI机器代码，并调用例程将所有物理内存页写入硬盘。睡眠者线程会使用崩溃转储存储驱动程序发出所需的底层磁盘I/O，借此将数据写入休眠文件。</p>
+<p class="zw">Windows启动管理器在自己启动过程的早期阶段，可识别恢复BCD元素（存储在启动管理器BCD描述符中），打开Windows恢复启动应用程序BCD对象，读取保存的休眠数据。最后，它会将执行转交给Windows恢复启动应用程序（Winresume.efi）。Winresume的入口例程HbMain将重新初始化启动库，并对休眠文件执行不同的检查。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 验证该文件是否是被相同架构的处理器写入的。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 检查是否存在有效且大小正确的页面文件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 检查固件是否上报了某些硬件配置变化（通过FADT和FACS这两个ACPI表）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 检查休眠文件的完整性。</p>
+<p class="zw">如果上述任何一项检查失败，那么Winresume将终止执行并将控制权转交给启动管理器，后者将丢弃休眠文件并重新进行标准冷启动。相反，如果上述检查都成功通过，那么Winresume将使用UEFI启动库读取休眠文件并还原所有保存的物理页内容。随后它将构建所需的页表和内存数据结构，将必要信息复制到操作系统的上下文，最终将执行权转交给Windows内核，再还原最初的CPU上下文。Windows内核代码将从最初让系统休眠的电源管理器睡眠者线程重新启动。电源管理器会重新启用中断，并解冻其他所有系统CPU。随后它会更新系统时间（从CMOS读取），重新设置（Rebase）所有系统计时器和监视器（Watchdog），并向每个系统驱动程序发送另一个IRP，即IRP_MN_SET_POWER，要求驱动程序重启自己的设备。最后还将重启预取器，并将启动加载器日志发送给预取器以便进一步处理。系统现已正常运行，系统电源状态变为S0（完全开启）。</p>
+<p class="zw">快速启动功能也是通过休眠实现的。当应用程序将EWX_HYBRID_SHUTDOWN标记传递给ExitWindowsEx API，或当用户点击开始菜单中的关机按钮时，如果系统支持S4（休眠）电源状态并启用了休眠文件，那么将开始进行混合关机。当Csrss关闭了所有交互式会话进程、会话0服务以及COM服务器时（真正的关机过程详见“关机”一节），Winlogon会检测到关机请求带有Hybrid标记，此时不会唤醒Winint的关机代码，而是会执行另一项操作。新增的Winlogon状态可使用NtPowerInformation这个系统API关闭显示器，然后告诉LogonUI存在未完成的混合关机操作，并最终调用NtInitializePowerAction API让系统开始休眠。随后的过程与上述休眠过程完全相同。</p>
+<p class="zwtsh">实验：理解混合关机</p>
+<p class="zwts1">我们可以在系统关机后通过外部操作系统手动挂载BCD存储，借此观察混合关机的效果。首先请确保系统启用了快速启动功能。为此请通过开始菜单打开“<strong style="color:#0092dd">控制面板</strong>”，选择“<strong style="color:#0092dd">系统和安全性</strong>”，再打开“<strong style="color:#0092dd">电源</strong>”选项。点击“<strong style="color:#0092dd">电源</strong>”选项窗口左上角的“<strong style="color:#0092dd">选择电源按钮的功能</strong>”链接，应该可以看到类似下图所示的界面。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1376.png" style="width: 100%" />
+<p class="zwts1">如上图所示，请选中“<strong style="color:#0092dd">启用快速启动</strong>”选项。否则系统将执行标准关机。然后即可使用开始菜单中的关机按钮以关闭计算机。在计算机关闭前，请插入包含外部操作系统（例如无须安装即可运行的“Live”Linux）的光盘或U盘。这个实验不能使用Windows安装程序（或其他任何基于WinRE的环境），因为安装过程会在挂载系统卷之前清除休眠数据。</p>
+<p class="zwts1">关闭计算机后，通过外部光盘或U盘启动计算机。不同厂商的计算机的具体操作步骤可能不同，并且通常需要访问BIOS界面。如需了解如何访问BIOS并通过外部驱</p>
+<p class="zwts1">动器引导，请查阅计算机用户手册（例如在Surface Pro和Surface Book笔记本上通常按下音量增大键不松手，随后按下并松开电源键即可进入BIOS配置界面）。当新操作系统启动时，使用分区工具（具体工具取决于操作系统类型）挂载主UEFI系统分区。具体方法不再详述。系统分区成功挂载后，可将位于\EFI\Microsoft\Boot\BCD的系统启动配置数据文件复制到外部驱动器（或用于启动计算机的U盘）中，随后即可重启计算机并等待Windows从睡眠状态恢复了。</p>
+<p class="zwts1">计算机启动后运行注册表编辑器并进入根注册表键HKEY_LOCAL_MACHINE。随后从“<strong style="color:#0092dd">文件</strong>”菜单中选择“<strong style="color:#0092dd">加载配置单元</strong>”。找到之前保存的BCD文件，选择“<strong style="color:#0092dd">打开</strong>”，为新加载的配置单元分配一个BCD键名称。然后即可查找主启动管理器BCD对象。在所有的Windows系统中，这个根BCD对象的GUID都是{9DEA862C-5CDD- 4E70-ACC1-F32B344D4795}。打开相应的键及其Elements子键。如果系统之前曾正确地使用混合关机的方式关闭，此时将能看到BCD的resume和hiberboot元素（对应的键名称分别为26000005和26000025，详见表12-2），它们的Element注册值则会设置为1。</p>
+<p class="zwts1">为了正确找到与当前Windows安装所对应的BCD元素，可使用displayorder元素（键名称为24000001），它会列出所有已安装操作系统的启动项。Element注册表值中有一个GUID列表，其中列出了描述所有已安装操作系统加载器的BCD对象。请检查描述Windows恢复应用程序的BCD对象，读取BCD的resumeobject元素对应的GUID值（对应于23000006键）。该具备GUID的BCD对象在filepath元素中列出了休眠文件的路径，该元素对应于名为22000002的键。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1384.png" style="width: 100%" />
+
+<p class="epubit-contents-id" style="display: none">{"index":19,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"664dba5e-598f-480d-924c-82b3c261b134"}</p>

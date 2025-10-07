@@ -1,0 +1,28 @@
+<h3 class="bt3" id="sigil_toc_id_91">9.4.1　虚拟中断</h3>
+<p class="zw">当虚拟机监控程序配置底层虚拟分区时，在CPU的物理APIC（Advanced Programmable Interrupt Controller，高级可编程中断控制器）引发一个外部中断后，它都要求物理处理器产生一个VMEXIT。硬件的虚拟机扩展允许虚拟机监控程序向客户机分区注入虚拟中断（详见Intel、AMD以及ARM的用户手册）。在这两个因素的作用下，虚拟机监控程序实现了综合中断控制器（SynIC）的概念。SynIC可以管理两种中断。虚拟中断是指传递给客户机分区虚拟APIC的中断，虚拟中断可以表示并与由真实硬件生成的物理硬件中断相关联。此外，虚拟中断也可以表示综合中断，这种中断由虚拟机监控程序为响应某些类型的事件生成。SynIC可将物理中断映射至虚拟中断。VTL中所运行的每个虚拟处理器都会有一个相关联的SynIC。截至撰写这部分内容，虚拟机监控程序在设计上已经可以支持16种不同的综合中断向量（但目前只用到了其中的两种）。</p>
+<p class="zw">当系统启动时（NT内核初始化的阶段1），ACPI驱动程序会借助HAL提供的服务将每个中断映射给相应的向量。NT HAL已经得到启发，知道自己是否运行在VSM下。这种情况下，它调用虚拟机监控程序将每个物理中断映射给自己的VTL，甚至安全内核也会这样做。不过截至撰写这部分内容，安全内核还不具备相关的物理中断（这种情况以后可能发生变化，虚拟机监控程序已经可以支持这样的功能）。目前，安全内核会要求虚拟机监控程序只接收下列虚拟中断：安全计时器、虚拟中断通知辅助（Virtual Interrupt Notification Assist，VINA）以及安全拦截。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　必须了解这样一种情况：在管理只属于外部类型的中断时，虚拟机监控程序会要求底层硬件产生一个VMEXIT。异常依然会在执行处理器的同一个VTL中进行管理（不会产生VMEXIT）。如果有指令导致异常，依然需要由当前VTL下的结构化异常处理（SEH）代码进行管理。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">为了理解这三种虚拟中断，首先必须看看虚拟机监控程序是如何管理中断的。</p>
+<p class="zw">在虚拟机监控程序中，每个VTL在设计上都能安全地接收与自己的VTL相关设备发出的中断。这样即可获得一个不会被低安全性的VTL干扰的安全计时器设施，并确保在较高VTL下执行代码时防止中断发给较低的VTL。此外，VTL应当向其他处理器发出IPI中断。这种设计产生了下列几种情况。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在特定的VTL下运行时，接收以当前VTL为目标的中断会导致进行标准的中断处理机制（由虚拟处理器的虚拟APIC控制器决定）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果收到以更高的VTL为目标的中断，并且更高的VTL的IRQL值允许提交中断，那么接收这样的中断会导致切换至更高的VTL（也就是该中断原本的目标VTL）。如果更高的VTL的IRQL值不允许接收中断，那么将不切换当前的VTL，直接将该中断加入队列。这种行为使得较高的VTL可以在返回较低的VTL时选择性地屏蔽中断。如果较高的VTL正在运行中断服务例程并且需要返回较低的VTL以协助处理中断，这样的设计就会比较有用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果收到的中断以较低的VTL为目标（低于虚拟处理器当前执行的VTL），那么中断会被放入队列，等待将来交付给较低的VTL。以较低的VTL为目标的中断永远不会抢占当前的VTL的执行。相反，只有在虚拟处理器下一次转换到目标VTL时，这样的中断才会出现。</p>
+<p class="zw">防止向较低的VTL发出中断，并不总是一种好的解决方案。在很多情况下，这可能导致常规操作系统的执行速度减慢（尤其是在一些关键任务或游戏环境中）。为了更好地应对这些情况，系统引入了VINA。作为常规事件调度循环的一部分，虚拟机监控程序会检查是否有排队等待传递到较低的VTL的中断。如果有，虚拟机监控程序就会向当前执行的VTL注入一个VINA中断。安全内核也在自己的虚拟IDT中为VINA向量注册一个处理程序。该处理程序（ShvlVinaHandler函数）可向VTL 0执行常规调用（NORMALKERNEL_ VINA，常规调用和安全调用详见下文）。该调用会迫使虚拟机监控程序切换至常规内核（VTL 0）。一旦VTL被切换，所有排队的中断就会被正确调度。常规内核会通过发出一个SECUREKERNEL_RESUMETHREAD安全调用重新进入VTL 1。</p>
+<h4 class="bt4 sigil_not_in_toc">安全IRQL</h4>
+<p class="zw">VINA处理程序并不总在VTL 1下执行。与NT内核类似，这也取决于代码实际执行时所在的IRQL。当前执行代码的IRQL会屏蔽所有小于或等于自己的IRQL所关联的中断。中断向量与IRQL之间的映射由虚拟APIC的任务优先级寄存器（Task Priority Register，TPR）维护，这一点与真实的物理APIC无异（详见Intel架构手册）。如图9-32所示，相比常规内核，安全内核可支持不同级别的IRQL。这些IRQL就叫安全IRQL。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2195.png" style="width: 100%" />
+<p class="图题">图9-32　安全内核中断请求级别（IRQL）</p>
+<p class="zw">前三个安全IRQL由安全内核管理，具体方法与常规世界中的类似。常规APC和DPC（以VTL 0为目标）依然无法通过虚拟机监控程序抢占VTL 1中执行的代码，但VINA中断却可以传送给安全内核（操作系统通过写入目标处理器的APIC任务优先级寄存器来管理这三个软件中断，该操作会导致向虚拟机监控程序发出VMEXIT。有关APIC TPR的详情请参阅Intel、AMD或ARM手册）。这意味着，如果常规模式DPC被选择以一个正在执行VTL 1代码的处理器为目标（处于可兼容的安全IRQL级别下，该级别至少应该为Dispatch），VINA中断将被传递出去，并且会将执行上下文切换至VTL 0。实际上，这会导致在常规世界中执行DPC，并会在短时间内将常规内核的IRQL提升至Dispatch级别。DPC队列排空后，常规内核的IRQL也将降低。在位于VslpEnterIumSecureMode例程中的VSM通信循环代码帮助下，执行流将返回至安全内核。该循环可以处理来自安全内核的每个常规调用。</p>
+<p class="zw">安全内核会将前三个安全IRQL映射至常规世界中的相同IRQL。当从常规世界的特定IRQL（依然小于或等于Dispatch）下执行的代码发出安全调用后，安全内核会将自己的安全IRQL切换至相同的级别。反之亦然，即当安全内核执行常规调用进入NT内核时，也会将常规内核的IRQL切换至与自己相同的级别。但这只适用于前三个级别。</p>
+<p class="zw">当NT内核以高于DPC级别的IRQL进入安全世界时，就会使用正常提升后的级别。在这种情况下，安全内核会将所有高于DPC的常规世界IRQL映射至正常提升后的安全级别。该级别下执行的安全内核代码无法为常规内核中任何类型的软件IRQL接收任何VINA（但依然可以为硬件中断接收VINA）。每次NT内核以高于DPC的常规IRQL进入安全世界时，安全内核都会将自己的安全IRQL提升至常规提升级别。</p>
+<p class="zw">等于或高于VINA的安全IRQL永远不会被常规世界运行的代码抢占。这也解释了安全内核为什么可以支持安全的、不可抢占的计时器和安全拦截这样的概念。安全计时器由虚拟机监控程序的时钟中断服务例程（ISR）生成。该ISR在将综合时钟中断注入NT内核前，会检查是否有一个或多个安全计时器已经过期。如果有，则它会向VTL 1注入一个综合安全计时器中断，随后继续将时钟周期中断转发给常规VTL。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"235e6070-2914-47dd-bdb6-a375816a60a3","id":"98b2d9bc-b9ec-41cd-b1ca-a76e4d722d01"}</p>

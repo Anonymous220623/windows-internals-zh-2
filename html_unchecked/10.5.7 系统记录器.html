@@ -1,0 +1,367 @@
+<h3 class="bt3" id="sigil_toc_id_157">10.5.7　系统记录器</h3>
+<p class="zw">至此，我们介绍的都是常规ETW会话和提供程序的工作原理。自Windows XP开始，ETW支持系统记录器的概念，借此NT内核可以在全局范围内发出日志事件，这种日志不与任何提供程序绑定，通常用于测量性能。截至撰写这部分内容，主要有两种系统记录器可用，它们分别由NT内核记录器和循环内核上下文记录器所表示（全局记录器是NT内核记录器的子集）。NT内核记录器最多支持8个系统记录器会话。从系统记录器接收事件的每个会话都可视为一个系统会话。</p>
+<p class="zw">要启动系统会话，应用程序需要使用StartTrace API，并指定EVENT_TRACE_ SYSTEM_LOGGER_MODE标记或系统记录器会话的GUID作为输入参数。表10-16列出了系统记录器及其GUID。NT内核中的EtwpStartLogger函数可以识别该标记或特殊GUID，并针对NT内核记录器安全描述符进行一项额外检查，代表调用方进程安全令牌请求TRACELOG_GUID_ENABLE访问权限。如果检查通过，则ETW会计算系统记录器索引，并更新记录器组掩码和系统全局性能组掩码。</p>
+<p class="表题">表10-16　系统记录器</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">索引</p> </th> 
+   <th> <p class="bt">名称</p> </th> 
+   <th> <p class="bt">GUID</p> </th> 
+   <th> <p class="bt">符号</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0</p> </td> 
+   <td> <p class="bg">NT内核记录器</p> </td> 
+   <td> <p class="bg">{9e814aad-3204-11d2-9a82-006008a86939}</p> </td> 
+   <td> <p class="bg">SystemTraceControlGuid</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">1</p> </td> 
+   <td> <p class="bg">全局记录器</p> </td> 
+   <td> <p class="bg">{e8908abc-aa84-11d2-9a93-00805f85d7c6}</p> </td> 
+   <td> <p class="bg">GlobalLoggerGuid</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">2</p> </td> 
+   <td> <p class="bg">循环内核上下文记录器</p> </td> 
+   <td> <p class="bg">{54dea73a-ed1f-42a4-af71-3e63d056f174}</p> </td> 
+   <td> <p class="bg">CKCLGuid</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">上述最后一步是系统记录器正常工作的关键。很多底层系统函数可以在高IRQL下运行（如Context Swapper），解析分析性能组掩码并决定是否将一个事件写入系统记录器。控制器应用程序可以为系统记录器启用或禁用不同的事件记录，为此只需要修改StartTrace API和ControlTrace API使用的Enableflags位掩码。系统记录器记录的事件在内部会以明确定义的顺序存储在全局性能组掩码中。该掩码由8个32位值的数组组成，数组中的每个索引都表示一个事件集。系统事件集（也叫组）可使用Xperf工具来枚举。表10-17列出了系统记录器事件及其在不同组的分类。大部分系统记录器事件的详细信息可参阅https://docs.microsoft.com/windows/win32/api/evntrace/ns-evntrace-event_trace_properties。</p>
+<p class="表题">表10-17　系统记录器事件（内核标记）及其组</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">名称</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+   <th> <p class="bt">组</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ALL_FULTS</p> </td> 
+   <td> <p class="bg">所有页面错误，包括硬错误、写入时复制、需要零错误等</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ALPC</p> </td> 
+   <td> <p class="bg">高级本地过程调用</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CACHE_FLUSH</p> </td> 
+   <td> <p class="bg">缓存刷新事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CC</p> </td> 
+   <td> <p class="bg">缓存管理器事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CLOCKINT</p> </td> 
+   <td> <p class="bg">时钟中断事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">COMPACT_CSWITCH</p> </td> 
+   <td> <p class="bg">紧凑上下文切换</p> </td> 
+   <td> <p class="bg">Diag</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CONTMEMGEN</p> </td> 
+   <td> <p class="bg">持续内存生成</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CPU_CONFIG</p> </td> 
+   <td> <p class="bg">NUMA拓扑、处理器组和处理器索引</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CSWITCH</p> </td> 
+   <td> <p class="bg">上下文切换</p> </td> 
+   <td> <p class="bg">IOTrace</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DEBUG_EVENTS</p> </td> 
+   <td> <p class="bg">调试器调度事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DISK_IO</p> </td> 
+   <td> <p class="bg">磁盘I/O</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DISK_IO_INIT</p> </td> 
+   <td> <p class="bg">磁盘I/O初始化</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DISPATCHER</p> </td> 
+   <td> <p class="bg">CPU调度器</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DPC</p> </td> 
+   <td> <p class="bg">DPC事件</p> </td> 
+   <td> <p class="bg">Diag、DiagEasy和Latency</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DPC_QUEUE</p> </td> 
+   <td> <p class="bg">DPC队列事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DRIVERS</p> </td> 
+   <td> <p class="bg">驱动程序事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FILE_IO</p> </td> 
+   <td> <p class="bg">文件系统操作结束时间和结果</p> </td> 
+   <td> <p class="bg">FileIO</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FILE_IO_INIT</p> </td> 
+   <td> <p class="bg">文件系统操作（创建/打开/关闭/读取/写入）</p> </td> 
+   <td> <p class="bg">FileIO</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FILENAME</p> </td> 
+   <td> <p class="bg">文件名（如文件名创建/删除/断开）</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FLT_FASTIO</p> </td> 
+   <td> <p class="bg">微型过滤器Fastio回调完成</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FLT_IO</p> </td> 
+   <td> <p class="bg">微型过滤器回调完成</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FLT_IO_FAILURE</p> </td> 
+   <td> <p class="bg">微型过滤器回调完成但有错误</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FLT_IO_INIT</p> </td> 
+   <td> <p class="bg">微型过滤器回调初始化</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FOOTPRINT</p> </td> 
+   <td> <p class="bg">支持足迹分析</p> </td> 
+   <td> <p class="bg">ReferenceSet</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HARD_FAULTS</p> </td> 
+   <td> <p class="bg">硬页面错误</p> </td> 
+   <td> <p class="bg">除SysProf和Network外的所有组</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HIBERRUNDOWN</p> </td> 
+   <td> <p class="bg">休眠时断开</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">IDLE_STATES</p> </td> 
+   <td> <p class="bg">CPU闲置状态</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">INTERRUPT</p> </td> 
+   <td> <p class="bg">中断事件</p> </td> 
+   <td> <p class="bg">Diag、DiagEasy和Latency</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">INTERRUPT_STEER</p> </td> 
+   <td> <p class="bg">中断转向事件</p> </td> 
+   <td> <p class="bg">Diag、DiagEasy和Latency</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">IPI</p> </td> 
+   <td> <p class="bg">处理器间中断事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">KE_CLOCK</p> </td> 
+   <td> <p class="bg">时钟配置事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">KQUEUE</p> </td> 
+   <td> <p class="bg">内核队列入队/出队</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LOADER</p> </td> 
+   <td> <p class="bg">内核和用户模式映像加载/卸载事件</p> </td> 
+   <td> <p class="bg">Base</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">MEMINFO</p> </td> 
+   <td> <p class="bg">内存列表信息</p> </td> 
+   <td> <p class="bg">Base、ResidentSet和ReferenceSet</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">MEMINFO_WS</p> </td> 
+   <td> <p class="bg">工作集信息</p> </td> 
+   <td> <p class="bg">Base和ReferenceSet</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">MEMORY</p> </td> 
+   <td> <p class="bg">内存跟踪</p> </td> 
+   <td> <p class="bg">ResidentSet和ReferenceSet</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">NETWORKTRACE</p> </td> 
+   <td> <p class="bg">网络事件（如TCP/UDP发送/接收）</p> </td> 
+   <td> <p class="bg">Network</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">OPTICAL_IO</p> </td> 
+   <td> <p class="bg">光学I/O</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">OPTICAL_IO_INIT</p> </td> 
+   <td> <p class="bg">光学I/O初始化</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">PERF_COUNTER</p> </td> 
+   <td> <p class="bg">进程性能计数器</p> </td> 
+   <td> <p class="bg">Diag和DiagEasy</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">PMC_PROFILE</p> </td> 
+   <td> <p class="bg">PMC采样事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">POOL</p> </td> 
+   <td> <p class="bg">池跟踪</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">POWER</p> </td> 
+   <td> <p class="bg">电源管理事件</p> </td> 
+   <td> <p class="bg">ResumeTrace</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">PRIORITY</p> </td> 
+   <td> <p class="bg">优先级变更事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">PROC_THREAD</p> </td> 
+   <td> <p class="bg">进程和线程创建/删除</p> </td> 
+   <td> <p class="bg">Base</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">PROFILE</p> </td> 
+   <td> <p class="bg">CPU采样配置文件</p> </td> 
+   <td> <p class="bg">SysProf</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">REFSET</p> </td> 
+   <td> <p class="bg">支持足迹分析</p> </td> 
+   <td> <p class="bg">ReferenceSet</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">REG_HIVE</p> </td> 
+   <td> <p class="bg">注册表配置单元跟踪</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">REGISTRY</p> </td> 
+   <td> <p class="bg">注册表跟踪</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SESSION</p> </td> 
+   <td> <p class="bg">会话断开/创建/删除事件</p> </td> 
+   <td> <p class="bg">ResidentSet和ReferenceSet</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SHOULDYIELD</p> </td> 
+   <td> <p class="bg">协调DPC机制跟踪</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SPINLOCK</p> </td> 
+   <td> <p class="bg">自旋锁碰撞</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SPLIT_IO</p> </td> 
+   <td> <p class="bg">拆分I/O</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SYSCALL</p> </td> 
+   <td> <p class="bg">系统调用</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TIMER</p> </td> 
+   <td> <p class="bg">计时器设置和过期</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">VAMAP</p> </td> 
+   <td> <p class="bg">MapFile信息</p> </td> 
+   <td> <p class="bg">ResidentSet和ReferenceSet</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">VIRT_ALLOC</p> </td> 
+   <td> <p class="bg">虚拟分配保留和释放</p> </td> 
+   <td> <p class="bg">ResidentSet和ReferenceSet</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WDF_DPC</p> </td> 
+   <td> <p class="bg">WDF DPC事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WDF_INTERRUPT</p> </td> 
+   <td> <p class="bg">WDF中断事件</p> </td> 
+   <td> <p class="bg">无</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">当系统会话启动时，事件会被立即记录，无须启用任何提供程序。这意味着消费者应用程序无法以常规的方式对事件进行解码。基于事件类型，系统记录器事件使用了一种精确的事件编码格式（名为NTPERF）。大部分代表不同NT内核记录器事件的数据结构都在Windows平台SDK文档中有详细记录。</p>
+<p class="zwtsh">实验：使用内核记录器跟踪TCP/IP活动</p>
+<p class="zwts1">在这个实验中，我们将使用Windows性能监视器监听系统记录器生成的网络活动事件。正如“枚举ETW会话”实验中介绍的那样，这个图形化工具不仅可以获取来自系统性能计数器的数据，还能启动、停止和管理ETW会话（包括系统会话）。要启用内核记录器并让它为TCP/IP活动生成日志文件，请执行如下操作。</p>
+<p class="zwts1">1）运行性能监视器（在搜索框中输入perfmon）并点击“<strong style="color:#0092dd">数据收集器集，用户定义</strong>”。</p>
+<p class="zwts1">2）右击“<strong style="color:#0092dd">用户定义</strong>”，选择“<strong style="color:#0092dd">新建</strong>”，随后选择“<strong style="color:#0092dd">数据收集器集</strong>”。</p>
+<p class="zwts1">3）为该数据收集器集设置一个名称（例如“Experiment”），选择“<strong style="color:#0092dd">手动创建（高级）</strong>”，随后点击“<strong style="color:#0092dd">下一页</strong>”。</p>
+<p class="zwts1">4）在随后出现的对话框中，选择“<strong style="color:#0092dd">创建数据日志</strong>”，选中“<strong style="color:#0092dd">事件跟踪数据</strong>”，再点击“<strong style="color:#0092dd">下一页</strong>”。在提供程序选项中点击“<strong style="color:#0092dd">添加</strong>”，再选择Windows Kernel Trace。点击“<strong style="color:#0092dd">确定</strong>”。在属性列表中选择“<strong style="color:#0092dd">关键字（任意）<span style="font-family: Times New Roman，楷体_GB2312">”</span></strong>，随后点击“<strong style="color:#0092dd">编辑</strong>”。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3214.png" style="width: 100%" />
+<p class="zwts1">5）在随后显示的属性窗口中，选中“<strong style="color:#0092dd">自动</strong>”，然后只选择对应Network TCP/IP的“net”，再点击“<strong style="color:#0092dd">确定</strong>”。</p>
+<p class="zwts1">6）点击“<strong style="color:#0092dd">下一页</strong>”，选择日志文件的保存位置。如果将该数据收集器命名为“Experiment”，默认情况下，位置为%SystemDrive%\PerfLogs\Admin\experiment\。点击“<strong style="color:#0092dd">下一页</strong>”，并在身份文本框中输入Administrator账户名和正确的密码。点击“<strong style="color:#0092dd">完成</strong>”，然后应该可以看到类似下图所示的窗口。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3222.png" style="width: 100%" />
+<p class="zwts1">7）右击这个数据收集器集的名称（本例中为“Experiment”），点击“<strong style="color:#0092dd">开始</strong>”。随后打开浏览器并访问一些网页，借此生成一些网络活动。</p>
+<p class="zwts1">8）再次右击该数据收集器集节点，选择“<strong style="color:#0092dd">停止</strong>”。</p>
+<p class="zwts1">接下来按照上文“解码ETL文件”实验中列出的步骤解码所获得的ETL跟踪文件，可以发现，读取结果的最佳方式是使用CSV文件类型。这是因为系统会话并不包含任何事件的解码信息，因此，netsh.exe无法通过适当方法解码EVTX文件中表示这些事件的自定义数据结构。</p>
+<p class="zwts1">最后，我们可以借助XPERF工具使用下列命令重复该实验（可选：将C:\network.etl文件替换为自己希望使用的其他名称）：</p>
+<pre class="代码无行号"><code>xperf -on NETWORKTRACE -f c:\network.etl </code></pre>
+<p class="zwts1">停止系统跟踪会话并转换获得的跟踪文件后，将能看到与性能监视器中类似的事件。</p>
+<h4 class="bt4 sigil_not_in_toc">全局记录器和自动记录器</h4>
+<p class="zw">一些记录器会话会在系统启动时自启动。全局记录器（global logger）会话可记录在操作系统启动早期阶段发生的事件，包括NT内核记录器所生成的事件（全局记录器实际上是一种系统记录器，详见表&nbsp;10-16）。应用程序和设备驱动程序可以使用全局记录器会话记录用户登录前产生的跟踪（某些设备驱动程序，如磁盘设备驱动程序，无法在全局记录器会话开始时加载）。全局记录器主要用于捕获NT内核提供程序（详见表10-17）产生的跟踪，而自动记录器（autologger）可捕获来自经典ETW提供程序（而不是来自NT内核记录器）的跟踪。</p>
+<p class="zw">我们可以通过注册表中的GlobalLogger键配置全局记录器，该键位于HKLM\ SYSTEM\CurrentControlSet\Control\WMI根键下。通过类似的方式，也可以创建与登录会话同名的注册表子键Autologger（位于WMI根键下）来配置自动记录器。配置和启动自动记录器的详细过程请参阅&nbsp;https://docs.microsoft.com/windows/win32/etw/configuring-and- starting-an-Autologger-session。</p>
+<p class="zw">正如上文“ETW初始化”一节所述，在NT内核初始化的阶段1期间，ETW会几乎同时启动全局记录器和自动记录器。内部函数EtwStartAutoLogger会从注册表中查询所有记录器配置数据，并对其进行验证，随后使用EtwpStartLogger例程创建记录器会话（该例程的详细信息请参阅“ETW会话”一节）。全局记录器是一种系统记录器，因此在会话创建完成后，不会再进一步启用提供程序。与全局记录器不同，自动记录器需要启用提供程序，为此需要从Autologger注册表键枚举每个会话的名称。会话创建完成后，ETW会枚举为该会话启用的提供程序，这些提供程序以注册表子键的形式包含在Autologger键下（提供程序可通过GUID来识别）。图10-36展示了EventLog-System会话中启用的多个提供程序。该会话是Windows事件查看器中显示的Windows主要日志之一（由Event Logger服务捕获）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3232.png" style="width: 100%" />
+<p class="图题">图10-36　EventLog-System自动记录器中启用的提供程序</p>
+<p class="zw">提供程序的配置数据验证完毕后，即可通过内部函数EtwpEnableTrace在会话中启用提供程序，这与ETW会话中的做法类似。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":6,"parentId":"0a817dad-0fff-43aa-90f7-5114d262a9ee","id":"740f6dce-b6df-430c-aea9-f694b00f4b1d"}</p>

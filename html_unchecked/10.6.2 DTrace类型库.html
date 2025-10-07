@@ -1,0 +1,11 @@
+<h3 class="bt3" id="sigil_toc_id_161">10.6.2　DTrace类型库</h3>
+<p class="zw">DTrace支持不同的类型。系统管理员可以借此检查操作系统内部的数据结构，并在D子句中使用类型来描述与探针有关的操作。除了标准D编程语言支持的类型，DTrace还支持补充数据类型。为了处理依赖操作系统的复杂数据类型，并让FBT和PID提供程序在内部操作系统和应用程序函数上设置探针，DTrace可从不同来源获取所需的信息。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 最初，可从（符合可移植可执行文件格式要求的）可执行二进制文件中嵌入的信息内提取函数名称、签名和数据类型，例如从导出表和调试信息中提取。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在最初的DTrace项目中，Solaris操作系统提供了对Compact C Type Format（CTF）的支持，并能支持CTF的可执行二进制文件（符合可执行和可链接格式，即ELF标准）。这样操作系统就可以将DTrace所需的调试信息直接存储在自己的模块中（调试信息也可以使用Deflate压缩格式存储）。Windows版本的DTrace依然支持部分CTF，并已作为资源节添加到LibDTrace库（DTrace.dll）中。LibDTrace库中的CTF可存储公开WDK（Windows驱动程序包）和SDK（软件开发包）中包含的类型信息，并让DTrace能在无需任何符号文件的前提下与基础的操作系统数据类型配合工作。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 大部分私有类型和内部操作系统函数签名是从PDB符号中获取的。大部分操作系统模块的公开PDB符号可从微软符号服务器下载（Windows调试器也使用了这些符号）。FBT提供程序大量使用了这些符号，借此正确地识别内部操作系统函数，并让DTrace能够为每个Syscall和函数检索到正确的参数类型。</p>
+<h4 class="bt4 sigil_not_in_toc">DTrace符号服务器</h4>
+<p class="zw">DTrace中包含一个自主的符号服务器，可从微软公开的符号存储中下载PDB符号并提供给DTrace子系统使用。该符号服务器主要是在LibDTrace中实现的，DTrace驱动程序可使用反转调用模型（inverted call model）查询。在提供程序注册过程中，DTrace驱动程序会注册一个SymServer伪提供程序，这并非真正的提供程序，只是一个快捷方式，可以让DTrace的Symsrv处理程序控制要注册的设备。</p>
+<p class="zw">当从命令行启动DTrace时，LibDTrace库会使用标准的CreateFile API打开一个指向\\.\DTrace\symsrv控制设备的句柄，以便启动符号服务器。DTrace驱动程序会通过符号服务器IRP句柄处理该请求，借此注册用户模式进程，将其添加到一个符号服务器进程内部列表中。随后，LibDTrace将启动一个新线程，借此向DTrace符号服务器设备发送虚拟（Dummy）IOCTL，并无限期地等待设备回复。驱动程序会将该IRP标记为挂起，直到提供程序或DTrace子系统要求解析新符号时才会将其标记为已完成。</p>
+<p class="zw">在驱动程序完成挂起的&nbsp;IRP&nbsp;后，DTrace&nbsp;符号服务器线程都会被唤醒，并使用由Windows映像助手库（Dbghelp.dll）公开的服务正确地下载并解析所需符号。随后该驱动程序会等待符号线程发来新的虚拟IOCTL。这次的新IOCTL将包含符号解析过程产生的结果。只有在DTrace驱动程序需要时，用户模式线程才会被再次唤醒。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"8ec98f6d-2493-4bae-9a02-187c6c75678d","id":"11c22da0-9be5-4c46-8319-ca6d6c1d85ad"}</p>

@@ -1,0 +1,17 @@
+<h3 class="bt3" id="sigil_toc_id_102">9.5.2　安全设备</h3>
+<p class="zw">VBS为驱动程序提供了在安全环境中运行自己部分代码的能力。安全内核本身无法通过扩展支持内核驱动程序，这样会导致它的攻击面过大。此外，微软也不允许外部企业在主要承担安全作用的组件中引入可能的Bug。</p>
+<p class="zw">用户模式驱动程序框架（User-Mode Driver Framework，UMDF）通过引入驱动程序辅助组件的概念解决了这个问题，这种辅助组件可同时在VTL 0和VTL 1下运行。在这种情况下，甚至可将其称为安全辅助组件。安全辅助组件包含驱动程序中需要在不同模式（本例中为IUM）下运行的代码子集，可作为主KMDF驱动程序的扩展或辅助组件加载。不过标准WDM驱动程序也可以被支持。主驱动程序依然运行在VTL 0内核模式下，并继续负责管理设备的PnP和电源状态，但它需要能够联系到自己的辅助组件，才能执行必须在IUM下完成的任务。</p>
+<p class="zw">卷1第3章提到的安全驱动程序框架（Secure Driver Framework，SDF）已被弃用，图9-39展示了全新UMDF安全辅助组件模型的架构，该架构依然建立在相同的，可在VTL 0用户模式下使用的UMDF核心框架（Wudfx02000.dll）基础上。UMDF核心框架利用UMDF安全辅助组件主机（WUDFCompanionHost.exe）提供的服务加载并管理以DLL形式调度的驱动程序辅助组件。UMDF安全辅助组件主机管理了安全辅助组件的生命周期，并封装了很多专门处理IUM环境中特定问题所需的UMDF函数。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2602.png" style="width: 100%" />
+<p class="图题">图9-39　WDF驱动程序的安全辅助组件架构</p>
+<p class="zw">安全辅助组件通常与VTL 0内核中运行的主驱动程序相关联。它必须包含正确的数字签名（与每个Trustlet一样，需要在签名中包含IUM EKU），并且必须在元数据节中声明自己的能力。安全辅助组件会对自己管理的设备拥有完整的所有权（这也解释了为何此类设备通常被称为安全设备）。安全辅助组件的安全设备控制器支持下列功能。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">安全</strong><strong>DMA：</strong>驱动程序可以指示设备直接在受保护的VTL 1内存中执行DMA传输，而VTL 0是无法访问的。安全辅助组件可以处理通过DMA接口收发的数据，随后通过标准KMDF通信接口（ALPC）将部分数据传输给VTL 0驱动程序。通过Iumbase.dll公开的IumGetDmaEnabler和IumDmaMapMemory安全系统调用，可以让安全辅助组件在VTL 1用户模式下直接映射物理DMA内存范围。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">内存映射的</strong><strong>IO（MMIO）：</strong>安全辅助组件可以请求设备在VTL 1（用户模式）下映射自己可访问的MMIO范围。随后即可在IUM中直接访问内存映射设备的寄存器。该功能由MapSecureIo和ProtectSecureIo API公开。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">安全节</strong><strong>：</strong>辅助组件可以通过CreateSecureSection API创建并映射安全节，安全节代表可以在Trustlet和VTL 0下运行的主驱动程序之间共享的内存。此外，安全辅助组件还可以指定不同类型的SLAT保护，以便让内存能够通过安全设备（使用DMA或MMIO）访问。</p>
+<p class="zw">安全辅助组件无法直接响应设备中断，设备中断需要通过VTL 0下运行的相关内核模式驱动程序来映射和管理。按照同样的方式，内核模式驱动程序依然需要管理收到的所有IOCTL，借此充当系统和用户模式应用程序的高级接口。主驱动程序通过使用UMDF任务队列对象发送WDF任务的方式与自己的安全辅助组件通信，在内部，这会用到WDF框架公开的ALPC设施。</p>
+<p class="zw">典型的KMDF驱动程序会通过INF指令注册自己的辅助组件。WDF会在驱动程序调用WdfDeviceCreate的上下文中自动启动驱动程序的辅助组件（对即插即用驱动程序来说这通常发生在AddDevice回调中），为此要向UMDF驱动程序管理器服务发送一条ALPC消息，通过调用NtCreateUserProcess原生API生成一个新的WUDFCompanionHost.exe Trustlet。随后，UMDF安全辅助组件主机会在自己的地址空间中加载安全辅助组件DLL。为了真正启动安全辅助组件，UMDF驱动程序管理器还会向WUDFCompanionHost发送另一条ALPC消息。辅助组件的DriverEntry例程会执行驱动程序的安全初始化工作，并通过经典的WdfDriverCreate API创建WDFDRIVER对象。</p>
+<p class="zw">随后框架会调用VTL 1下辅助组件的AddDevice回调例程，通常这会通过新的WdfDeviceCompanionCreate这个UMDF API创建辅助组件的设备。后者会通过IumCreateSecureDevice安全系统调用将执行转移至安全内核，并由安全内核创建新的安全设备。至此，安全辅助组件对自己管理的设备拥有了完整的所有权。通常来说，在创建了安全设备后，辅助组件要做的第一个工作是创建任务队列对象（WDFTASKQUEUE），该对象可用于处理由相关VTL 0驱动程序传入的任务。执行控制会返回给内核模式驱动程序，并由它向自己的安全辅助组件发送新任务消息。</p>
+<p class="zw">WDM驱动程序也支持这种模式。WDM驱动程序可以使用KMDF的微型端口（miniport）模式与一个特殊的过滤器驱动程序WdmCompanionFilter.sys交互，该驱动程序被附加到设备堆栈中一个较低级别的位置。WDM辅助组件过滤器可以让WDM驱动程序使用任务队列对象向安全辅助组件发送任务消息。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"299b0677-b68d-4088-a559-555354991b32","id":"226ee88b-39d9-486f-b4e5-ee5a51fe86af"}</p>

@@ -1,0 +1,72 @@
+<h3 class="bt3" id="sigil_toc_id_148">10.4.5　WMI的实现</h3>
+<p class="zw">WMI服务运行在一个以Local System账户执行的共享Svchost进程中。它会将提供程序载入WmiPrvSE.exe提供程序托管进程，后者可作为DCOM启动器（RPC服务）进程的子进程启动。WMI可通过Local System账户、Local Service账户或Network Service账户执行WmiPrvSE，具体使用哪个账户取决于代表提供程序具体实现的WMI Win32Provider对象实例的HostingModel属性值。提供程序被从缓存中移除后（收到最后一个提供程序请求后等待一分钟便会移除），WmiPrvSE进程就会退出。</p>
+<p class="zwtsh">实验：观察WmiPrvSE的创建</p>
+<p class="zwts1">我们可以启动Process Explorer并执行Wmic，这样就可以看到WmiPrvSE的创建过程。WmiPrvSE进程将出现在托管DCOM启动器服务的Svchost进程之下。如果Process Explorer启用了作业突出显示功能，那么WmiPrvSE进程将使用作业的强调色来显示，原因在于，为防止失控的提供程序耗尽系统的所有虚拟内存资源，WmiPrvSE会在一个作业对象中执行，该对象可创建的子进程数量，以及每个进程和作业中所有进程可分配的虚拟内存数量均有所限制（有关作业对象的详细信息，请参阅卷1第5章）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2720.png" style="width: 100%" />
+<p class="zw">大部分&nbsp;WMI&nbsp;组件默认位于%SystemRoot%\System32&nbsp;和%SystemRoot%\System32\ Wbem下，包括Windows MOF文件、内置提供程序DLL，以及管理应用程序WMI DLL。在%SystemRoot%\System32\Wbem目录中可以看到Ntevt.mof，这是事件日志提供程序MOF文件。此外还有Ntevt.dll，这是事件日志提供程序的DLL，WMI服务会用到这些文件。</p>
+<p class="zw">提供程序通常会实现为动态链接库（DLL），借此公开可实现一组接口的COM服务器（IWbemServices是核心服务器，一般来说，每个提供程序都会实现为一个COM服务器）。WMI包含很多自带的、适用于Windows操作系统的提供程序。这些自带提供程序也称标准提供程序，可通过众所周知的操作系统资源（如Win32子系统、事件日志、性能计数器、注册表）提供数据和管理功能。表10-15列出了Windows中自带的多个标准WMI提供程序。</p>
+<p class="表题">表10-15　Windows自带的多个标准WMI提供程序</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">提供程序</p> </th> 
+   <th> <p class="bt">二进制文件</p> </th> 
+   <th> <p class="bt">命名空间</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">活动目录提供程序</p> </td> 
+   <td> <p class="bg">dsprov.dll</p> </td> 
+   <td> <p class="bg">root\directory\ldap</p> </td> 
+   <td> <p class="bg">将活动目录对象映射至WMI</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">事件日志提供程序</p> </td> 
+   <td> <p class="bg">ntevt.dll</p> </td> 
+   <td> <p class="bg">root\cimv2</p> </td> 
+   <td> <p class="bg">管理Windows事件日志，如读取、备份、清理、复制、删除、监控、更名、压缩、解压缩、更改事件日志设置</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">性能计数器提供程序</p> </td> 
+   <td> <p class="bg">wbemperf.dll</p> </td> 
+   <td> <p class="bg">root\cimv2</p> </td> 
+   <td> <p class="bg">提供对原始性能数据的访问</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">注册表提供程序</p> </td> 
+   <td> <p class="bg">stdprov.dll</p> </td> 
+   <td> <p class="bg">root\default</p> </td> 
+   <td> <p class="bg">读取、写入、枚举、监控、创建、删除注册表键和值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">虚拟化提供程序</p> </td> 
+   <td> <p class="bg">vmmsprox.dll</p> </td> 
+   <td> <p class="bg">root\virtualization\v2</p> </td> 
+   <td> <p class="bg">提供对vmms.exe中实现的虚拟化服务的访问功能，如在主机系统管理虚拟机、从客户虚拟机获取主机系统外设信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WDM提供程序</p> </td> 
+   <td> <p class="bg">wmiprov.dll</p> </td> 
+   <td> <p class="bg">root\wmi</p> </td> 
+   <td> <p class="bg">提供有关WDM设备驱动程序信息的访问功能</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Win32提供程序</p> </td> 
+   <td> <p class="bg">cimwin32.dll</p> </td> 
+   <td> <p class="bg">root\cimv2</p> </td> 
+   <td> <p class="bg">提供计算机、磁盘、外设设备、文件、文件夹、文件系统、网络组件、操作系统、打印机、进程、安全性、服务、共享、SAM用户和组等信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Windows Installer提供程序</p> </td> 
+   <td> <p class="bg">msiprov.dll</p> </td> 
+   <td> <p class="bg">root\cimv2</p> </td> 
+   <td> <p class="bg">提供对已安装软件相关信息的访问功能</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">事件日志提供程序DLL（Ntevt.dll）是一种COM服务器，注册在HKLM\Software\ Classes\CLSID注册表键下，其CLSID为{F55C5B4C-517D-11d1-AB57-00C04FD9159E}（可以在MOF描述符中找到）。%SystemRoot%\System32\Wbem之下的目录保存了存储库、日志文件以及第三方MOF文件。WMI使用一种专有版本的Microsoft JET数据库引擎实现了该存储库（名为CIMOM对象存储库）。该数据库文件默认位于SystemRoot%\ System32\Wbem\Repository\下。</p>
+<p class="zw">WMI沿用了服务的HKLM\SOFTWARE\Microsoft\WBEM\CIMOM注册表键中存储的很多注册表设置，例如某些参数的阈值和最大值。</p>
+<p class="zw">设备驱动程序使用特殊接口提供数据并接收来自WMI的命令，该接口名为WMI系统控制命令，是WDM的一部分（WDM详见卷1第6章）。由于该接口是跨平台的，因此位于\root\WMI命名空间中。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"ec163a78-fcab-4693-8b52-1929b927085a","id":"3b45b8a1-9f41-404a-921c-fdcf0a0bceff"}</p>

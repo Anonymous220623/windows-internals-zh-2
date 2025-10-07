@@ -1,0 +1,69 @@
+<h3 class="bt3" id="sigil_toc_id_93">9.4.3　VSM系统调用</h3>
+<p class="zw">如上一节所述，VSM使用虚拟化调用向安全内核请求服务。虚拟化调用最初设计用于向虚拟机监控程序请求服务，但在VSM中，该模型通过扩展已经可以支持新类型的系统调用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> VTL 0中的常规NT内核可发出安全调用，向安全内核请求服务。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果需要由VTL 0中运行的NT内核提供服务，则VTL 1中的安全内核可以请求常规调用。此外，一些调用还可被隔离用户模式（IUM）下运行的安全进程（Trustlet）用于向安全内核或常规NT内核请求服务。</p>
+<p class="zw">此类系统调用在虚拟机监控程序、安全内核及常规NT内核中实现。为了在不同的VTL之间切换，虚拟机监控程序定义了两个虚拟化调用：HvVtlCall和HvVtlReturn。安全内核和NT内核也为安全调用和常规调用的调度定义了调度循环。</p>
+<p class="zw">此外，安全内核还实现了另一种系统调用：安全系统调用。这种系统调用只为运行在IUM下的安全进程（Trustlet）提供服务，不会暴露至常规NT内核。虚拟机监控程序完全不参与安全系统调用的处理。</p>
+<h4 class="bt4 sigil_not_in_toc">虚拟处理器状态</h4>
+<p class="zw">在深入介绍安全调用和常规调用的架构前，有必要分析虚拟处理器是如何管理VTL转换的。安全VTL总是在长模式（AMD64处理器的执行模式，CPU只访问64位的指令和寄存器）下运行，并会启用分页。不支持任何其他执行模式。这可以简化安全VTL的启动和管理，也为安全模式下运行的代码提供了一层额外保护（下文将讨论该模式的一些其他影响）。</p>
+<p class="zw">为了提高效率，虚拟处理器的一些寄存器是在VTL之间共享的，而另外一些寄存器则是每个VTL私有的。在VTL之间切换时，共享寄存器的状态不会改变，这就可以在VTL之间快速传递少量信息，同时降低切换VTL时的上下文切换开销。每个VTL都有自己的私有寄存器实例，这些实例仅供该VTL访问。当在VTL之间切换时，虚拟机监控程序可以保存并还原私有寄存器的内容，因此，当在一个虚拟处理器上进入某个VTL后，私有寄存器的状态将包含与虚拟处理器之前在该VTL下最后一次运行时相同的值。</p>
+<p class="zw">虚拟处理器的大部分寄存器是在VTL之间共享的。尤其是常规用途寄存器、向量寄存器以及浮点寄存器会在所有VTL间共享，但也有少量例外，例如RIP和RSP寄存器。私有寄存器包含一些控制寄存器、架构寄存器以及虚拟机监控程序虚拟MSR。安全拦截机制（详见上一节）可以让安全环境控制哪些MSR可被常规模式环境所访问。表9-3总结了VTL间共享的寄存器以及每个VTL私有的寄存器。</p>
+<p class="表题">表9-3　VTL的虚拟处理器寄存器状态</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">类型</p> </th> 
+   <th> <p class="bt">常规寄存器</p> </th> 
+   <th> <p class="bt"><strong>MSR</strong></p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">共享</p> </td> 
+   <td> <p class="bg">Rax, Rbx, Rcx, Rdx, Rsi, Rdi, Rbp CR2<br></p> <p class="bg">R8～R15<br></p> <p class="bg">DR0～DR5<br></p> <p class="bg">X87浮点状态XMM寄存器<br></p> <p class="bg">AVX寄存器<br></p> <p class="bg">XCR0 (XFEM)<br></p> <p class="bg">DR6（依赖于处理器）</p> </td> 
+   <td> <p class="bg">HV_X64_MSR_TSC_FREQUENCY<br></p> <p class="bg">HV_X64_MSR_VP_INDEX<br></p> <p class="bg">HV_X64_MSR_VP_RUNTIME<br></p> <p class="bg">HV_X64_MSR_RESET<br></p> <p class="bg">HV_X64_MSR_TIME_REF_COUNT<br></p> <p class="bg">HV_X64_MSR_GUEST_IDLE<br></p> <p class="bg">HV_X64_MSR_DEBUG_DEVICE_OPTIONS<br></p> <p class="bg">HV_X64_MSR_BELOW_1MB_PAGE<br></p> <p class="bg">HV_X64_MSR_STATS_PARTITION_RETAIL_PAGE<br></p> <p class="bg">HV_X64_MSR_STATS_VP_RETAIL_PAGE<br></p> <p class="bg">MTRR和PAT<br></p> <p class="bg">MCG_CAP<br></p> <p class="bg">MCG_STATUS</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">私有</p> </td> 
+   <td> <p class="bg">RIP, RSP<br></p> <p class="bg">RFLAGS<br></p> <p class="bg">CR0, CR3, CR4<br></p> <p class="bg">DR7<br></p> <p class="bg">IDTR, GDTR<br></p> <p class="bg">CS, DS, ES, FS, GS, SS, TR, LDTR TSC<br></p> <p class="bg">DR6（依赖于处理器）</p> </td> 
+   <td> <p class="bg">SYSENTER_CS, SYSENTER_ESP, SYSENTER_EIP, STAR, LSTAR, CSTAR, SFMASK, EFER, KERNEL_GSBASE, FS.BASE, GS.BASE<br></p> <p class="bg">HV_X64_MSR_HYPERCALL<br></p> <p class="bg">HV_X64_MSR_GUEST_OS_ID<br></p> <p class="bg">HV_X64_MSR_REFERENCE_TSC<br></p> <p class="bg">HV_X64_MSR_APIC_FREQUENCY<br></p> <p class="bg">HV_X64_MSR_EOI<br></p> <p class="bg">HV_X64_MSR_ICR<br></p> <p class="bg">HV_X64_MSR_TPR<br></p> <p class="bg">HV_X64_MSR_APIC_ASSIST_PAGE<br></p> <p class="bg">HV_X64_MSR_NPIEP_CONFIG<br></p> <p class="bg">HV_X64_MSR_SIRBP<br></p> <p class="bg">HV_X64_MSR_SCONTROL<br></p> <p class="bg">HV_X64_MSR_SVERSION<br></p> <p class="bg">HV_X64_MSR_SIEFP<br></p> <p class="bg">HV_X64_MSR_SIMP<br></p> <p class="bg">HV_X64_MSR_EOM<br></p> <p class="bg">HV_X64_MSR_SINT0 – HV_X64_MSR_SINT15<br></p> <p class="bg">HV_X64_MSR_STIMER0_CONFIG – HV_X64_MSR_<br> STIMER3_CONFIG<br></p> <p class="bg">HV_X64_MSR_STIMER0_COUNT -HV_X64_MSR_STIMER3_COUNT<br></p> <p class="bg">本地APIC寄存器（包括CR8/TPR）</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">安全调用</h4>
+<p class="zw">当NT内核需要安全内核提供服务时，会使用一个特殊函数VslpEnterIumSecureMode。该例程可接收一个104字节的数据结构（名为SKCALL），借此可描述操作类型（调用服务、刷新TB、恢复线程、调用隔区）、安全调用编号，以及最多12个8字节的参数。如果有必要，该函数会提升处理器的IRQL，并确定安全线程Cookie的值。该值可以告知安全内核由哪个安全线程处理该请求，随后会重新启动安全调用调度循环。每个VTL的可执行状态是一个依赖其他VTL的状态机。</p>
+<p class="zw">由&nbsp;VslpEnterIumSecureMode&nbsp;函数描述的循环管理如图&nbsp;9-33&nbsp;左侧列出的所有运行在VTL 0下的操作（安全中断除外）。NT内核可决定进入安全内核，安全内核可决定进入常规NT内核。循环开始时将通过HvlSwitchToVsmVtl1例程进入安全内核（指定调用者要求的操作）。后续的函数只有在安全内核请求VTL切换时才会返回，还会保存所有共享寄存器，并将完整的SKCALL数据结构存储在一些明确定义的CPU寄存器中，即RBX和SSE寄存器的XMM10到XMM15。最后，它会向虚拟机监控程序发出一个HvVtlCall虚拟化调用。虚拟机监控程序切换到目标VTL（通过加载保存的每VTL VMCS）并将VTL安全调用进入原因写入VTL控制页。实际上，为了确定进入安全VTL的原因，虚拟机监控程序维护着一个被每个安全VTL共享的记录信息的内存页面。该页面可供虚拟机监控程序和虚拟处理器中安全VTL内运行的代码进行双向通信。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx22771.png" style="width: 100%" />
+<p class="图题">图9-33　VSM调度循环</p>
+<p class="zw">虚拟处理器在VTL 1上下文中通过安全内核的SkCallNormalMode函数重新开始执行。代码会读取VTL进入原因，如果原因不是安全中断，那么会加载当前处理器的SKPRCB（安全内核处理器控制块），选择要运行的线程（从安全线程Cookie开始），并将SKCALL数据结构的内容从CPU共享寄存器复制到内存缓冲区中。最后，它会调用IumInvokeSecureService这个调度程序例程，由该例程处理所请求的安全调用，将调用调度给正确的函数并实现VTL 1中的部分调度循环。</p>
+<p class="zw">这方面有一个重要的概念需要理解：安全内核可以映射并访问VTL 0内存，因此，无须将任何最终数据结构封送并复制，然后通过一个或多个参数指向VTL 1内存。但这个概念并不适用于下一节要讨论的常规调用。</p>
+<p class="zw">如上一节所述，安全中断和拦截是由虚拟机监控程序调度的，可抢占VTL 0中执行的任何代码。这种情况下，当VTL 1代码开始执行时，会将中断调度给正确的ISR。当ISR运行完毕后，安全内核会立即发出一个HvVtlReturn虚拟化调用。因此，VTL 0中的代码可以在之前被中断的地方重新开始执行，但这个位置并不处于安全调用调度循环中。所以，即使依然会产生VTL切换，但安全中断并非调度循环的一部分。</p>
+<h4 class="bt4 sigil_not_in_toc">常规调用</h4>
+<p class="zw">常规调用的管理方式与安全调用的类似（在VTL 1中使用一个名为“常规调用循环”的类似调度循环），但也有些重要区别，如下所示。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在向虚拟机监控程序发出HvVtlReturn以切换VTL之前，所有共享的VTL寄存器会以安全的方式清空。这可以防止将安全数据泄露到常规模式。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 常规NT内核无法读取安全VTL 1内存。为了正确传递常规调用所需的Syscall参数和数据结构，这需要一个能被安全内核和常规内核共享的内存缓冲区。安全内核会使用ALLOCATE_VM常规调用（无须以参数形式传递任何指针）分配该共享缓冲区。该常规调用会被调度到NT常规内核的MmAllocateVirtualMemory函数。所分配的内存会重新映射至安全内核中相同的虚拟地址，并成为安全进程共享内存池的一部分。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 正如将在下文讨论的那样，隔离用户模式（IUM）最初被设计为可以执行特殊的Win32可执行文件，这些文件应当能在常规世界和安全世界中无差别地运行。即使在IUM中，也会映射未经修改的标准Ntdll.dll库和KernelBase.dll库，这产生了一个重要后果：几乎所有原生的NT API（被Kernel32.dll和很多其他用户模式库所依赖）都需要由安全内核来代理。</p>
+<p class="zw">为了正确处理上述问题，安全内核包含了一个封送处理程序（marshaler），它可以识别并正确复制共享缓冲区中NT API参数所指向的数据结构。该封送处理程序还能确定从安全进程内存池中分配的共享缓冲区大小。安全内核定义了以下三种类型的常规调用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">禁用的常规调用</strong>。并未在安全内核中实现，如果从IUM调用，则将会直接失败并返回退出代码STATUS_INVALID_SYSTEM_SERVICE。此类调用无法直接由安全内核本身发出。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">启用的常规调用</strong>。仅由NT内核实现，可从IUM的原始Nt或Zw版本中（通过Ntdll.dll）调用。不过安全内核可以请求“启用的常规调用”（需要通过一个小型的存根代码加载常规调用编号），设置编号的最高位，并调用常规调用的调度程序（IumGenericSyscall例程）。最高位可确定常规调用是由安全内核本身发出的，而不是由ITM中加载的Ntdll.dll模块发出的。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">特殊的常规调用</strong>。在安全内核（VTL 1）中部分或全部实现，可用于过滤原始函数的结果或完全重新设计其代码。</p>
+<p class="zw">启用的和特殊的常规调用可标记为KernelOnly（仅内核）。在后一种情况下，常规调用只能由安全内核本身（而不是由安全进程）所请求。我们已经在卷1第3章“Trustlet可访问的系统调用”一节列出了启用的和特殊的常规调用（它们可从VSM中运行的软件内调用）。</p>
+<p class="zw">图&nbsp;9-34&nbsp;展示了一个特殊的常规调用的例子。在本例中，LsaIso这个Trustlet调用NtQueryInformationProcess原生API来请求特定进程的信息。IUM中映射的Ntdll.dll准备好Syscall编号并执行SYSCALL指令，该指令将执行流转移到位于安全内核（VTL 1）中的KiSystemServiceStart这个全局系统调用调度程序。全局系统调用调度程序识别出该系统调用编号属于常规调用，因此，使用该编号访问IumSyscallDispatchTable数组，该数组代表了常规调用的调度表。</p>
+<p class="zw">常规调用的调度表包含一个由压缩后的项组成的数组，该数组在安全内核启动过程（详见下文）的阶段0生成。其中每一项都包含一个到目标函数的偏移量（根据与表本身的相对关系计算而来）以及自己参数（和某些标记）的数量。表中所有这些偏移量最初都被计算为指向常规调度的调度程序例程（IumGenericSyscall）。在第一个初始化周期结束后，安全内核启动例程会对代表特殊调用的每一项进行修补。新的偏移量会指向安全内核中实现常规调用的代码。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2290.png" style="width: 100%" />
+<p class="图题">图9-34　Trustlet针对NtQueryInformationProcess API执行特殊的常规调用</p>
+<p class="zw">因此在图&nbsp;9-34&nbsp;中，全局系统调用的调度程序会将执行转移到在安全内核中实现的NtQueryInformationProcess函数部分。后者会检查所请求的信息类是否为安全内核公开的小规模子集之一，如果是，则将使用一个小型存根代码调用常规调用的调度程序例程（IumGenericSyscall）。</p>
+<p class="zw">图9-35展示了NtQueryInformationProcess API的Syscall选择器编号。请注意，存根设置了Syscall编号的最高位（N位），代表该常规调用是由安全内核请求的。常规调用的调度程序会检查参数并调用封送处理程序，封送处理程序可以封送每个参数，并将其复制到共享缓冲区中正确的偏移量位置。选择器中还有一位可以进一步区分常规调用或安全系统调用，下文将详细讨论这个位。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2297.png" style="width: 100%" />
+<p class="图题">图9-35　安全内核的Syscall选择器编号</p>
+<p class="zw">封送处理程序的正常工作离不开用于描述每个常规调用的两个重要的数组：描述符数组（如图9-34右侧所示）和参数描述符数组。封送处理程序可以借助这些数组获取自己需要的所有信息，即常规调用类型、封送函数索引、参数类型、大小及指向的数据类型（如果参数是指针的话）。</p>
+<p class="zw">共享缓冲区被封送处理程序正确填充后，安全内核会编译SKCALL数据结构并进入常规调用的调度程序循环（SkCallNormalMode）。循环的这一部分会保存并清空所有共享的虚拟CPU寄存器，禁用中断，并将线程上下文转移至PRCB线程（有关线程调度的详情请参阅下文）。随后它会将SKCALL数据结构的内容复制到一些共享寄存器中。最后，它会通过HvVtlReturn虚拟化调用来调用虚拟机监控程序。</p>
+<p class="zw">随后VTL 0中安全调用调度循环中的代码恢复执行。如果队列中还有未处理的中断，则这些中断将会被照常处理（前提是IRQL允许）。循环可以识别出常规调用的操作请求，并调用VTL 0中实现的NtQueryInformationProcess函数。后一个函数完成处理工作后，循环会重启动并再次进入安全内核（与安全调用一样），此时依然是通过HvlSwitchToVsmVtl1例程实现的，但使用了不同的操作请求：线程恢复。顾名思义，这使得安全内核可以切换到原先的安全线程，并继续执行之前被抢占的常规调用。</p>
+<p class="zw">启用常规调用的实现与此相同，但有一个例外：这些调用会将自己的项保存在常规调用调度表中，并直接指向常规调用的调度程序例程IumGenericSyscall。这样，代码即可直接转移到处理程序，跳过了安全内核中的所有API实现代码。</p>
+<h4 class="bt4 sigil_not_in_toc">安全系统调用</h4>
+<p class="zw">安全内核中最后一类系统调用类似于NT内核为VTL 0用户模式软件提供的标准系统调用。安全系统调用只能用于为安全进程（Trustlet）提供服务。VTL 0软件无法以任何方式发出安全系统调用。正如我们将在下文“<strong style="color:#0092dd">隔离用户模式</strong>”一节中讨论的那样，每个Trustlet都会将IUM Native Layer Dll（Iumdll.dll）映射到自己的地址空间。Iumdll.dll的作用与它在VTL 0中对应的Ntdll.dll作用相同，都是为了给用户模式应用程序实现原生Syscall存根函数。该存根可将Syscall编号复制到寄存器，并发出SYSCALL指令（该指令会根据具体平台使用不同的操作码）。</p>
+<p class="zw">安全系统调用编号总会将第28位设置为1（这是AMD64架构的做法，ARM64会设置第16位）。这样一来，全局系统调用调度程序（KiSystemServiceStart）即可识别出属于安全系统调用（而非常规调用）的Syscall编号，并切换至表示安全系统调用调度表的SkiSecureServiceTable。对于常规系统调用，全局调度程序会验证调用编号是否位于限制范围内，为参数分配堆栈空间（如果需要），计算系统调用的最终地址，然后转移至执行代码。</p>
+<p class="zw">总的来说，代码的执行依然停留在VTL 1下，但虚拟处理器的当前特权级别会从3（用户模式）提升至0（内核模式）。在安全内核启动的阶段0过程中，安全系统调用的调度表会被压缩（常规调用调度表也会被压缩）。不过该表中的项都是有效的，并会指向安全内核中实现的函数。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"235e6070-2914-47dd-bdb6-a375816a60a3","id":"72dac0c2-54d9-492d-8928-8176ea923c9b"}</p>

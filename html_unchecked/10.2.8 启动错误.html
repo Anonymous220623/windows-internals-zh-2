@@ -1,0 +1,8 @@
+<h3 class="bt3" id="sigil_toc_id_130">10.2.8　启动错误</h3>
+<p class="zw">如果驱动程序或服务在响应SCM的启动命令时报错，那么将由服务注册表键的ErrorControl值决定SCM的回应方式。如果ErrorControl值为SERVICE_ERROR_IGNORE (0)或ErrorControl值未指定，SCM将直接忽略错误信息并继续处理服务的启动。如果ErrorControl值为SERVICE_ERROR_NORMAL (1)，SCM会向系统事件日志写入一条事件称为“&lt;服务名&gt;服务因为下列错误未能启动”。在记录的事件日志中，SCM会列出服务返回给SCM的Windows错误代码的文本化转换结果，借此告知启动失败的原因。图10-18展示了一条报告服务启动失败的事件日志项。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2024.png" style="width: 100%" />
+<p class="图题">图10-18　服务启动失败后的事件日志项</p>
+<p class="zw">如果启动时报错服务的ErrorControl值为SERVICE_ERROR_SEVERE (2)或SERVICE_ ERROR_CRITICAL (3)，那么SCM会在事件日志中添加一条记录，随后调用内部函数ScRevertToLastKnownGood。该函数会检查最近一次的正确配置（last known good）功能是否启用，如果启用，则会将系统的注册表配置切换为“最近一次的正确配置”版本，其中包含系统最近一次正确启动时所用的配置。随后SCM会使用NtShutdownSystem系统服务（实现于执行体中）重启系统。如果系统已经使用最近一次的正确配置启动，或最近一次的正确配置功能未启用，那么SCM除了记录一条日志事件，将不执行其他任何操作。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"aa30130c-9685-4f9b-b225-b35541ad4475"}</p>

@@ -1,0 +1,6 @@
+<h2 class="bt2" id="sigil_toc_id_328"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 12.1　引导过程</h2>
+<p class="zw">当介绍Windows引导过程时，首先需要从Windows的安装开始讲，随后介绍引导支持文件的执行过程。设备驱动程序也是引导过程中的一个重要组成部分，因此，我们还会介绍设备驱动程序在加载和初始化过程中如何控制引导的不同阶段。随后介绍执行体子系统的初始化，以及内核通过启动会话管理器进程（Smss.exe）来启动Windows中的用户模式，进而启动两个初始会话（会话0和会话1）。我们会重点介绍这一过程中屏幕上显示的各种信息，这些信息可以帮助大家将内部过程与自己在Windows引导过程中观察到的信息联系起来。</p>
+<p class="zw">对于使用可扩展固件接口（Extensible Firmware Interface，EFI）和基本输入/输出系统（Basic Input/Output System，BIOS）的计算机，其引导过程的早期阶段有很大差异。EFI是一种较新的标准，能消除BIOS所用的大部分遗留的16位代码，并支持加载预引导程序和驱动程序，进而为操作系统的加载提供支持。EFI 2.0也被称为统一EFI，即UEFI，该标准已被大量计算机制造商所采用。下文将详细描述UEFI计算机的引导过程。</p>
+<p class="zw">为了对不同的固件实现提供支持，Windows提供了一种引导架构，该架构可将用户和开发人员之间的各种差异抽离出来。这样，无论计算机使用了什么类型的固件，都可以向用户和开发者提供一种更一致的环境和体验。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"6c85b166-48d5-4b91-85f4-89f43cf69a8b","id":"7de50c71-6922-40ef-8532-4dcba3bf6021"}</p>

@@ -1,0 +1,61 @@
+<h3 class="bt3" id="sigil_toc_id_269">11.12.18　重分析点</h3>
+<p class="zw">如上文所述，重分析点是一块由应用程序定义的、最大16&nbsp;KB的重分析数据。另外，还有一个32位重分析标签会存储在文件或目录的$REPARSE_POINT属性中。当应用程序创建或删除重分析点时，NTFS会更新\$Extend\$Reparse元数据文件，NTFS在其中存储的项标识了包含重分析点的文件和目录的文件记录号。在一个中心位置存储这些记录使得NTFS能够为应用程序提供接口，借此枚举卷上的所有重分析点或指定类型的重分析点，例如挂载点。\$Extend\$Reparse文件使用了NTFS的通用B树索引设施，根据重分析点标签和文件记录号整理文件的项（在一个名为$R的索引中）。</p>
+<p class="zwtsh">实验：查看不同的重分析点</p>
+<p class="zwts1">文件或目录重分析点可包含任意类型的任意数据。这个实验将使用系统自带的fsutil.exe工具，使用类似第8章介绍的方法，分析符号链接和现代应用程序AppExecutionAlias的重分析点内容。首先创建一个符号链接：</p>
+<pre class="代码无行号"><code>C:\&gt;mklink test_link.txt d:\Test.txt 
+symbolic link created for test_link.txt &lt;&lt;===&gt;&gt; d:\Test.txt </code></pre>
+<p class="zwts1">随后即可使用fsutil reparsePoint query命令查看重分析点内容：</p>
+<pre class="代码无行号"><code>C:\&gt;fsutil reparsePoint query test_link.txt 
+Reparse Tag Value : 0xa000000c 
+Tag value: Microsoft 
+Tag value: Name Surrogate 
+Tag value: Symbolic Link 
+　
+Reparse Data Length: 0x00000040 
+Reparse Data: 
+0000:  16 00 1e 00 00 00 16 00 00 00 00 00 64 00 3a 00 ............d.:. 
+0010:  5c 00 54 00 65 00 73 00 74 00 2e 00 74 00 78 00 \.T.e.s.t...t.x. 
+0020:  74 00 5c 00 3f 00 3f 00 5c 00 64 00 3a 00 5c 00 t.\.?.?.\.d.:.\. 
+0030:  54 00 65 00 73 00 74 00 2e 00 74 00 78 00 74 00 T.e.s.t...t.x.t. </code></pre>
+<p class="zwts1">毫不意外，内容是一种简单的数据结构（REPARSE_DATA_BUFFER，详见Microsoft Docs网站），其中包含符号链接目标和所显示的文件名。我们甚至可以使用fsutil reparsePoint delete命令删除这个重分析点：</p>
+<pre class="代码无行号"><code>C:\&gt;more test_link.txt 
+This is a test file! 
+　
+C:\&gt;fsutil reparsePoint delete test_link.txt 
+　
+C:\&gt;more test_link.txt </code></pre>
+<p class="zwts1">如果删除该重分析点，文件将变成0字节。这是设计特性，因为链接文件的未命名数据流（$DATA）是空的。我们可以针对已安装现代应用程序（下文例子中使用了Spotify）的AppExecutionAlias重复该实验：</p>
+<pre class="代码无行号"><code>C:\&gt;cd C:\Users\Andrea\AppData\Local\Microsoft\WindowsApps 
+C:\Users\andrea\AppData\Local\Microsoft\WindowsApps&gt;fsutil reparsePoint query Spotify.exe
+Reparse Tag Value : 0x8000001b 
+Tag value: Microsoft 
+　
+Reparse Data Length: 0x00000178 
+Reparse Data: 
+0000:  03 00 00 00 53 00 70 00 6f 00 74 00 69 00 66 00  ....S.p.o.t.i.f. 
+0010:  79 00 41 00 42 00 2e 00 53 00 70 00 6f 00 74 00  y.A.B...S.p.o.t. 
+0020:  69 00 66 00 79 00 4d 00 75 00 73 00 69 00 63 00  i.f.y.M.u.s.i.c. 
+0030:  5f 00 7a 00 70 00 64 00 6e 00 65 00 6b 00 64 00  _.z.p.d.n.e.k.d. 
+0040:  72 00 7a 00 72 00 65 00 61 00 30 00 00 00 53 00  r.z.r.e.a.0...S 
+0050:  70 00 6f 00 74 00 69 00 66 00 79 00 41 00 42 00  p.o.t.i.f.y.A.B. 
+0060:  2e 00 53 00 70 00 6f 00 74 00 69 00 66 00 79 00  ..S.p.o.t.i.f.y. 
+0070:  4d 00 75 00 73 00 69 00 63 00 5f 00 7a 00 70 00  M.u.s.i.c._.z.p. 
+0080:  64 00 6e 00 65 00 6b 00 64 00 72 00 7a 00 72 00  d.n.e.k.d.r.z.r. 
+0090:  65 00 61 00 30 00 21 00 53 00 70 00 6f 00 74 00  e.a.0.!.S.p.o.t. 
+00a0:  69 00 66 00 79 00 00 00 43 00 3a 00 5c 00 50 00  i.f.y...C.:.\.P. 
+00b0:  72 00 6f 00 67 00 72 00 61 00 6d 00 20 00 46 00  r.o.g.r.a.m. .F. 
+00c0:  69 00 6c 00 65 00 73 00 5c 00 57 00 69 00 6e 00  i.l.e.s.\.W.i.n. 
+00d0:  64 00 6f 00 77 00 73 00 41 00 70 00 70 00 73 00  d.o.w.s.A.p.p.s. 
+00e0:  5c 00 53 00 70 00 6f 00 74 00 69 00 66 00 79 00  \.S.p.o.t.i.f.y. 
+00f0:  41 00 42 00 2e 00 53 00 70 00 6f 00 74 00 69 00  A.B...S.p.o.t.i. 
+0100:  66 00 79 00 4d 00 75 00 73 00 69 00 63 00 5f 00  f.y.M.u.s.i.c._. 
+0110:  31 00 2e 00 39 00 34 00 2e 00 32 00 36 00 32 00  1...9.4...2.6.2. 
+0120:  2e 00 30 00 5f 00 78 00 38 00 36 00 5f 00 5f 00  ..0._.x.8.6._._. 
+0130:  7a 00 70 00 64 00 6e 00 65 00 6b 00 64 00 72 00  z.p.d.n.e.k.d.r. 
+0140:  7a 00 72 00 65 00 61 00 30 00 5c 00 53 00 70 00  z.r.e.a.0.\.S.p. 
+0150:  6f 00 74 00 69 00 66 00 79 00 4d 00 69 00 67 00  o.t.i.f.y.M.i.g. 
+0160:  72 00 61 00 74 00 6f 00 72 00 2e 00 65 00 78 00  r.a.t.o.r...e.x. 
+0170:  65 00 00 00 30 00 00 00                          e...0... </code></pre>
+<p class="zwts1">从上述输出结果中可以看到另一种类型的重分析点：被现代应用程序使用的AppExecutionAlias。详细信息请参阅第8章。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":17,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"299363cf-f955-4bd8-8a0e-7f385e5ef1e1"}</p>

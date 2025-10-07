@@ -1,0 +1,84 @@
+<h3 class="bt3" id="sigil_toc_id_304">11.15.9　虚拟PM磁盘和存储空间支持</h3>
+<p class="zw">持久性内存是专为服务器系统和关键业务应用程序（如巨型SQL数据库）设计的，这类系统需要极快的响应速度，每秒可能需要处理数千条查询。一般来说，此类服务器会通过Hyper-V提供的虚拟机来运行应用程序。Windows Server 2019支持一种新的虚拟硬盘：虚拟PM磁盘。虚拟PM由VHDPMEM文件提供支持，截至撰写这部分内容，只能通过Windows PowerShell创建此类文件（或对普通的VHD文件进行转换）。虚拟PM磁盘可通过VHDPMEM文件直接映射位于主机中真实DAX磁盘上的空间块，而该文件必须位于DAX卷上。</p>
+<p class="zw">在连接到虚拟机后，Hyper-V会向客户机系统公开一个虚拟PM设备（VPMEM）。这个虚拟PM设备是由位于虚拟UEFI BIOS中的NVDIMM固件接口表（NVDIMM Firmware Interface Table，NFIT）描述的（有关NVFIT表的详细信息请参阅ACPI 6.2规范）。SCM总线驱动程序读取该表并创建代表虚拟NVDIMM设备以及PM磁盘的常规设备对象。Pmem磁盘类驱动程序会像管理常规PM磁盘那样管理虚拟PM磁盘，并在此基础上创建虚拟卷。有关Windows虚拟机监控程序及其组件的详细信息请参阅第9章。图11-77展示了使用虚拟PM设备的虚拟机所使用的PM堆栈。其中深灰色组件是虚拟化堆栈的组成部分，浅灰色组件在客户机和主机分区中完全相同。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3218.png" style="width: 100%" />
+<p class="图题">图11-77　虚拟PM架构</p>
+<p class="zw">虚拟PM设备可公开连续地址空间，该空间是从主机中虚拟的（意味着主机上的VHDPMEM文件并不需要连续）。虚拟PM设备可同时支持DAX和块模式，但与主机中的情况类似，模式必须在格式化卷的时候确定。此外还能支持大型页和巨型页，具体使用方式和主机系统的相同。仅第2代虚拟机支持虚拟PM设备以及映射VHDPMEM文件。</p>
+<p class="zw">Windows Server 2019中的存储空间直通功能也支持在虚拟存储池中使用DAX磁盘。不同类型磁盘组成的混合阵列可以包含一个或多个DAX磁盘。阵列中的PM磁盘可配置为针对大容量的分层式虚拟磁盘提供容量层或性能层的存储容量，或者也可以配置为充当高性能缓存。有关存储空间的详细介绍请参阅下文。</p>
+<p class="zwtsh">实验：创建并挂载VHDPMEM映像</p>
+<p class="zwts1">我们可以使用PowerShell创建、转换虚拟PM磁盘并将其分配给Hyper-V虚拟机。在这个实验中，我们需要一个DAX磁盘和运行Windows 10于10月更新（RS5或后续版本）的第2代虚拟机（创建虚拟机的方法介绍已超出了本实验范围）。请以管理员身份打开Windows PowerShell提示符窗口，进入DAX模式的磁盘，随后创建虚拟PM磁盘（本例中的DAX磁盘为Q:盘）：</p>
+<pre class="代码无行号"><code>PS Q:\&gt; New-VHD VmPmemDis.vhdpmem -Fixed -SizeBytes 256GB -PhysicalSectorSizeBytes 4096 
+　
+ComputerName            : 37-4611k2635 
+Path                    : Q:\VmPmemDis.vhdpmem 
+VhdFormat               : VHDX 
+VhdType                 : Fixed 
+FileSize                : 274882101248 
+Size                    : 274877906944 
+MinimumSize             : 
+LogicalSectorSize       : 4096 
+PhysicalSectorSize      : 4096 
+BlockSize               : 0 
+ParentPath              : 
+DiskIdentifier          : 3AA0017F-03AF-4948-80BE-B40B4AA6BE24 
+FragmentationPercentage : 0 
+Alignment               : 1 
+Attached                : False 
+DiskNumber              : 
+IsPMEMCompatible        : True 
+AddressAbstractionType  : None 
+Number                  : </code></pre>
+<p class="zwts1">虚拟PM磁盘可使用固定大小，这意味着所有空间需要预先分配，这是设计使然。第二步要创建虚拟PM控制器并将其连接到虚拟机。请先确认虚拟机已经关机，随后运行下列命令。请将“TestPmVm”替换为虚拟机实际名称：</p>
+<pre class="代码无行号"><code>PS Q:\&gt; Add-VMPmemController -VMName "TestPmVm" </code></pre>
+<p class="zwts1">最后，我们需要将创建好的虚拟PM磁盘连接到虚拟机的PM控制器：</p>
+<pre class="代码无行号"><code>PS Q:\&gt; Add-VMHardDiskDrive "TestVm" PMEM -ControllerLocation 1 -Path 'Q:\VmPmemDis.vhdpmem'</code></pre>
+<p class="zwts1">我们可以使用Get-VMPmemController命令来验证该操作的结果：</p>
+<pre class="代码无行号"><code>PS Q:\&gt; Get-VMPmemController -VMName "TestPmVm" 
+　
+VMName     ControllerNumber Drives 
+------     ---------------- ------
+TestPmVm   0                 {Persistent Memory Device on PMEM controller number
+                              0 at location 1}</code></pre>
+<p class="zwts1">启动虚拟机，可以看到Windows检测到新的虚拟磁盘。在虚拟机中打开磁盘管理控制台（diskmgmt.msc），随后使用GPT分区格式初始化该磁盘。接着创建一个简单卷，为其分配盘符，但不要格式化。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3228.png" style="width: 100%" />
+<p class="zwts1">我们需要将该虚拟PM磁盘格式化为DAX模式。在虚拟机中以管理员身份打开命令提示符，假设虚拟PM磁盘为E:盘，需要执行下列命令：</p>
+<pre class="代码无行号"><code>C:\&gt;format e: /DAX /fs:NTFS /q 
+The type of the file system is RAW. 
+The new file system is NTFS. 
+　
+WARNING, ALL DATA ON NON-REMOVABLE DISK 
+DRIVE E: WILL BE LOST! 
+Proceed with Format (Y/N)? y 
+QuickFormatting 256.0 GB 
+Volume label (32 characters, ENTER for none)? DAX-In-Vm 
+Creating file system structures. 
+Format complete. 
+     256.0 GB total disk space. 
+     255.9 GB are available. </code></pre>
+<p class="zwts1">随后可使用系统内置的fsutil.exe工具配合fsinfo volumeinfo命令行参数确认该虚拟磁盘已格式化为DAX模式：</p>
+<pre class="代码无行号"><code>C:\&gt;fsutil fsinfo volumeinfo C: 
+Volume Name : DAX-In-Vm 
+Volume Serial Number : 0x1a1bdc32 
+Max Component Length : 255 
+File System Name : NTFS 
+Is ReadWrite 
+Not Thinly-Provisioned 
+Supports Case-sensitive filenames 
+Preserves Case of filenames 
+Supports Unicode in filenames 
+Preserves &amp; Enforces ACL’s 
+Supports Disk Quotas 
+Supports Reparse Points 
+Returns Handle Close Result Information 
+Supports POSIX-style Unlink and Rename 
+Supports Object Identifiers 
+Supports Named Streams 
+Supports Hard Links 
+Supports Extended Attributes 
+Supports Open By FileID 
+Supports USN Journal 
+Is DAX Volume </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":8,"parentId":"79bbbed1-3a35-4d22-b579-86536ea07e54","id":"425462d5-3390-47b9-94eb-46595af8ff81"}</p>

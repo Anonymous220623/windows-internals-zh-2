@@ -1,0 +1,340 @@
+<h3 class="bt3" id="sigil_toc_id_123">10.2.1　服务应用程序</h3>
+<p class="zw">服务应用程序（如Web服务器）至少包含一个以Windows服务形式运行的可执行文件。用户可以通过SCP启动、停止或配置服务。虽然Windows提供了内置的SCP（最常用的为命令行工具sc.exe以及由services.msc这个MMC管理单元提供的用户界面），这些SCP提供了常用的启动、停止、暂停和恢复功能，但一些服务应用程序也提供了自己的SCP，可供管理员针对自己所管理的服务进行更有针对性的配置设置。</p>
+<p class="zw">服务应用程序实际上是一种Windows可执行文件（GUI或控制台形式），并带有额外的代码，可接收来自SCM的命令，以及将应用程序的状态反馈给SCM。因为大部分服务没有用户界面，因此会以控制台程序的方式构建。</p>
+<p class="zw">安装包含服务的应用程序时，应用程序的安装程序（通常也充当SCP）必须向系统注册自己的服务。为注册服务，安装程序需要调用Windows的CreateService函数，这个与服务有关的函数在Advapi32.dll（%SystemRoot%\System32\Advapi32.dll）中导出。Advapi32（即高级API DLL）只实现了小部分客户端SCM API。SCM客户端API最重要的部分都在另一个DLL（Sechost.dll）中实现，这也是SCM和LSA客户端API的主机库。所有未在Advapi32.dll中实现的SCM API都会直接转发至Sechost.dll。大部分SCM客户端API会通过RPC与服务控制管理器通信。SCM则在Services.exe二进制文件中实现，详见下文“服务控制管理器”一节。</p>
+<p class="zw">当安装程序调用CreateService注册服务时，会向目标计算机上运行的SCM实例发出RPC调用。随后，SCM在HKLM\SYSTEM\CurrentControlSet\Services下为该服务创建一个注册表键。Services键是SCM数据库的非易失性表示。每个服务对应的键定义了包含服务的可执行映像的路径，以及参数和配置选项。</p>
+<p class="zw">创建了服务后，安装或管理应用程序即可通过StartService函数启动服务。因为一些基于服务的应用程序必须在启动过程中进行初始化，随后才能正常运行，因此很多安装程序会将服务注册为自动启动的服务，并要求用户重启系统以完成安装过程，随后SCM即可在系统启动过程中启动服务。</p>
+<p class="zw">当程序调用CreateService时，必须指定一系列用于描述服务特征的参数。这些特征包括：服务类型（是否是一个用自己的进程运行的服务，还是需要与其他服务共享同一个进程）、服务的可执行映像文件位置、可选的显示名、可选的账户名和密码（借此以特定账户的安全上下文启动服务）、启动类型（决定了该服务是否会在系统启动时自动运行，还是按照SCP的指示手动运行）、错误代码（决定了如果服务启动过程中遇到错误系统该如何处理，以及服务是否会自动启动）、可选信息（指定了服务的启动是否与其他服务有相关性）。从Windows Vista开始，系统可以支持延迟加载的服务。Windows 7引入了对触发的服务（triggered service）的支持，这种服务可在一个或多个特定事件被验证之后启动或停止。SCP可通过ChangeServiceConfig2 API指定触发器事件信息。</p>
+<p class="zw">服务应用程序需要在服务进程中运行。一个服务进程可以托管一个或多个服务应用程序。当SCM启动一个服务进程时，进程必须立即调用StartServiceCtrlDispatcher函数（必须在事先定义的超时值到期前调用，详见“服务登录”一节）。StartServiceCtrlDispatcher可接收进入服务的入口点列表，每个入口点对应了进程中的一个服务。每个入口点可由入口点对应的服务名称来区分。在与SCM（充当管道）建立了本地RPC（ALPC）通信连接后，StartServiceCtrlDispatcher会通过一个循环等待来自SCM管道的命令。请注意，该连接的句柄由SCM通过一个内部列表保存，借此即可向正确的进程发送和接收服务命令。每次启动一个进程托管的服务时，SCM会发送一条服务启动命令。对于收到的每条启动命令，StartServiceCtrlDispatcher函数会创建一个被称为服务线程（service thread）的线程，借此调用要启动的服务入口点（service main）并为该服务实现命令循环。StartServiceCtrlDispatcher会无限期地等待来自SCM的命令，并会在所有进程的服务均已停止后将控制返回给进程的主函数，这样服务进程即可在退出前清理资源。</p>
+<p class="zw">服务入口点（ServiceMain）的第一个操作是调用RegisterServiceCtrlHandler函数。该函数可以接收并存储一个指向函数的指针（名为控制处理程序），服务实现这样的指针是为了处理自己从SCM收到的各种命令。RegisterServiceCtrlHandler不与SCM通信，而是会在本地进程内存中为StartServiceCtrlDispatcher存储该函数。服务入口点会继续初始化服务，例如分配内存，创建通信端点，从注册表读取私有的配置数据。如上文所述，大部分服务都遵循一种惯例，会将自己的参数存储在自己的服务注册表键下一个名为Parameters的子键中。</p>
+<p class="zw">入口点初始化服务时，必须通过SetServiceStatus函数向SCM定期发送状态信息，以此告知服务的启动进展。当入口点初始化工作完成后（服务可以通过SERVICE_RUNNING向SCM告知），服务线程通常会进入一个循环，等待来自客户端应用程序的请求。例如，Web服务器可以初始化一个TCP监听套接字，等待传入的HTTP连接请求。</p>
+<p class="zw">服务进程的主线程将在StartServiceCtrlDispatcher函数中执行，接收发送给进程中服务的SCM命令，并调用目标服务的控制处理程序函数（由RegisterServiceCtrlHandler存储）。SCM命令包括停止、暂停、恢复、质询、关闭，以及应用程序定义的其他命令。图10-8展示了服务进程的内部组织，其中的主线程和服务线程组成一个托管单个服务的进程。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1095.png" style="width: 100%" />
+<p class="图题">图10-8　服务进程的结构</p>
+<h4 class="bt4 sigil_not_in_toc">服务的特征</h4>
+<p class="zw">SCM会将每个特征以值的形式存储在服务的注册表键中。图10-9展示了一个这样的服务注册表键范例。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1102.png" style="width: 100%" />
+<p class="图题">图10-9　服务注册表键范例</p>
+<p class="zw">表10-7列出了服务的所有特征，其中很多也适用于设备驱动程序（并非所有特征都适用于每一类服务或设备驱动程序）。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　在服务被删除前，SCM不会访问服务的Parameters子键，服务被删除后，SCM会删除服务的整个键，包括Parameters之类的子键。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="表题">表10-7　服务和驱动程序的注册表参数</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">值设置</p> </th> 
+   <th> <p class="bt">值名称</p> </th> 
+   <th> <p class="bt">值设置描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td rowspan="5"> <p class="bg">Start</p> </td> 
+   <td> <p class="bg">SERVICE_BOOT_START (0x0)</p> </td> 
+   <td> <p class="bg">Winload预载驱动程序，使其在启动过程中就位于内存中。这些驱动程序在执行SERVICE_ SYSTEM_START前已完成初始化</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_SYSTEM_START (0x1)</p> </td> 
+   <td> <p class="bg">初始化SERVICE_BOOT_START驱动程序后，在内核初始化过程中加载并初始化驱动程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_AUTO_START (0x2)</p> </td> 
+   <td> <p class="bg">SCM进程Services.exe启动后，SCM启动驱动程序或服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_DEMAND_START (0x3)</p> </td> 
+   <td> <p class="bg">SCM按需启动驱动程序或服务（客户端调用StartService时，被触发器启动或要启动的其他服务依赖该服务时）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_DISABLED (0x4)</p> </td> 
+   <td> <p class="bg">驱动程序或服务无法加载或初始化</p> </td> 
+  </tr> 
+  <tr> 
+   <td rowspan="4"> <p class="bg">ErrorControl</p> </td> 
+   <td> <p class="bg">SERVICE_ERROR_IGNORE (0x0)</p> </td> 
+   <td> <p class="bg">驱动程序或服务返回的任何错误均被忽略，未记录或显示任何警报信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_ERROR_NORMAL (0x1)</p> </td> 
+   <td> <p class="bg">如果驱动程序或服务报告了错误，将写入事件日志消息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_ERROR_SEVERE (0x2)</p> </td> 
+   <td> <p class="bg">如果驱动程序或服务返回了错误，并且未使用最后已知正确值，将重启动到最后已知正确状态；否则记录一条事件信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_ERROR_CRITICAL (0x3)</p> </td> 
+   <td> <p class="bg">如果驱动程序或服务返回了错误，并且未使用最后已知正确值，将重启动到最后已知正确状态；否则记录一条事件信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td rowspan="9"> <p class="bg">Type</p> </td> 
+   <td> <p class="bg">SERVICE_KERNEL_DRIVER (0x1)</p> </td> 
+   <td> <p class="bg">设备驱动程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_FILE_SYSTEM_DRIVER (0x2)</p> </td> 
+   <td> <p class="bg">内核模式文件系统驱动程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_ADAPTER (0x4)</p> </td> 
+   <td> <p class="bg">已废弃</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_RECOGNIZER_DRIVER (0x8)</p> </td> 
+   <td> <p class="bg">文件系统识别器驱动程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_WIN32_OWN_PROCESS (0x10)</p> </td> 
+   <td> <p class="bg">服务运行在一个仅托管了单个服务的进程中</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_WIN32_SHARE_PROCESS (0x20)</p> </td> 
+   <td> <p class="bg">服务运行在一个托管了多个服务的进程中</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_USER_OWN_PROCESS (0x50)</p> </td> 
+   <td> <p class="bg">服务使用已登录用户的安全令牌在自己的进程中运行</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_USER_SHARE_PROCESS (0x60)</p> </td> 
+   <td> <p class="bg">服务使用已登录用户的安全令牌在托管了多个服务的进程中运行</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_INTERACTIVE_PROCESS (0x100)</p> </td> 
+   <td> <p class="bg">该服务允许在控制台上展示窗口并接收用户输入，但仅控制台会话（0）可以防止与其他会话中的用户/控制台应用程序交互。该选项已被弃用</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Group</p> </td> 
+   <td> <p class="bg">组名称</p> </td> 
+   <td> <p class="bg">组初始化后要初始化的驱动程序或服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Tag</p> </td> 
+   <td> <p class="bg">标记名称</p> </td> 
+   <td> <p class="bg">组初始化顺序中指定的位置。该参数不适用于服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ImagePath</p> </td> 
+   <td> <p class="bg">服务或驱动程序可执行文件的路经</p> </td> 
+   <td> <p class="bg">如未指定ImagePath，I/O管理器会在%System Root%\System32\Drivers中查找驱动程序。Windows服务必须设置此参数</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DependOnGroup</p> </td> 
+   <td> <p class="bg">组名称</p> </td> 
+   <td> <p class="bg">驱动程序或服务无法加载，除非特定组中的驱动程序或服务已经加载完毕</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DependOnService</p> </td> 
+   <td> <p class="bg">服务名称</p> </td> 
+   <td> <p class="bg">特定服务加载完成前，该服务无法加载。该参数不适用于设备驱动程序或启动类型非SERVICE_ AUTO_START或SERVICE_DEMAND_START的服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ObjectName</p> </td> 
+   <td> <p class="bg">通常为LocalSystem，但也可以是账户名，如.\Administrator</p> </td> 
+   <td> <p class="bg">指定了运行该服务的账户。如未指定ObjectName，将使用LocalSystem账户。该参数不适用于设备驱动程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DisplayName</p> </td> 
+   <td> <p class="bg">服务的名称</p> </td> 
+   <td> <p class="bg">服务应用程序会使用该名称显示服务。如未指定名称，将使用服务的注册表键名称作为服务名称</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DeleteFlag</p> </td> 
+   <td> <p class="bg">0或1（TRUE或FALSE）</p> </td> 
+   <td> <p class="bg">服务被标记为已删除后，SCM设置的临时标记</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Description</p> </td> 
+   <td> <p class="bg">服务描述</p> </td> 
+   <td> <p class="bg">最多32,767字节的服务描述信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FailureActions</p> </td> 
+   <td> <p class="bg">服务进程非预期退出后，SCM所执行操作的描述</p> </td> 
+   <td> <p class="bg">失败后操作包括重启动服务进程、重启动系统、运行特定的程序。该值不适用于驱动程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FailureCommand</p> </td> 
+   <td> <p class="bg">程序命令行</p> </td> 
+   <td> <p class="bg">只有在FailureActions指定了服务失败后启动特定的程序时，SCM才会读取该值。该值不适用于驱动程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DelayedAutoStart</p> </td> 
+   <td> <p class="bg">0或1（TRUE或FALSE）</p> </td> 
+   <td> <p class="bg">可以让SCM在自己启动完毕后等待一定时间再启动服务。这可以减少系统启动过程中同时启动的服务数量</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">PreshutdownTimeout</p> </td> 
+   <td> <p class="bg">超时值毫秒数</p> </td> 
+   <td> <p class="bg">该值可让服务忽略默认的180秒关闭前提醒而使用自定义超时值。该超时值结束后，SCM会直接关闭尚未响应的服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td rowspan="3"> <p class="bg">ServiceSidType</p> </td> 
+   <td> <p class="bg">SERVICE_SID_TYPE_NONE (0x0)</p> </td> 
+   <td> <p class="bg">向后兼容性设置</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_SID_TYPE_UNRESTRICTED (0x1)</p> </td> 
+   <td> <p class="bg">在创建服务进程时，SCM会将服务SID作为组的所有者添加到服务进程的令牌中</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_SID_TYPE_RESTRICTED (0x3)</p> </td> 
+   <td> <p class="bg">SCM使用限制写入的令牌运行服务，将服务SID与World、Logon、Write-restricted SID一起添加到服务进程的受限SID列表</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Alias</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">服务别名的名称</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">RequiredPrivileges</p> </td> 
+   <td> <p class="bg">特权列表</p> </td> 
+   <td> <p class="bg">该值包含服务正常运行所需的特权列表。如需特权，SCM在为与此服务相关的共享进程创建令牌时会计算联合后的特权</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Security</p> </td> 
+   <td> <p class="bg">安全描述符</p> </td> 
+   <td> <p class="bg">该值包含的可选安全描述符定义了谁可以访问SCM内部创建的服务对象。如果不存在该值，SCM将应用默认安全描述符</p> </td> 
+  </tr> 
+  <tr> 
+   <td rowspan="5"> <p class="bg">LaunchProtected</p> </td> 
+   <td> <p class="bg">SERVICE_LAUNCH_PROTECTED_NONE (0x0)</p> </td> 
+   <td> <p class="bg">SCM以不受保护方式启动服务（默认值）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_LAUNCH_PROTECTED_ WINDOWS (0x1)</p> </td> 
+   <td> <p class="bg">SCM在Windows受保护进程中启动服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_LAUNCH_PROTECTED_ WINDOWS_ LIGHT (0x2)</p> </td> 
+   <td> <p class="bg">SCM在Windows受保护进程轻型中启动服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_LAUNCH_PROTECTED_ ANTIMALWARE_LIGHT (0x3)</p> </td> 
+   <td> <p class="bg">SCM在反恶意软件保护的进程轻型中启动服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_LAUNCH_PROTECTED_ APP_LIGHT (0x4)</p> </td> 
+   <td> <p class="bg">SCM在App保护进程轻型中启动服务（仅限内部使用）</p> </td> 
+  </tr> 
+  <tr> 
+   <td rowspan="2"> <p class="bg">UserServiceFlags</p> </td> 
+   <td> <p class="bg">USER_SERVICE_FLAG_DSMA_ALLOW (0x1)</p> </td> 
+   <td> <p class="bg">允许默认用户启动用户服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USER_SERVICE_FLAG_NONDSMA_ ALLOW (0x2)</p> </td> 
+   <td> <p class="bg">不允许默认用户启动服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SvcHostSplitDisable</p> </td> 
+   <td> <p class="bg">0或1（TRUE或FALSE）</p> </td> 
+   <td> <p class="bg">设置为1可禁止SCM启用Svchost拆分。该值仅适用于共享的服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">PackageFullName</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">打包服务的包全名</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">AppUserModelId</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">打包服务的应用程序用户模型ID（AUMID）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">PackageOrigin</p> </td> 
+   <td> <p class="bg">PACKAGE_ORIGIN_UNSIGNED (0x1)<br> PACKAGE_ORIGIN_INBOX (0x2)<br> PACKAGE_ORIGIN_STORE (0x3)<br> PACKAGE_ORIGIN_DEVELOPER_ UNSIGNED (0x4)<br> PACKAGE_ORIGIN_DEVELOPER_ SIGNED (0x5)</p> </td> 
+   <td> <p class="bg">这些值用于识别AppX程序包的来源（创建程序包的实体）</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">请注意，Type值包含三个用于设备驱动程序的值：设备驱动程序、文件系统驱动程序和文件系统识别器。这些值都被Windows设备驱动程序所使用，并会将参数作为注册表数据存储在Services注册表键中。SCM负责使用SERVICE_AUTO_START或SERVICE_ DEMAND_START作为Start值启动而非PNP驱动程序，因此，SCM数据库自然也就包含驱动程序。服务则使用了互斥的其他类型：SERVICE_WIN32_OWN_PROCESS和SERVICE_ WIN32_SHARE_PROCESS。</p>
+<p class="zw">只托管一个服务的可执行文件将使用SERVICE_WIN32_OWN_PROCESS类型，托管多个服务的可执行文件将使用SERVICE_WIN32_SHARE_PROCESS类型。相比启动多个服务进程造成的开销，用一个进程托管多个服务可节约系统资源。但这样做的一个潜在不足之处在于：如果同一个进程中运行的多个服务中，有一个服务出错导致进程终止，那么该进程的其他所有服务也将终止。此外，另一个局限在于，所有服务必须用同一个账户运行（如果有服务充分利用了服务安全性加固机制，则可限制暴露给恶意攻击的攻击面）。SERVICE_ USER_SERVICE标记可用来表示用户服务，这类服务会使用当前登录用户的身份运行。</p>
+<p class="zw">SCM通常会将触发器信息存储在另一个名为TriggerInfo的子键中。每个触发器事件都存储在一个以事件索引为名的子键中，该索引从0开始（例如第三个触发器会被存储在“TriggerInfo\2”子键中）。表10-8列出了所有可构成触发器信息的注册表值。</p>
+<p class="表题">表10-8　触发的服务的注册表参数</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">值设置</p> </th> 
+   <th> <p class="bt">值名称</p> </th> 
+   <th> <p class="bt">值设置描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td rowspan="2"> <p class="bg">Action</p> </td> 
+   <td> <p class="bg">SERVICE_TRIGGER_ACTION_SERVICE_START<br> (0x1)</p> </td> 
+   <td> <p class="bg">当触发器事件发生时启动服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_ACTION_SERVICE_ STOP<br> (0x2)</p> </td> 
+   <td> <p class="bg">当触发器事件发生时停止服务</p> </td> 
+  </tr> 
+  <tr> 
+   <td rowspan="7"> <p class="bg">Type</p> </td> 
+   <td> <p class="bg">SERVICE_TRIGGER_TYPE_DEVICE_INTERFACE_<br> ARRIVAL (0x1)</p> </td> 
+   <td> <p class="bg">指定当特定设备接口类的设备抵达，或系统启动时存在特定设备接口类设备时，要触发的事件</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_TYPE_IP_ADDRESS_<br> AVAILABILITY (0x2)</p> </td> 
+   <td> <p class="bg">指定当网络堆栈上IP地址变得可用或不可用时要触发的事件</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_TYPE_DOMAIN_JOIN (0x3)</p> </td> 
+   <td> <p class="bg">指定当计算机加入或离开域时要触发的事件</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_TYPE_FIREWALL_PORT_<br> EVENT (0x4)</p> </td> 
+   <td> <p class="bg">指定当防火墙端口打开或关闭时要触发的事件</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_TYPE_GROUP_POLICY (0x5)</p> </td> 
+   <td> <p class="bg">指定当计算机或用户策略改变时要触发的事件</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_TYPE_NETWORK_<br> ENDPOINT (0x6)</p> </td> 
+   <td> <p class="bg">指定当数据包或请求抵达特定网络协议时要触发的事件</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_TYPE_CUSTOM (0x14)</p> </td> 
+   <td> <p class="bg">指定ETW提供程序生成的自定义事件</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Guid</p> </td> 
+   <td> <p class="bg">触发器子类GUID</p> </td> 
+   <td> <p class="bg">用于识别触发器事件子类别的GUID，该GUID取决于触发器类型</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Data[Index]</p> </td> 
+   <td> <p class="bg">触发器特定的数据</p> </td> 
+   <td> <p class="bg">服务于触发器事件的特定触发器数据。该值取决于触发器事件类型</p> </td> 
+  </tr> 
+  <tr> 
+   <td rowspan="5"> <p class="bg">DataType[Index]</p> </td> 
+   <td> <p class="bg">SERVICE_TRIGGER_DATA_TYPE_BINARY (0x1)</p> </td> 
+   <td> <p class="bg">触发器特定数据为二进制格式</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_DATA_TYPE_STRING (0x2)</p> </td> 
+   <td> <p class="bg">触发器特定数据为字符串格式</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_DATA_TYPE_LEVEL (0x3)</p> </td> 
+   <td> <p class="bg">触发器特定数据为字节值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_DATA_TYPE_KEYWORD_<br> ANY (0x4)</p> </td> 
+   <td> <p class="bg">触发器特定数据为64位（8字节）无符号整数值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SERVICE_TRIGGER_DATA_TYPE_KEYWORD_<br> ALL (0x5)</p> </td> 
+   <td> <p class="bg">触发器特定数据为64位（8字节）无符号整数值</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"d6fb10fc-04fa-4714-8383-ac613edf43a3"}</p>

@@ -1,0 +1,21 @@
+<h3 class="bt3" id="sigil_toc_id_261">11.12.10　压缩稀疏数据</h3>
+<p class="zw">稀疏数据通常很大，但相对于其大小来说，通常只包含少量非零数据。稀疏矩阵就是稀疏数据的一个例子，如上文所述，NTFS使用从0到m的VCN来枚举文件的簇。每个VCN映射至一个对应的LCN，LCN标识了簇在磁盘上的位置。图11-43展示了一个常规的、未压缩文件的运行（磁盘分配）及其VCN和映射到的LCN。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2267.png" style="width: 100%" />
+<p class="图题">图11-43　未压缩文件的运行</p>
+<p class="zw">该文件存储在3个运行中，每个运行的长度为4个簇，因此共有12个簇。图11-44显示了该文件的MFT记录。如上文所述，为节约空间，MFT记录的数据属性（包括VCN到LCN的映射）只为每个运行记录一个映射，而非为每个簇记录一个映射。不过要注意，从0到11的每个VCN都有相关的LCN与之对应。第一项从VCN 0开始，涵盖4个簇；第二项从VCN 4开始，涵盖4个簇，以此类推。这种项格式通常是典型的未压缩文件。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2276.png" style="width: 100%" />
+<p class="图题">图11-44　未压缩文件的MFT记录</p>
+<p class="zw">当用户在NTFS卷上选择一个要压缩的文件后，NTFS的一种压缩技术会将文件中一长串由零组成的字符串删除。如果文件数据是稀疏的，经此操作后通常文件将只占用原本所需磁盘空间的一小部分。如果随后对文件执行写入操作，则NTFS只需要为包含非零数据的运行分配空间。</p>
+<p class="zw">图11-45描述了一个包含稀疏数据的压缩文件所对应的运行。请注意，文件VCN的某些范围（16～31以及64～127）是没有分配磁盘的。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2284.png" style="width: 100%" />
+<p class="图题">图11-45　包含稀疏数据的压缩文件所对应的运行</p>
+<p class="zw">该压缩文件的MFT记录省略了包含零的VCN块，因此也没有为其分配物理存储。例如，图11-46中的第一个数据项从VCN 0开始，涵盖16个簇；第二个项跳转到VCN 32，涵盖16个簇。</p>
+<p class="zw">当程序从压缩文件中读取数据时，NTFS会检查MFT记录以确定VCN到LCN的映射是否涵盖了被读取的位置。如果程序是从文件中一个尚未分配的“空洞”读取，这意味着文件中那部分数据由零组成，因此NTFS无须进一步访问磁盘就会返回零。如果程序向“空洞”写入非零数据，则NTFS会悄悄分配磁盘空间并写入数据。对于包含大量零数据的稀疏文件来说，这是一种非常高效的技术。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2293.png" style="width: 100%" />
+<p class="图题">图11-46　包含稀疏数据的压缩文件所对应的MFT记录</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":9,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"f64881b6-c076-48f7-a9d2-9b8091b7e16a"}</p>

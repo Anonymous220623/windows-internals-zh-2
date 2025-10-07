@@ -1,0 +1,11 @@
+<h2 class="bt2" id="sigil_toc_id_174"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 11.2　缓存管理器的重要功能</h2>
+<p class="zw">缓存管理器提供了多个重要功能。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 支持所有文件系统类型（本地和网络），因此，不再需要每种文件系统实现自己的缓存管理代码功能。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 使用缓存管理器能控制将哪个文件的哪些部分保留在物理内存中（在用户进程和操作系统之间对物理内存需求进行权衡）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在虚拟块（文件中的偏移量）基础上缓存数据，而不像很多缓存系统那样在逻辑块（磁盘卷中的偏移量）的基础上缓存数据，这样即可在无须调用文件系统驱动程序的前提下对缓存进行智能预读取和高速访问（这种缓存方法也叫快速I/O，详见下文）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 支持应用程序打开文件时给出的“提示”（例如，随机访问或顺序访问、临时文件创建等）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 支持可恢复文件系统（例如使用事务日志的文件系统），由此在系统故障后恢复数据。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 支持固态硬盘、NVMe硬盘以及直接访问（DAX）磁盘。</p>
+<p class="zw">下文将详细介绍这些功能在缓存管理器中的使用，本节将重点介绍这些功能背后的概念。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"12042f06-13bb-4487-b2cc-12b9114bd68f","id":"3ad34383-9660-4e89-b628-a8cbdfed9828"}</p>

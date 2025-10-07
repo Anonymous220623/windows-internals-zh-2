@@ -1,0 +1,24 @@
+<h3 class="bt3" id="sigil_toc_id_129">10.2.7　触发启动的服务</h3>
+<p class="zw">有些服务需要在某些系统事件发生后按需启动。因此Windows 7引入了触发启动的服务（triggered-start service）的概念。服务控制程序可以使用ChangeServiceConfig2 API（通过指定SERVICE_CONFIG_TRIGGER_INFO信息级别）配置按需启动的服务在一个或多个系统事件发生后启动（或停止）。这些系统事件的部分范例包括：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 特定设备接口被连接到系统。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 计算机加入或离开了域。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 系统防火墙中打开或关闭了某个TCP/IP端口。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 某条计算机或用户策略被更改。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 网络TCP/IP栈的IP地址变为可用或不可用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个RPC请求或命名管道数据包抵达特定的接口。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 系统中生成了某个ETW事件。</p>
+<p class="zw">触发启动的服务的第一个实现依赖于统一后台进程管理器（unified background process manager，详见下一节）。Windows 8.1引入了一种代理（broker）基础架构，其主要目标是针对现代应用管理多种系统事件。因此上文列出的所有这些事件都开始由三个主要的代理负责管理，这三个代理都是代理基础架构的一部分（Event Aggregation除外），它们分别是Desktop Activity Broker（桌面活动代理）、System Event Broker（系统事件代理）以及Event Aggregation（事件聚合）。有关代理基础架构的详细信息请参阅第8章的“打包的应用程序”一节。</p>
+<p class="zw">当ScAutoStartServices的第一阶段（通常用于启动HKLM\SYSTEM\CurrentControlSet\ Control\EarlyStartServices注册表值中列出的关键服务）操作完成后，SCM会调用ScRegisterServicesForTriggerAction，该函数负责为每个触发启动的服务注册触发器。该例程会循环遍历SCM数据库中的每个Win32服务。对于每个服务，该函数会生成一个临时WNF状态名（使用NtCreateWnfStateName原生API），通过适当的安全描述符提供保护，并将其与作为状态数据存储的服务状态一起发布（WNF架构详见第8章的“Windows通知设施”一节）。该WNF状态名可用于发布与服务状态有关的变更。随后这个例程会从TriggerInfo注册表键查询所有服务触发器，检查其有效性，并在没有可用触发器时直接跳出。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　上文提到的可支持的触发器列表以及相应的参数详见：https://docs.microsoft.com/ windows/win32/api/winsvc/ns-winsvc-service_trigger。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">如果检查成功，SCM会为每个触发器构建一个内部数据结构，其中包含了与触发器有关的所有信息（如目标服务名称、SID、代理名称、触发器参数），此外还会根据触发器类型确定正确的代理，外部设备事件由System Events代理管理，所有其他类型的事件由Desktop Activity代理管理。随后，SCM就可以调用相应的代理注册例程。注册过程是私有的，并且取决于具体的代理：针对每个触发器和条件会生成多个私有的WNF状态名（取决于特定代理）。</p>
+<p class="zw">Event Aggregation代理可以看作两个代理发布的私有WNF状态名和服务控制管理器之间的“黏合剂”。它会使用RtlSubscribeWnfStateChangeNotification API订阅触发器对应的所有WNF状态名和条件。在足够数量的WNF状态名收到信号后，Event Aggregation即可回调SCM，由SCM启动或停止触发启动的服务。</p>
+<p class="zw">与每个触发器使用WNF状态名的做法不同，SCM始终会独立地为每个Win32服务发布一个WNF状态名，无论该服务是否注册了触发器。这是因为当特定服务状态产生变化后，SCP可以调用NotifyServiceStatusChange API收到通知，该API订阅了服务的WNF状态名的状态。每当SCM引发改变服务状态的事件后，都会将新的状态数据发布至“服务状态变更”WNF状态，从而唤醒SCP中运行了状态变更回调函数的线程。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":6,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"a247d26a-3409-4fc0-a8a0-899a78ea904d"}</p>

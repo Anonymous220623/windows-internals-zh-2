@@ -1,0 +1,18 @@
+<h3 class="bt3" id="sigil_toc_id_154">10.5.4　提供事件</h3>
+<p class="zw">在注册了一个或多个ETW提供程序后，提供程序即可开始生成事件。请注意，甚至在控制器应用程序还没有机会在ETW会话中启用提供程序的情况下，该提供程序也可以生成事件。应用成程序或驱动程序生成事件的方式取决于提供程序的类型。例如，将事件写入基于清单的提供程序的应用程序，通常会直接创建事件描述符（按照XML清单的形式），并使用EventWrite API将事件写入启用了该提供程序的ETW会话。而管理MOF和WPP提供程序的应用程序通常会使用TraceEvent API。</p>
+<p class="zw">如上文“ETW会话”一节所述，基于清单的提供程序生成的事件可通过多种方式过滤。ETW会从提供程序注册对象中找到ETW_GUID_ENTRY数据结构（该数据结构由应用程序通过一个句柄提供）。随后内部函数EtwpEventWriteFull将使用提供程序的注册会话启用掩码在所有与该提供程序（由ETW_LOGGER_CONTEXT表示）相关，并且已启用的ETW会话之间循环。对于每个会话，会检查事件是否满足所有过滤器的条件。如果满足，则会计算事件载荷的完整大小，并检查该会话的当前缓冲区中是否还有足够的空间。</p>
+<p class="zw">如果没有足够的可用空间，则ETW会检查该会话是否还有其他可用缓冲区：可用缓冲区存储在一个FIFO（先入先出）队列中。如果有可用缓冲区，则ETW会将原先的缓冲器标记为“脏”，并切换至新的可用缓冲区。这样，记录器线程即可唤醒并将整个缓冲区刷新到日志文件中，或交付给实时消费者。如果该会话的日志模式为循环记录器，则不会创建记录器线程：ETW会直接将已写满的旧缓冲区链接到可用缓冲区队列的末尾（因此队列永远不可能为空）。否则，如果队列中没有可用的缓冲区，则ETW会尝试着分配额外的缓冲区，失败后会向调用方返回错误信息。</p>
+<p class="zw">在找到有足够空间的缓冲区后，EtwpEventWriteFull会自动将整个事件载荷写入缓冲区并退出。请注意，如果会话的启用掩码为0，这意味着没有任何会话与该提供程序相关联，此时事件会被丢弃，不会被记录到任何位置。</p>
+<p class="zw">MOF事件和WPP事件也会经历类似过程，但只支持一个ETW会话，并且通常支持的过滤器数量更少。对于此类提供程序，还需要对相关会话进行补充检查：检查控制器应用程序是否将会话标记为安全的，谁也无法向安全会话中写入任何事件。这种情况下会直接向调用方报错（安全会话详见下文“安全记录器”一节）。</p>
+<p class="zwtsh">实验：使用ETW列出进程活动</p>
+<p class="zwts1">在这个实验中，我们将使用ETW监控系统进程活动。Windows 10中有两个提供程序可监控此类信息：Microsoft-Windows-Kernel-Process和具备PROC_THREAD内核标记的NT内核记录器。本实验将使用前者，这是一种经典提供程序，已经包含解码事件所需的全部信息。我们可以使用多种工具捕获跟踪记录，本实验将使用XPERF（但也可以使用Windows性能监视器）。</p>
+<p class="zwts1">打开命令提示符窗口，输入下列命令：</p>
+<pre class="代码无行号"><code>cd /d "C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit" 
+xperf -start TestSession -on Microsoft-Windows-Kernel-Process -f c:\process_tr-<br>ace.etl </code></pre>
+<p class="zwts1">上述命令会启动一个名为TestSession的ETW会话（名称可更改），该会话会消费由Kernel-Process提供程序生成的事件，并将其存储在C:\process_trace.etl日志文件（文件名可更改）中。</p>
+<p class="zwts1">要确认该会话已成功启动，请重复上文“枚举ETW会话”实验中的步骤（XPERF和Windows性能监视器工具都应该能列出TestSession跟踪会话）。随后即可启动一些新的进程或应用程序（例如记事本或画图）。</p>
+<p class="zwts1">要停止ETW会话，请运行如下命令：</p>
+<pre class="代码无行号"><code>xperf -stop TestSession </code></pre>
+<p class="zwts1">解码ETL文件的相关步骤请参阅下文“解码ETL文件”实验。Windows的几乎所有组件都有提供程序，例如Microsoft-Windows-MSPaint提供程序可生成与“画图”程序功能有关的事件。我们也可以利用从MsPaint提供程序捕获的事件来做这个实验。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"0a817dad-0fff-43aa-90f7-5114d262a9ee","id":"693a077e-28d1-48e6-9b90-95a92fa66551"}</p>

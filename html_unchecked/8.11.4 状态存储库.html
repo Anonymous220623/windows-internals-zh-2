@@ -1,0 +1,41 @@
+<h3 class="bt3" id="sigil_toc_id_62">8.11.4　状态存储库</h3>
+<p class="zw">现代应用程序模型引入了一种新方式来存储打包应用程序的设置、程序包依赖以及常规的应用程序数据。状态存储库（state repository）已成为一种全新的中心仓库，其中包含所有此类数据，并为所有现代应用程序的管理提供一条重要的中心原则，即每次从应用商店下载、安装、激活或删除应用程序时，都需要通过该存储库读/写新数据。这方面有一个经典的使用范例：在用户点击开始菜单中的磁贴后，就会用到状态存储库。开始菜单会解析应用程序激活文件（可以是EXE或DLL文件，详见卷1第7章）的完整路径，并从存储库中读取（该过程实际上已经进行了简化，因为ShellExecutionHost进程已经在初始化时枚举了所有现代应用程序）。</p>
+<p class="zw">状态存储库主要通过Windows.StateRepository.dll和Windows.StateRepositoryCore.dll这两个库实现。状态存储库服务运行了该存储库中与服务器有关的部分，而UWP应用程序需要通过Windows.StateRepositoryClient.dll库与存储库通信（所有存储库API都是被完全信任的，因此WinRT客户端需要使用代理才能正确地与服务器通信，这是另一个DLL，即Windows.StateRepositoryPs.dll所实现的规则）。状态存储库的根位置位于HKLM\ SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\PackageRepositoryRoot注册表值中，该值通常会指向C:\ProgramData\Microsoft\Windows\AppRepository路径。</p>
+<p class="zw">状态存储库是通过多个数据库（也叫“分区”）实现的。这些数据库中的表也被称为“实体”。不同的分区在访问和寿命方面存在不同的限制。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Machine：该数据库包含程序包定义、应用程序的数据与标识符，以及主要和辅助磁贴（用于开始菜单），这是定义谁能访问哪些程序包的主注册表。相关数据会被不同组件（例如TileDataRepository库，资源管理器和开始菜单会用它来管理不同磁贴）广泛读取，但它主要是由AppX部署来写入的（很少被其他次要组件写入）。Machine分区通常会存储在状态存储库根文件夹下一个名为StateRepository- Machine.srd的文件中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Deployment：存储了整个计算机的相关数据，通常只在新程序包向系统注册或移除时，被部署服务（AppxSvc）所使用。其中包含应用程序文件列表以及每个现代应用程序清单文件的副本。Deployment分区通常存储在一个名为StateRepository- Deployment.srd的文件中。</p>
+<p class="zw">所有分区都存储在SQLite数据库内。Windows将自己版本的SQLite编译到StateRepository.Core.dll库中，该库可以暴露状态存储库数据访问层（Data Access Layer，DAL）API，而这些API大多是内部数据库引擎的包装器，进而可由状态存储库服务加以调用。</p>
+<p class="zw">有时，不同的组件需要知道状态存储库中的某些数据是何时被写入或修改的。在Windows 10的周年更新版本中，状态存储库通过更新已经可以支持变更和事件跟踪，进而应对各种场景。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 组件想要订阅某个实体的数据变更。该组件会在数据产生变化时收到回调并通过SQL事务来实现。一个部署操作可包含多个SQL事务，当每个数据库事务结束时，状态存储库会判断部署操作是否完成，如果完成，则会调用每个已注册的侦听器。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 进程被启动或从已暂停状态唤醒，需要了解自从自己上一次被通知或查看之后有哪些数据产生了变化。状态存储库可通过ChangeId字段满足这种请求，在支持该功能的表中，这个字段代表了一条记录的唯一时间标识符。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 进程从状态存储库检索数据，需要知道自从自己上一次检查后，数据是否产生了变化。数据的变化总是会通过一个名为Changelog的新表记录到兼容的实体中。该表会始终记录时间以及创建该数据的事件变更ID的变化情况，并会在适用的情况下记录删除数据的事件变更ID的变化情况。</p>
+<p class="zw">现代开始菜单的正常工作离不开状态存储库的变更和事件跟踪功能。每当ShellExperienceHost进程启动时，都会请求状态存储库在每次修改、创建或删除磁贴时通知自己的控制器（NotificationController.dll）。当用户通过应用商店安装或删除现代应用程序时，应用程序部署服务器会执行数据库事务来插入或删除磁贴。当该事务结束时，状态存储库会向事件发送信号以唤醒控制器。借此，开始菜单即可以近乎实时的方式改变自己的外观。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　现代开始菜单也可以通过类似方式，在每次新安装一个标准Win32应用程序后，自动添加或删除对应的项。应用程序的安装程序通常会在传统开始菜单文件夹位置（系统级路径C:\ProgramData\Microsoft\Windows\Start Menu或每用户路径C:\Users\&lt;UserName&gt;\AppData\Roaming\ Microsoft\Windows\Start Menu）下创建一个或多个快捷方式。现代开始菜单会使用AppResolver库提供的服务为所有开始菜单文件夹注册文件系统通知（用到了ReadDirectoryChangesW这个Win32 API）。借此，当被监控的文件夹中添加了新的快捷方式后，该库即可获得回调并向开始菜单发出信号，使其重新绘制内容。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：见证状态存储库</p>
+<p class="zwts1">我们可以使用自己惯用的SQLite浏览器应用程序轻松地打开并查看状态存储库的每个分区。在该实验中，我们需要下载并安装SQLite浏览器，例如，开源的DB Browser for SQLite（下载地址：http://sqlitebrowser.org/）。标准用户无权访问状态存储库路径。此外，在尝试访问时，每个分区的文件可能处于正被使用的状态。因此，我们需要将数据库文件复制到其他位置，随后再使用SQLite浏览器打开。请在以管理员身份运行（在搜索框中输入cmd，右键点击“命令提示符”并选择“以管理员身份运行”）的命令提示符窗口中运行下列命令：</p>
+<pre class="代码无行号"><code>C:\WINDOWS\system32&gt;cd "C:\ProgramData\Microsoft\Windows\AppRepository" 
+C:\ProgramData\Microsoft\Windows\AppRepository&gt;copy StateRepository-Machine.srd
+"%USERPROFILE%\Documents" </code></pre>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx5573.png" style="width: 100%" />
+<p class="zwts1">这样就可以将状态存储库的Machine分区复制到自己的“文档”文件夹中。随后需要打开它。使用开始菜单中创建的链接或搜索框中的搜索结果启动DB Browser for SQLite，随后点击Open Database按钮。打开“文档”文件夹，在File Type复选框中选择All Files (*)（状态存储库的数据库并未使用标准的SQLite文件扩展名），随后打开复制到这里的StateRepository-machine.srd文件。DB Browser for SQLite的主视图显示了数据库结构。在这个实验中，我们需要选择Browse Data标签页，随后查看Package、Application、PackageLocation以及PrimaryTile这几个表。</p>
+<p class="zwts1">应用程序激活管理器和现代应用程序模型的很多其他组件会使用标准SQL查询从状态存储库中提取所需的数据。例如，要提取现代应用程序的程序包位置和可执行文件名称，可以使用类似下面这样的SQL查询：</p>
+<pre class="代码无行号"><code>SELECT p.DisplayName, p.PackageFullName, pl.InstalledLocation, a.Executable, pm.Name
+FROM Package AS p 
+INNER JOIN PackageLocation AS pl ON p._PackageID=pl.Package 
+INNER JOIN PackageFamily AS pm ON p.PackageFamily=pm._PackageFamilyID 
+INNER JOIN Application AS a ON a.Package=p._PackageID 
+WHERE pm.PackageFamilyName="&lt;Package Family Name&gt;" </code></pre>
+<p class="zwts1">DAL（数据访问层）也使用类似的查询为自己的客户端提供服务。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx5584.png" style="width: 100%" />
+<p class="zwts1">我们可以先记录表中的记录总数，随后从应用商店安装一个新应用程序。部署过程完毕后，再次复制该数据库文件并查看就会发现，记录的总数出现了变化。多个表中的记录数量都会发生变化，尤其是当新安装的应用程序新建了磁贴时，甚至PrimaryTile表也会为开始菜单中新增加的磁贴添加一条新记录。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"9334f317-a4b1-4935-821c-b084138eb566","id":"a1c35942-1f4a-4aa1-96fa-7fe91c654887"}</p>

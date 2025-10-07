@@ -1,0 +1,4 @@
+<h2 class="bt2" id="sigil_toc_id_54"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 8.10　用户模式调试</h2>
+<p class="zw">系统对用户模式调试的支持工作可分为三个模块。第一个模块位于执行体中，使用Dbgk（代表调试框架，Debugging Framework）作为前缀。它为调试事件的注册和侦听提供了必要的内部函数，负责管理调试对象，并可将信息打包来供用户模式的对应部分直接使用。能与Dbgk直接通信的用户模式组件位于原生系统库Ntdll.dll中，属于一组名称以DbgUi为前缀的API。这些API负责（以不透明方式）包装底层调试对象的实现，通过将子系统应用程序围绕DbgUi实现对API进行包装，即可让所有子系统应用程序能够进行调试。最后，用户模式调试的第三个组件属于子系统DLL，这是每个子系统为了对其他应用程序进行调试所暴露的公开的API（位于Windows子系统的KernelBase.　dll中）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":9,"parentId":"18136782-cc9e-4447-8382-748342e5e95c","id":"558e2097-f40f-4c13-ae16-2a36e72d6cab"}</p>

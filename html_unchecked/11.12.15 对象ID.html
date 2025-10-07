@@ -1,0 +1,7 @@
+<h3 class="bt3" id="sigil_toc_id_266">11.12.15　对象ID</h3>
+<p class="zw">除了将分配给文件或目录的对象ID存储在MFT记录的$OBJECT_ID属性中，NTFS还会在\$Extend\$ObjId元数据文件的$O索引中保存对象ID和文件记录号之间的对应关系。该索引可按照对象ID（一种GUID）整理所有项，借此NTFS可以快速根据ID定位文件。该功能可供应用程序使用NtCreateFile原生API以及FILE_OPEN_BY_FILE_ID标记，通过对象ID打开文件或目录。图11-51展示了MFT记录中$ObjId元数据文件和$OBJECT_ID属性之间的关系。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2419.png" style="width: 100%" />
+<p class="图题">图11-51　$ObjId和$OBJECT_ID的关系</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":14,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"60d10cc4-eec9-4417-b302-c255c81df68d"}</p>

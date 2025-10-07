@@ -1,0 +1,55 @@
+<h3 class="bt3" id="sigil_toc_id_22">8.5.1　WoW64核心</h3>
+<p class="zw">正如上一节所述，WoW64核心是独立于平台的：它创建了一个软件层，借此可管理32位代码在64位操作系统中的执行。实际的转换工作由特定于具体平台的另一个名为模拟器（simulator，也叫二进制转换器）的组件负责。本节将讨论WoW64核心的作用及其与模拟器互操作的方式。虽然WoW64的核心几乎完全在用户模式下实现（位于Wow64.dll库中），但其中也有一部分位于NT内核中。</p>
+<h4 class="bt4 sigil_not_in_toc">NT内核中的WoW64核心</h4>
+<p class="zw">在系统启动（阶段1）过程中，I/O管理器会调用PsLocateSystemDlls例程，借此将系统可支持的所有系统DLL映射至System进程用户地址空间（并将其基址存储在一个全局数组中）。其中还包含WoW64版本的Ntdll，如表8-13所示。在进程管理器（PS）开始启动的阶段2期间，会解析内部内核变量中所存储的DLL的某些入口点。其中的一个导出项LdrSystemDllInitBlock用于将WoW64信息和函数指针传递给新的WoW64进程。</p>
+<p class="表题">表8-13　不同的Ntdll版本列表</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">路径</p> </th> 
+   <th> <p class="bt">内部名称</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">c:\windows\system32\ntdll.dll</p> </td> 
+   <td> <p class="bg">Ntdll.dll</p> </td> 
+   <td> <p class="bg">系统Ntdll会映射至每个用户进程（最小进程除外），这也是唯一标记为“必需”的版本</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">c:\windows\SysWow64\ntdll.dll</p> </td> 
+   <td> <p class="bg">Ntdll32.dll</p> </td> 
+   <td> <p class="bg">32位x86 Ntdll会映射至64位x86主机系统中运行的WoW64进程</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">c:\windows\SysArm32\ntdll.dll</p> </td> 
+   <td> <p class="bg">Ntdll32.dll</p> </td> 
+   <td> <p class="bg">32位ARM Ntdll会映射至64位ARM主机系统中运行的WoW64进程</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">c:\windows\SyChpe32\ntdll.dll</p> </td> 
+   <td> <p class="bg">Ntdllwow.dll</p> </td> 
+   <td> <p class="bg">32位x86 CHPE Ntdll会映射至64位ARM主机系统中运行的WoW64进程</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">当进程最初被创建时，内核会使用一种算法来决定该进程是否可以在WoW64下运行，该算法会分析主进程是否可执行PE映像，并检查系统中是否映射了正确版本的Ntdll。如果系统确定该进程是WoW64进程，当内核初始化其地址空间时，就会同时映射原生版本的Ntdll和正确的WoW64版本Ntdll。</p>
+<p class="zw">正如卷1第3章所述，每个非最小进程都有一个可从用户模式访问的PEB数据结构。对于WoW64进程，内核也会分配32位版本的PEB，并将指向它的指针存储在一个小型数据结构（EWoW64PROCESS）中，该数据结构会链接到代表新进程的主EPROCESS结构。随后内核会填充由32位版本的LdrSystemDllInitBlock符号所描述的数据结构，包括由Wow64 Ntdll导出的指针。</p>
+<p class="zw">在为进程分配线程时，内核会经历类似的过程：除了线程的初始用户栈（其初始大小可通过主映像的PE头指定），还要分配执行32位代码所需的另一个栈。这个新栈也叫线程的WoW64栈。在为线程构建TEB时，内核会分配足够容量的内存，以便同时存储64位TEB以及随后的32位TEB。</p>
+<p class="zw">此外，在基础的64位栈之上还会分配一个小型数据结构（名为WoW64 CPU Area Information，WoW64 CPU区域信息）。后者包含目标映像机器标识符、一个与平台相关的32位CPU上下文（X86_NT5_CONTEXT或ARM_CONTEXT数据结构，具体取决于目标架构），以及一个指向每线程WoW64 CPU共享数据的指针，这些内容都可被模拟器使用。指向这个小型数据结构的指针还会存储在线程的TLS插槽1中，以供二进制转换器快速引用。图8-29展示了只包含一个初始单线程的WoW64进程的最终配置。</p>
+<h4 class="bt4 sigil_not_in_toc">用户模式WoW64核心</h4>
+<p class="zw">除了上一节描述的各种差异外，对于非WoW64进程，进程及其初始线程的诞生方式完全相同，但从主线程调用原生版本Ntdll中的加载器初始化函数LdrpInitialize并开始执行的那一刻起，情况开始发生变化。当检测到该线程是新进程的上下文中第一个开始执行的线程后，加载器会调用进程初始化例程LdrpInitializeProcess，并结合其他多个因素（详情请参阅卷1第3章“进程初始化的早期工作”一节）来判断该进程是否为WoW64进程，而具体依据为检查是否存在32位TEB（位于原生TEB之后，会与原生TEB链接在一起）中。如果检查发现存在32位TEB，那么原生Ntdll会将内部全局变量UseWoW64设置为1，进而构建WoW64核心库（wow64.dll）的路径，并将其映射至4&nbsp;GB虚拟地址空间限制之上的位置（这样就不会干扰为该进程模拟的32位地址空间）。随后Ntdll会获取负责处理进程/线程挂起、APC与异常调度的WoW64函数的地址，并将该地址存储在某些内部变量中。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2631.png" style="width: 100%" />
+<p class="图题">图8-29　只包含一个线程的WoW64进程的内部配置</p>
+<p class="zw">当进程初始化例程结束后，Windows加载器会通过导出的Wow64LdrpInitialize例程将执行过程转换至WoW64核心，随后永远不会返回。至此，每个新线程都将通过该入口点启动（而无须使用传统的RtlUserThreadStart）。WoW64核心会在TLS插槽1处获得指向内核存储的CPU WoW64区域的指针。如果该线程是进程中的第一个线程，则会调用WoW64进程初始化例程，该例程会执行如下操作：</p>
+<p class="zw">1）尝试加载WoW64 Thunk Logging DLL（wow64log.dll）。该DLL用于记录WoW64调用，但并未包含在商业版的Windows版本中，因此可直接跳过。</p>
+<p class="zw">2）通过NT内核填充的LdrSystemDllInitBlock查找Ntdll32基址和函数指针。</p>
+<p class="zw">3）初始化文件系统和注册表重定向。文件系统和注册表重定向是在WoW64核心的Syscall层实现的，可拦截32位注册表和文件系统的请求，转换其路径，随后再调用原生的系统调用。</p>
+<p class="zw">4）初始化WoW64服务表，该表中包含指向NT内核与Win32k GUI子系统所属系统服务的指针（类似于标准内核系统服务），并包含Console与NLS服务（均为WoW64系统服务调用，本章下文将介绍重定向）。</p>
+<p class="zw">5）填充NT内核为该进程分配的32位版本的PEB，并根据进程主映像架构加载正确的CPU模拟器。系统会查询HKLM\SOFTWARE\Microsoft\Wow64\&lt;arch&gt;键的“默认”注册表值（其中的&lt;arch&gt;可以是x86或arm，这取决于目标架构），该值包含模拟器的主DLL名称。随后将模拟器载入并映射至进程的地址空间。模拟器主DLL的部分导出函数经过解析会存储在一个名为BtFuncs的内部数组中。该数组是将与平台相关的二进制转换器及WoW64子系统链接在一起的关键：WoW64仅通过它调用模拟器的函数。例如，BtCpuProcessInit函数就代表了模拟器的进程初始化例程。</p>
+<p class="zw">6）形式转换跨进程机制通过分配并映射一个16&nbsp;KB的共享内存节来完成初始化。当一个WoW64进程调用一个以另一个32位进程为目标的API时（该操作会在不同进程之间传播形式转换操作），会产生一个合成的工作项。</p>
+<p class="zw">7）WoW64层会（通过调用导出的BtCpuNotifyMapViewOfSection）通知模拟器主模块以及32位版本的Ntdll已被映射至地址空间。</p>
+<p class="zw">8）WoW64核心会将指向32位系统调用调度程序的指针存储在32位版本Ntdll导出的Wow64Transition变量中，这样系统调用调度程序就可以正常工作了。</p>
+<p class="zw">当进程初始化例程运行完毕时，线程就准备好开始进行CPU模拟了。线程会调用模拟器的线程初始化函数并准备一个全新的32位上下文，并转换最初由NT内核填充的64位上下文。最后，还会根据新的上下文准备32位栈，以便执行32位版本LdrInitializeThunk函数。模拟操作是通过模拟器的BTCpuSimulate导出函数启动的，该函数永远不会返回至调用方（除非模拟器中发生严重错误）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"14224151-eb07-4e67-90f1-8b8528879ccb","id":"51d9b3d9-90d6-4369-bd83-1d2b181090d5"}</p>

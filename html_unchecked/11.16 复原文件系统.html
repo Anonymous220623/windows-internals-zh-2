@@ -1,0 +1,14 @@
+<h2 class="bt2" id="sigil_toc_id_305"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 11.16　复原文件系统</h2>
+<p class="zw">Windows Server 2012 R2引入了一种名为复原文件系统（Resilient File System，ReFS）的高级文件系统。该文件系统是一种名为存储空间的全新存储架构的一部分，这种架构提供了多种功能，包括同时使用固态硬盘和传统机械硬盘创建一种分层的虚拟存储卷（下文将简要介绍存储空间及其分层存储功能）。ReFS是一种“写新”（write-to-new）文件系统，这意味着文件系统元数据永远不会在原地更新，更新后的元数据会被写入新位置，旧的元数据则被标记为已删除。这个属性很重要，也是能保证数据完整性的重要功能之一。ReFS最初的设计目标包括以下几方面。</p>
+<p class="zw">1）自治愈、联机卷检查和修复（几乎可完全消除因文件系统出错导致的数据不可用）以及直写（write-through）支持（下文将详细介绍直写）。</p>
+<p class="zw">2）所有用户数据的数据完整性（硬件和软件层面）。</p>
+<p class="zw">3）高效快速的文件快照（块克隆）。</p>
+<p class="zw">4）支持极大容量的卷（EB级别）和文件。</p>
+<p class="zw">5）数据和元数据自动分层，支持SMR（叠瓦式磁记录）和未来的固态磁盘。</p>
+<p class="zw">ReFS已经发展出不同的版本。本书介绍的是ReFS v2，该版本最初是在Windows Server 2016中实现的。图11-78展示了ReFS和NTFS的高层实现方面的差异。ReFS并没有完全重写NTFS，而是采用另一种方法将NTFS通过两个部分来实现：一部分可以理解磁盘上的格式，另一部分则无法理解。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3237.png" style="width: 100%" />
+<p class="图题">图11-78　ReFS和NTFS的高层实现对比</p>
+<p class="zw">ReFS用Minstore取代了磁盘上的存储引擎。Minstore是一种可恢复的对象存储库，能为其调用方提供一个键-值表接口，并为针对这些表的修改操作实现了一种分配写入语义，同时可与Windows缓存管理器相互集成。从本质上来看，Minstore是一种库，实现了可扩展的现代化写入时复制文件系统应有的核心能力。ReFS利用Minstore来实现文件、目录等。要理解ReFS，首先要理解Minstore，因此下面来看看Minstore到底是什么。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":15,"parentId":"12042f06-13bb-4487-b2cc-12b9114bd68f","id":"4bbec909-3cd8-4eac-81f1-9dd5481ba72c"}</p>

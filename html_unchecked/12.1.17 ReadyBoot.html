@@ -1,0 +1,11 @@
+<h3 class="bt3" id="sigil_toc_id_345">12.1.17　ReadyBoot</h3>
+<p class="zw">如果系统可用内存小于400&nbsp;MB，则Windows会使用标准逻辑的启动时预取器（详见卷1第5章）；但如果系统的可用内存大于400&nbsp;MB，则会使用RAM缓存来优化启动过程。缓存大小取决于可用RAM的总数，只要足够大，就可以创建大小合理的缓存，同时依然能为系统提供顺利启动所需的内存。ReadyBoot通过两个二进制文件实现：ReadyBoost驱动程序（Rdyboost.sys）和Sysmain服务（Sysmain.dll，它还实现了SuperFetch）。</p>
+<p class="zw">缓存由存储管理器实现，存储管理器在实现缓存和ReadyBoost缓存时使用了同一个驱动程序（Rdyboost.sys），但缓存的数量是由之前存储在注册表中的启动方案决定的。尽管启动缓存可以像ReadyBoost缓存那样进行压缩，但ReadyBoost和ReadyBoot缓存管理机制之间的一个差异在于：ReadyBoot模式下的缓存未被加密。ReadyBoost服务会在服务启动完毕50秒后，或在对内存产生其他需求时删除缓存。</p>
+<p class="zw">系统启动时，在NT内核初始化阶段1过程中，ReadyBoost驱动程序（属于卷过滤器驱动程序）会拦截启动卷的创建操作，并决定是否启用缓存。只有当目标卷已在HKLM\System\CurrentControlSet\Services\rdyboost\Parameters\ReadyBootVolumeUniqueId注册表值中注册过的情况下，才会启用缓存。该值包含了启动卷的ID。如果ReadyBoot被启用，则ReadyBoost驱动程序会开始（通过ETW）记录所有卷的启动I/O；如果之前的启动方案已经在BootPlan注册表二进制值中注册，则它还会运行一个系统线程，通过异步卷读取填充整个缓存。当新安装的Windows系统首次启动时，这两个注册表值还不存在，因此，缓存和日志跟踪都不会启用。</p>
+<p class="zw">在这种情况下，Sysmain服务（由SCM在启动过程稍后的阶段启动）将决定是否启用缓存，并将检查系统配置以及所运行的Windows SKU版本。有些情况下，ReadyBoot会被彻底禁用，例如，启动盘为固态硬盘时。如果检查结果是肯定的，则Sysmain会启用ReadyBoot，为此需要在相应的注册表值（ReadyBootVolumeUniqueId）中写入启动卷ID，并在HKLM\SYSTEM\CurrentControlSet\Control\WMI\AutoLogger\Readyboot注册表键中启用WMI ReadyBoot Autologger。当系统下一次启动时，ReadyBoost驱动程序就会记录所有卷的I/O，但不填充缓存（此时启动方案依然不存在）。</p>
+<p class="zw">在多次启动后，Sysmain服务会使用闲置的CPU时间为下一次启动计算启动时的缓存方案。它会分析已记录的ETW I/O事件来确定访问过哪些文件，以及这些文件在磁盘上的位置，随后会将处理后的跟踪结果以.fx格式的文件存储到%SystemRoot%\Prefetch\ Readyboot中，并根据前五次启动生成的跟踪文件来计算新的启动缓存方案。Sysmain服务会将新生成的方案存储到注册表值中，如图12-12所示。ReadyBoost启动驱动程序将读取启动方案并填充缓存，以此最大限度地缩短启动过程所需的时间。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1221.png" style="width: 100%" />
+<p class="图题">图12-12　ReadyBoot的配置和统计状态</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":16,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"02d705a7-9391-4e18-b808-d9a20e0ca2b5"}</p>

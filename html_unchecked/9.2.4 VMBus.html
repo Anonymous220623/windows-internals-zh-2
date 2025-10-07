@@ -1,0 +1,40 @@
+<h3 class="bt3" id="sigil_toc_id_84">9.2.4　VMBus</h3>
+<p class="zw">VMBus是Hyper-V虚拟化堆栈提供的一种机制，可供虚拟机实现分区间通信。这是一种能在客户机和宿主机之间建立通道的虚拟总线设备，这些通道可用于在分区间共享数据并创建半虚拟化设备（也叫综合设备）。</p>
+<p class="zw">承载虚拟化服务提供程序（VSP）的根分区可通过VMBus通信，借此处理来自子分区的设备请求。在另一端，子分区（或客户机）可通过虚拟化服务使用程序（Virtualization Service Consumer，VSC）借助VMBus将设备请求重定向至VSP。子分区需要借助VMBus和VSC驱动程序来使用半虚拟化的设备堆栈（有关虚拟硬件支持的详细信息请参阅“虚拟硬件支持”一节）。VMBus通道主要通过“上游”和“下游”两个环形缓冲区让VSC和VSP传输数据。这些环形缓冲区会由虚拟机监控程序映射至两端的分区中，如上一节所述，虚拟机监控程序还能通过SynIC提供分区间通信。</p>
+<p class="zw">工作进程在启动虚拟机时，最先启动的虚拟设备（VDEV）之一就是VMBus VDEV（在Vmbusvdev.dll中实现）。在上电的过程中，它会向VMBus根设备（名为\Device\ RootVmBus）发送VMBUS_VDEV_SETUP IOCTL，借此可以将虚拟机工作进程连接至VMBus根驱动程序（Vmbusr.sys）。VMBus根驱动程序会协调与子虚拟机进行双向通信的父端点。其初始设置例程还会在目标虚拟机暂未上电时调用，而它的一个重要作用是创建XPartition数据结构，该数据结构表示子虚拟机的VMBus实例，可用于连接所需的SynIC综合中断源（也叫SINT，详见“综合中断控制器”一节）。在根分区中，VMBus使用了两个综合中断源：一个用于初始消息握手（发生在通道创建前），另一个用于环形缓冲区发出的综合事件信号。不过子分区只使用了一个SINT。设置例程会在子虚拟机中分配主消息端口，并在根中分配相应的连接，对于隶属于该虚拟机的每个虚拟处理器，还会分配事件端口及其连接（用于从子虚拟机接收综合事件）。</p>
+<p class="zw">这两个综合中断源会分别使用名为KiVmbusInterrupt0和KiVmbusInterrupt1的ISR例程进行映射。在这两个例程的帮助下，根分区可以准备好接收来自子虚拟机的综合中断和消息。当收到消息（或事件）后，ISR会将一个延迟过程调用（DPC）排队，借此检查消息是否有效。如果有效，会将一个工作项排队，稍后该工作项将被运行在被动IRQL级别的系统处理（这会对消息队列产生进一步的影响）。</p>
+<p class="zw">根分区中的VMBus就绪后，根中的每个VSP驱动程序即可使用VMBus内核模式客户端库公开的服务为子虚拟机分配并提供VMBus通道。VMBus内核模式客户端库（缩写为KMCL）可通过不透明的KMODE_CLIENT_CONTEXT数据结构代表VMBus通道，该数据结构也是在创建通道时（具体来说是VSP调用VmbChannelAllocate API时）分配并初始化的。随后，根VSP通常会调用VmbChannelEnabled API（子分区中的该函数可打开通道，建立与根分区的实际连接）以便向子虚拟机提供通道。KMCL通过两个驱动程序实现：一个运行在根分区中（Vmbkmclr.sys），一个会被载入子分区（Vmbkmcl.sys）。</p>
+<p class="zw">在根分区中提供通道是一种相对复杂的操作，涉及下列步骤。</p>
+<p class="zw">1）KMCL驱动程序通过VDEV上电例程中初始化的文件对象与VMBus根驱动程序进行通信，VMBus驱动程序获得表示子分区的XPartition数据结构，并启动通道提供过程。</p>
+<p class="zw">2）VMBus驱动程序提供的底层服务分配并初始化表示单个“通道”的LOCAL_OFFER数据结构，并预分配一些由SynIC预定义的消息。随后，VMBus会在根中创建综合事件端口，随后子分区就可以在将数据写入环形缓冲区之后连接到信号事件。表示所提供通道的LOCAL_OFFER数据结构会被添加到一个内部服务器通道列表中。</p>
+<p class="zw">3）VMBus创建通道后，会尝试着向子分区发送OfferChannel消息，目的是通知子分区新通道已就绪。然而在这个阶段VMBus会失败，因为另一端（子虚拟机）尚未准备好，并且还没有开始初始消息握手。</p>
+<p class="zw">在所有VSP完成了通道的供应操作，并且所有VDEV已经上电（详见上一节）后，虚拟机工作进程会启动虚拟机。为了让通道完全初始化并让相关连接启动，客户机分区应加载并启动VMBus子驱动程序（Vmbus.sys）。</p>
+<h4 class="bt4 sigil_not_in_toc">初始VMBus消息握手</h4>
+<p class="zw">Windows中的VMBus子驱动程序是一种由PNP管理器枚举并启动的WDF总线驱动程序，位于ACPI根枚举器中（Linux有另一个版本的VMBus子驱动程序，但本书不会涉及该版本）。当子虚拟机的NT内核启动时，VMBus驱动程序会初始化自己的内部状态（意味着将会分配所需数据结构和工作项）并创建\Device\VmBus根功能设备对象（Functional Device Object，FDO），借此开始执行。随后PNP管理器会调用VMBus的资源分配处理程序例程。后者将配置正确的SINT源（在WinHv驱动程序的帮助下，对某一个HvRegisterSint寄存器发出HvSetVpRegisters虚拟化调用），并将其连接至KiVmbusInterrupt2 ISR。此外，它还会获取SIMP页，借此向根分区发送和接收综合消息（详见“综合中断控制器”一节），并创建代表父（根）分区的XPartition数据结构。</p>
+<p class="zw">当PNP管理器发出启动VMBus的FDO的请求后，VMBus驱动程序会启动初始消息握手。在这个阶段，每个消息的发送都是通过发出HvPostMessage虚拟化调用实现的（同时还需借助WinHv驱动程序），借此虚拟机监控程序即可将综合中断注入目标分区（本例中的目标是分区）。接收方只需读取SIMP页面即可收到消息，接收方会将新的消息类型设置为MessageTypeNone，借此发出消息已读取的信号（详见虚拟机监控程序TLFS）。消息的读者可将图9-25所示的初始消息握手过程看作分为两个阶段的过程。</p>
+<p class="zw">第一阶段由初始联系（Initiate Contact）消息所表示，该消息只会在虚拟机的生命周期中发送一次，由子虚拟机发给根分区，目的在于协商双方可支持的VMBus协议版本。截至撰写这部分内容，VMBus协议主要分为五个版本，此外还有一些额外的变体。根分区会解析该消息，要求虚拟机监控程序映射客户端所分配的监视器页面（如果协议支持的话），并发送可接受的协议版本作为回复。请注意，如果情况与此不符（例如根分区运行的Windows版本低于子虚拟机中运行的版本），子虚拟机会重启动该过程并对VMBus协议版本进行降级，直到建立可兼容的版本。至此，子虚拟机已经准备好发送请求供应（Request Offers）消息，这会导致根分区发送已经由VSP提供的所有通道列表。这样，子分区即可在稍后的握手协议中打开通道。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1431.png" style="width: 100%" />
+<p class="图题">图9-25　VMBus初始消息握手</p>
+<p class="zw">图9-25强调了在设置VMBus通道时由虚拟机监控程序发出的各种综合消息。根分区会浏览服务器通道列表（LOCAL_OFFER数据结构，详见上文）提供的通道列表，并通过每个通道为子虚拟机发送一条供应通道（Offer Channel）消息。该消息与上文“VMBus”一节所介绍的通道提供协议最后发送的消息完全相同，因此，尽管每个虚拟机的生命周期中初始消息握手的第一阶段只会发生一次，但只要提供了通道，第二阶段就可以随时启动。供应通道消息包含的重要数据（例如通道类型和实例GUID）可用于区分每个通道。对于VDEV通道，PNP管理器可以使用这两个GUID正确地识别相关虚拟设备。</p>
+<p class="zw">为了响应该消息，子分区会分配表示通道的客户端LOCAL_OFFER数据结构以及相关XInterrupt对象，同时会判断该通道是否需要创建物理设备对象（PDO），VDEV通道通常总是需要创建。这种情况下，VMBus驱动程序会创建代表新通道的PDO实例，所创建的设备可通过安全描述符获得必要保护，使其只能通过系统账户和管理员账户访问。随后VMBus标准设备接口也会被附加至新建的PDO，借此在新的VMBus通道（由LOCAL_ OFFER数据结构代表）和设备对象之间维持关联。PDO创建完成后，PNP管理器即可通过供应通道消息包含的VDEV类型和实例GUID识别并加载正确的VSC驱动程序。这些接口会变为新建PDO的一部分，可通过设备管理器查看。详细信息请参阅下面的实验。随后在VSC驱动程序加载完成后，通常即可调用VmbEnableChannel API（由KMCL暴露，详见上文）“打开”渠道并创建最终的环形缓冲区。</p>
+<p class="zwtsh">实验：查看通过VMBus暴露的虚拟设备（VDEV）</p>
+<p class="zwts1">每个VMBus通道均可通过类型和实例GUID来区分。对于属于VDEV的通道，其类型和实例GUID还可用于区分所公开的设备。当VMBus子驱动程序创建实例PDO时，会将通道的类型和实例GUID包含在多个设备的属性中，例如实例路径、硬件ID、兼容ID。本实验将介绍如何枚举VMBus上构建的所有VDEV。</p>
+<p class="zwts1">为完成该实验，需要通过Hyper-V管理器创建并启动一个Windows 10虚拟机。虚拟机启动并运行后，请打开设备管理器（在搜索框中输入“<strong style="color:#0092dd">设备管理器</strong>”）。随后在设备管理器窗口中点击“<strong style="color:#0092dd">查看</strong>”菜单，并选择“<strong style="color:#0092dd">按连接列出设备</strong>”。VMBus总线驱动程序是通过ACPI枚举器枚举并启动的，因此我们需要展开ACPI x64-based PC根节点，随后展开Microsoft ACPI-Compliant System子节点下的“ACPI模块设备”，如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1438.png" style="width: 100%" />
+<p class="zwts1">打开ACPI模块设备后会看见另一个名为Microsoft Hyper-V Virtual Machine Bus的节点，它代表根VMBus PDO。在该节点下，设备管理器会显示当根分区提供了相关VMBus通道后，由该VMBus FDO创建的所有实例设备。</p>
+<p class="zwts1">随后右击任何一个Hyper-V设备（如Microsoft Hyper-V Video设备）并选择“<strong style="color:#0092dd">属性</strong>”。为了显示支持该虚拟设备的VMBus通道类型和实例GUID，请打开“<strong style="color:#0092dd">属性</strong>”窗口的“<strong style="color:#0092dd">详细信息</strong>”选项卡。有三个设备属性中包含了通道的类型和实例GUID（以不同格式呈现）：设备实例路径、硬件ID以及兼容ID。虽然兼容ID仅包含VMBus通道类型GUID（本例中为{da0a7802-e377-4aac-8e77-0558eb1073f8}），但硬件ID和设备实例路径同时包含了类型和实例GUID。</p>
+<h4 class="bt4 sigil_not_in_toc">打开VMBus通道并创建环形缓冲区</h4>
+<p class="zw">为了正确启动分区间通信并创建环形缓冲区，必须首先打开一个通道。通常来说，在分配了通道的客户端（依然通过VmbChannel Allocate进行）后，VSC会调用从KMCL驱动程序导出的VmbChannelEnable API。正如上一节所述，子分区中的这个API可以打开一个已经由根提供的VMBus通道。KMCL驱动程序会与VMBus驱动程序通信，获取通道参数（如通道类型、实例GUID、使用的MMIO空间），并为接收的数据包创建工作项。随后它会分配如图9-26所示的环形缓冲区。这个环形缓冲区的大小通常是由VSC调用KMCL导出的VmbClientChannelInitSetRingBufferPageCount API来指定的。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1446.png" style="width: 100%" />
+<p class="图题">图9-26　子分区中分配的一个16页环形缓冲区范例</p>
+<p class="zw">环形缓冲区是从子虚拟机的非分页池中分配的，会使用一种名为双重映射（double mapping）的技术通过内存描述符列表（MDL）进行映射（MDL详见卷1第5章）。在这种技术中，所分配的MDL可描述缓冲区中双倍数量的传入（或传出）物理页面。MDL的PFN数组通过包含缓冲区的物理页面内容进行两次填充：一次填充该数组的前半部分，另一次填充后半部分。借此即可创建出“环形缓冲区”。</p>
+<p class="zw">例如在图9-26中，传入和传出缓冲区分别为16个页面（0x10），传出缓冲区被映射至地址0xFFFFCA803D8C0000。如果发送方将一个1KB的VMBus数据包写入接近缓冲区末尾的位置，假设写入偏移量0x9FF00处，写入将会成功（不会引发访问违规异常），但数据中的一部分会被写入缓冲区末尾，另一部分会写入开头。在图9-26中，仅256（0x100）字节会被写入缓冲区末尾，而剩余768（0x300）字节会被写入开头。</p>
+<p class="zw">传入和传出缓冲区均被一个控制页所包围。该页面会在两个端点之间共享，并构成了虚拟机环形控制块。这种数据结构可用于跟踪写入环形缓冲区的最后一个数据包的位置。此外该数据结构还包含一些位，可用于控制当数据包需要交付时，是否发出一个中断。</p>
+<p class="zw">环形缓冲区创建完毕后，KMCL驱动程序会向VMBus发送一个IOCTL，要求创建一个GPA描述符列表（GPADL）。GPADL是一种类似于MDL的数据结构，可用于描述一大块物理内存。但与MDL的不同之处在于，GPADL包含一个由客户机物理地址（GPA，总是以64位数字表示，这一点与MDL中包含的PFN不同）组成的数组。VMBus驱动程序向根分区发送不同消息，借此传输整个GPADL，描述传入和传出的环形缓冲区（综合消息最大可达240字节，详见上文）。根分区会重建整个GPADL并将其存储在一个内部列表中。当子虚拟机发出最终的打开通道（Open Channel）消息后，GPADL会被映射至根分区中。根VMBus驱动程序解析收到的GPADL，并使用VID驱动程序提供的服务将其映射至自己的物理地址空间（借此维持了组成虚拟机物理地址空间的内存块范围列表）。</p>
+<p class="zw">至此通道已就绪：子分区和根分区可以直接读写环形缓冲区中的数据进行通信了。当发送方完成自己的数据写入操作后，即可调用KMCL驱动程序公开的VmbChannelSendSynchronousRequest API，该API可调用VMBus服务，在与该通道相关的Xinterrupt对象的监视器页面中发送信号（老版本VMBus协议使用了一个中断页，其中包含一个与每个通道相对应的位），或者VMBus也可以直接向通道的事件端口发信号，这只取决于所需的延迟。</p>
+<p class="zw">除VSC之外，其他组件也使用VMBus实现了更高级别的接口。例如VMBus管道，它是在两个内核模式库（Vmbuspipe.dll和Vmbuspiper.dll）中实现的，并且依赖VMBus驱动程序（通过IOCTL）公开的服务。Hyper-V套接字（也叫HvSocket）允许使用标准网络接口（套接字）实现分区间高速通信。客户端通过指定目标虚拟机的GUID和Hyper-V套接字服务注册GUID（若要使用HvSocket，两端必须在注册表HKLM\SOFTWARE\ Microsoft\Windows NT\CurrentVersion\Virtualization\GuestCommunicationServices键下注册），即可在不使用目标IP地址和端口的情况下连接至AF_HYPERV类型的套接字。Hyper-V套接字是通过多个驱动程序实现的：HvSocket.sys是传输驱动程序，负责公开套接字基础架构使用的底层服务；HvSocketControl.sys是提供程序控制驱动程序，用于在系统中不存在VMBus接口时加载HvSocket提供程序；HvSocket.dll是一个库，公开了补充的套接字接口（与Hyper-V套接字绑定），可从用户模式应用程序中调用。有关Hyper-V套接字和VMBus管道内部基础架构的详细介绍已超出本书的范围，相关内容可参阅微软文档。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"27c847dd-3f08-4fa4-ad0f-10c10f9d2714","id":"3dadd164-6291-4b26-9bfc-c7f70bc94e95"}</p>

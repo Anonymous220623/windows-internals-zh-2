@@ -1,0 +1,31 @@
+<h3 class="bt3" id="sigil_toc_id_311">11.16.6　ReFS架构</h3>
+<p class="zw">如上文所述，ReFS（复原文件系统）是NTFS实现与Minstore的结合体，其中每个文件和目录都是配置为某种方案的B+树。文件系统卷是一种扁平的目录命名空间。此外，上文也曾提到，NTFS由不同的组件组成，如下。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">核心文件系统支持</strong>：描述文件系统和其他系统组件（如缓存管理器和I/O子系统）之间的接口，并公开文件的创建、打开、读取、写入、关闭等概念。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">高级文件系统功能支持</strong>：描述现代文件系统的一些高级功能，如文件压缩、文件链接、配额跟踪、重分析点、文件加密、恢复支持等。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">依赖于磁盘的组件和数据结构</strong>：MFT和文件记录、簇、索引包、驻留和非驻留属性等（详见上文“NT文件系统”一节）。</p>
+<p class="zw">ReFS在很大程度上保持了前两部分不变，但使用Minstore取代了依赖于磁盘的组件，如图11-84所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3292.png" style="width: 100%" />
+<p class="图题">图11-84　ReFS架构方案</p>
+<p class="zw">在“NTFS驱动程序”一节我们介绍了将文件句柄与文件系统的磁盘结构链接在一起的实体。在ReFS文件系统驱动程序中，这些数据结构（代表调用方试图读取的NTFS属性的流控制块，以及包含指向磁盘MFT中文件记录指针的文件控制块）依然有效，但在底层的持久存储方面略有差异。对这些对象的更改需要通过Minstore进行，而不能直接转换为针对磁盘上MFT的更改。如图11-85所示，在ReFS中：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个文件控制块（FCB）代表一个文件或目录，因此，其中包含一个指向Minstore B+树的指针，以及一个对父目录的流控制块和键（目录名）的引用。FCB是由文件对象通过FsContext2字段指向的。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个流控制块（SCB）代表文件对象打开的流。ReFS所用的数据结构是NTFS数据结构简化后的版本。当代表目录时，SCB会包含一个指向目录索引的链接，该链接位于代表该目录的B+树中。SCB会通过FsContext字段指向文件对象。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个卷控制块（VCB）代表当前挂载并格式化为ReFS的卷。当ReFS驱动程序识别出一个正确格式化的卷后，将创建VCB数据结构，附加到卷设备对象扩展，并链接到一个位于全局数据结构中的列表，该列表是ReFS文件系统驱动程序在初始化时分配的。VCB包含卷上当前已打开的所有目录FCB的表，其中的内容会通过引用ID进行索引。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3300.png" style="width: 100%" />
+<p class="图题">图11-85　ReFS文件和目录内存中的数据结构</p>
+<p class="zw">在ReFS中，每个打开的文件都在内存中有一个FCB，该FCB可被不同的SCB指向（取决于打开的流数量）。NTFS中的FCB只需要知道文件的MFT项就可以正确更改文件属性，而ReFS中的FCB需要指向代表文件记录的B+树。文件B+树中的每一行都代表文件的一个属性，例如ID、全名、范围表等。每一行的键都是属性代码（一个整数值）。</p>
+<p class="zw">文件记录是文件所在目录中包含的项。代表文件的B+树根节点会被嵌入至目录项的值数据中，永远不会出现在对象表内。文件数据流由范围表所表示，会嵌入文件记录的B+树中。范围表可通过范围进行索引，这意味着范围表中的每一行都有一个作为行键的VCN范围，文件范围的LCN则可作为行的值。在ReFS中，范围表可能会变得非常大（毕竟这只是一种普通的B+树），这样ReFS就可以支持非常大的文件，甚至超出了NTFS的支持上限。</p>
+<p class="zw">图11-86展示了对象表、文件、目录和文件范围表，ReFS使用B+树代表它们，并借此提供文件系统命名空间。</p>
+<p class="zw">目录是一种Minstore B+树，负责单一的扁平命名空间。ReFS目录可以包含以下几方面：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 文件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 到目录的链接。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 到其他文件（文件ID）的链接。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3307.png" style="width: 100%" />
+<p class="图题">图11-86　ReFS中的文件和目录</p>
+<p class="zw">目录B+树中的行由&lt;键, &lt;类型,值&gt;&gt;对组成，其中键是项的名称，值取决于目录项的类型。为了支持查询和其他高级语义，Minstore还在不可见目录行中存储了一些内部数据。此类不可见行的键以Unicode零字符开头。另外还有一行值得一提，那就是目录的文件行。每个目录都有一条记录，在ReFS中，该文件记录会作为一个文件行，使用一个众所周知的“零键”存储在自己的目录中。这会对ReFS为目录维持内存中的数据结构产生一些影响。在NTFS中，目录实际上是文件记录的一种属性（通过Index Root和Index Allocation属性实现）；但在ReFS中，目录是一种存储在目录本身中的文件记录（名为目录索引记录）。因此，当ReFS操作目录或向目录插入文件时，必须确保目录索引已打开并驻留在内存中。为了能够更新目录，ReFS会在已打开的流控制块中存储一个指向目录索引记录的指针。</p>
+<p class="zw">上述ReFS B+树的配置并没有解决一个重要问题。当系统枚举目录中所有文件时，都需要打开并解析每个文件的B+树。这意味着需要对底层存储介质的不同位置发出大量I/O请求。如果介质是机械硬盘，那么此时的性能将会相当糟糕。</p>
+<p class="zw">为了解决这个问题，ReFS在文件嵌入表的根节点中（而非子文件B+树的行中）存储了一种STANDARD_INFORMATION数据结构。STANDARD_INFORMATION数据结构包含枚举文件所需的全部信息（如文件的访问时间、大小、属性、安全描述符ID、更新序列号等）。文件的嵌入根节点会被存储在父目录的B+树的叶桶中。通过将这种数据结构放在文件的嵌入根节点中，当系统枚举目录中的所有文件时，只需要解析目录B+树中的项，而无须访问描述每个文件的B+表。代表目录的B+树已经位于页表中，因此枚举速度会非常快。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"4bbec909-3cd8-4eac-81f1-9dd5481ba72c","id":"c8a8284d-3c77-4247-970b-646e9b632102"}</p>

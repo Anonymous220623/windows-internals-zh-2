@@ -1,0 +1,8 @@
+<h3 class="bt3" id="sigil_toc_id_297">11.15.2　DAX卷</h3>
+<p class="zw">DAX存储驱动程序模型引入了一种新类型的卷，即DAX卷。当用户使用Format工具首次格式化一个分区时，可以在命令行中指定/DAX参数。如果底层介质是使用GPT分区格式的DAX磁盘，在创建NTFS所需的基本磁盘数据结构前，该工具会在目标卷的GPT分区项（对应于编号58的位）中写入GPT_BASIC_DATA_ATTRIBUTE_DAX标记。有关GUID分区表的参考资料可访问：https://en.wikipedia.org/wiki/GUID_Partition_ Table。</p>
+<p class="zw">当NTFS驱动程序随后挂载该卷时，会识别出该标记并向底层存储驱动程序发送STORAGE_QUERY_PROPERTY控制代码。该IOCTL可被SCM总线驱动程序识别，SCM会用另一个标记响应文件系统驱动程序，借此指定底层磁盘为DAX磁盘。只有SCM总线驱动程序可以设置该标记。验证过这两个条件后，只要没有通过注册表HKLM\System\ CurrentControlSet\Control\FileSystem\NtfsEnableDirectAccess键禁用对DAX的支持，NTFS就会启用对DAX卷的支持。</p>
+<p class="zw">DAX卷与标准卷不同，主要是因为DAX卷支持对持久性内存进行零复制访问。内存映射文件使得应用程序可以通过映射视图直接访问底层硬件磁盘扇区，这意味着没有任何中间组件会拦截任何I/O，这种特征实现了极高的性能（如上文所述，可能会对包括微型过滤器在内的文件系统过滤器驱动程序产生一定的影响）。</p>
+<p class="zw">当应用程序创建由驻留在DAX卷上的文件支撑的内存映射节时，内存管理器会询问文件系统是否应该以DAX模式创建该节，但只有在卷被格式化为DAX模式时才会创建这样的节。当这样的文件通过MapViewOfFile API映射时，内存管理器会向文件系统询问该文件中特定范围数据对应的物理内存范围。文件系统驱动程序会将所请求的文件范围转换为一个或多个卷的相对范围（扇区偏移量和长度），并要求PM磁盘类驱动程序将卷的范围转换为物理内存范围。内存管理器在收到物理内存范围后，将更新目标进程页表中的节，借此直接映射至持久性存储。这是一种真正的零复制存储访问方式：应用程序将能直接访问持久性内存，完全不需要读取或写入分页文件。这一点很重要：这种情况下，缓存管理器无须介入。下文将介绍这一特点的实际意义。</p>
+<p class="zw">应用程序可以使用GetVolumeInformation API来识别DAX卷。如果该API返回的标记包含FILE_DAX_VOLUME，就意味着卷被格式化为可兼容DAX的文件系统（目前仅NTFS）。应用程序也可以借助相同的方式使用GetVolumeInformationByHandle API来识别一个文件是否驻留在DAX磁盘上。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"79bbbed1-3a35-4d22-b579-86536ea07e54","id":"89206c9f-5231-4a9e-856e-a7cfed86c7a7"}</p>

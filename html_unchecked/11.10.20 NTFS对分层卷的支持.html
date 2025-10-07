@@ -1,0 +1,124 @@
+<h3 class="bt3" id="sigil_toc_id_249">11.10.20　NTFS对分层卷的支持</h3>
+<p class="zw">分层卷是由不同类型的存储设备和底层存储介质构成的。分层卷通常是在单个物理或虚拟磁盘的基础上创建的。存储空间提供的虚拟磁盘可由多个物理磁盘组成，这些磁盘可以使用不同的类型（以及不同的性能表现）：高速NVMe磁盘、SSD以及传统机械硬盘。此类虚拟磁盘就称为分层磁盘（存储空间中使用的术语是“存储层”）。另外，分层卷可以在物理SMR磁盘的基础上创建，这类SMR磁盘包含传统的“随机访问”高速区域和“严格顺序访问”容量区域。所有分层卷都有一个共同特点：它们由支持高速随机I/O的“性能”层，以及可能支持或不支持随机I/O、速度更慢，但容量更大的“容量”层共同组成。</p>
+<table width="99%"> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　SMR磁盘、分层卷和存储空间的详细信息请参阅本章下文。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">NTFS文件系统驱动程序通过多种方式为分层卷提供了支持。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 卷被拆分为两个区域，分别对应于分层的磁盘区域（容量区域和性能区域）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 新增的$DSC特性（类型为$LOGGED_UTILITY_STREAM）指定了要将文件存储到哪一层。NTFS公开了一个新增的“固定”接口，借此可将文件锁定到指定的层（“固定”这种说法由此而来），同时可防止文件被分层引擎移动到其他层。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 存储层管理服务在支持分层卷中起着核心的作用。每当读写文件流时，NTFS文件系统驱动程序会记录ETW“热度”事件。分层引擎可使用这些事件，通过累积（为1MB的块）并定期将其记录至一个JET数据库中（每小时记录一次）。这样每隔4小时，分层引擎会处理热度数据库一次，并通过一种复杂的“热度老化”算法来决定哪些文件是新的（热文件），哪些是旧的（冷文件）。分层引擎会根据计算而来的热度数据在性能和容量层间移动文件。</p>
+<p class="zw">此外，NTFS分配器通过更新，已经可以根据$DSC特性指定的分层区域来分配文件簇。NTFS分配器可使用特定算法来决定要将卷的簇分配到哪一层。该算法的操作将按照以下顺序进行检查。</p>
+<p class="zw">1）如果文件是卷USN日志，则始终从容量层分配。</p>
+<p class="zw">2）MFT项（文件记录）和系统元数据文件始终从性能层分配。</p>
+<p class="zw">3）如果文件曾被明确“固定”（意味着文件具备$DSC特性），则从指定的存储层分配。</p>
+<p class="zw">4）如果系统为客户端版Windows，则始终优先选择性能层；否则会从容量层分配。</p>
+<p class="zw">5）如果性能层没有空间，则从容量层分配。</p>
+<p class="zw">应用程序可以使用NtSetInformationFile API配合FileDesiredStorageClassInformation信息类为文件指定期望的存储层。该操作也称文件固定，如果在新创建文件的句柄上执行该操作，中央分配器就会在指定的存储层中分配新的文件内容。否则，如果文件已经存在并且位于错误的存储层中，分层引擎会在下次运行时将文件移动到正确的存储层（该操作也叫分层优化，可由分层引擎计划任务或SchedulerDefrag任务发起）。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　需要注意的是，此处介绍的NTFS分层卷与ReFS文件系统驱动程序所提供的分层功能是截然不同的概念。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：查看分层卷中的文件固定</p>
+<p class="zwts1">如上文所述，NTFS分配器使用一种特定算法来决定要从哪个层分配。在这个实验中，我们会将一个大文件复制到分层卷，并观察文件固定操作的影响。复制完成后，请以管理员身份打开PowerShell窗口（右击“<strong style="color:#0092dd">开始</strong>”按钮，选择“Windows PowerShell<strong style="color:#0092dd">（管理员）</strong>”），随后使用Get-FileStorageTier命令获取文件的分层信息：</p>
+<pre class="代码无行号"><code>PS E:\&gt; Get-FileStorageTier -FilePath 'E:\Big_Image.iso' | FL FileSize, 
+DesiredStorageTierClass, FileSizeOnPerformanceTierClass, FileSizeOnCapacityTierClass,
+PlacementStatus, State 
+　
+FileSize                       : 4556566528 
+DesiredStorageTierClass        : Unknown 
+FileSizeOnPerformanceTierClass : 0 
+FileSizeOnCapacityTierClass    : 4556566528 
+PlacementStatus                : Unknown 
+State                          : Unknown </code></pre>
+<p class="zwts1">上述例子显示，Big_Image.iso文件已经从容量层获得了分配（该例是在Windows Server系统上执行得到的）。为了确认这一点，可以将该文件从分层磁盘复制到一个高速SSD卷。可以看到传输速率很慢（取决于机械硬盘速度，通常在160～250&nbsp;MB/s之间）：</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1770.png" style="width: 100%" />
+<p class="zwts1">随后即可通过Set-FileStorageTier命令执行“固定”操作，例如：</p>
+<pre class="代码无行号"><code>PS E:\&gt; Get-StorageTier -MediaType SSD | FL FriendlyName, Size, FootprintOnPool, UniqueId 
+　
+FriendlyName    : SSD 
+Size            : 128849018880 
+FootprintOnPool : 128849018880 
+UniqueId        : {448abab8-f00b-42d6-b345-c8da68869020} 
+　
+PS E:\&gt; Set-FileStorageTier -FilePath 'E:\Big_Image.iso' -DesiredStorageTierFriendlyName
+'SSD' 
+PS E:\&gt; Get-FileStorageTier -FilePath 'E:\Big_Image.iso' | FL FileSize, 
+DesiredStorageTierClass, FileSizeOnPerformanceTierClass, FileSizeOnCapacityTierClass,
+PlacementStatus, State 
+ 
+FileSize                       : 4556566528 
+DesiredStorageTierClass        : Performance 
+FileSizeOnPerformanceTierClass : 0 
+FileSizeOnCapacityTierClass    : 4556566528 
+PlacementStatus                : Not on tier 
+State                          : Pending </code></pre>
+<p class="zwts1">从上述范例可知，该文件已被正确固定到性能层，但它的内容依然在容量层中。当分层引擎计划任务开始运行后，会将文件区域从容量层移动到性能层。我们可以通过系统自带的defrag.exe /g工具运行驱动器优化工具，强制进行分层优化：</p>
+<pre class="代码无行号"><code>PS E:&gt; defrag /g /h e: 
+Microsoft Drive Optimizer 
+Copyright (c) Microsoft Corp. 
+　
+Invoking tier optimization on Test (E:)... 
+　
+ 
+Pre-Optimization Report: 
+　
+        Volume Information: 
+                Volume size               = 2.22 TB 
+                Free space                = 1.64 TB 
+                Total fragmented space    = 36% 
+                Largest free space size   = 1.56 TB 
+　
+        Note: File fragments larger than 64MB are not included in the fragmentation statistics.
+　
+The operation completed successfully. 
+　
+Post Defragmentation Report: 
+　
+        Volume Information: 
+                Volume size               = 2.22 TB 
+                Free space                = 1.64 TB 
+　
+        Storage Tier Optimization Report: 
+                % I/Os Serviced from Perf Tier Perf Tier Size Required 
+                100%                           28.51 GB * 
+                95%                            22.86 GB 
+... 
+                20%                            2.44 GB 
+                15%                            1.58 GB 
+                10%                            873.80 MB 
+                5%                             361.28 MB 
+　
+        * Current size of the Performance tier: 474.98 GB 
+          Percent of total I/Os serviced from the Performance tier: 99% 
+　
+        Size of files pinned to the Performance tier: 4.21 GB 
+        Percent of total I/Os: 1% 
+　
+        Size of files pinned to the Capacity tier: 0 bytes 
+        Percent of total I/Os: 0% </code></pre>
+<p class="zwts1">驱动器优化工具确认了文件已被“固定”。随后可再次执行Get-FileStorageTier命令查看其“固定”状态，或再次将该文件复制到SSD卷。这次传输速率将会提高很多，因为文件内容已完全位于性能层中。</p>
+<pre class="代码无行号"><code>PS E:\&gt; Get-FileStorageTier -FilePath 'E:\Big_Image.iso' | FL FileSize, Desire-
+ dStorageTierClass, FileSizeOnPerformanceTierClass, FileSizeOnCapacityTierClass,
+PlacementStatus, State
+　
+FileSize                       : 4556566528 
+DesiredStorageTierClass        : Performance 
+FileSizeOnPerformanceTierClass : 0 
+FileSizeOnCapacityTierClass    : 4556566528 
+PlacementStatus                : Completely on tier 
+State                          : OK </code></pre>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1777.png" style="width: 100%" />
+<p class="zwts1">我们可以在客户端版本的Windows 10中将文件固定到容量层，并重复该实验（客户端版Windows 10默认会从性能层分配文件的簇）。相同的“固定”功能也包含在本书随附工具所提供的FsTool应用程序中，大家可以使用该工具直接将文件复制到希望使用的存储层。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":19,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"63e0b037-9f4b-4a30-9a20-654915046ca6"}</p>

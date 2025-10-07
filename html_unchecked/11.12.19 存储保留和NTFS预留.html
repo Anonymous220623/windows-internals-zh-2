@@ -1,0 +1,66 @@
+<h3 class="bt3" id="sigil_toc_id_270">11.12.19　存储保留和NTFS预留</h3>
+<p class="zw">Windows Update和Windows安装程序必须能正确应用重要的安全更新，哪怕系统卷已经快要装满（需要确保此时也有足够的可用空间）。为了实现这种目标，Windows 10引入了存储保留（storage reserve）。在介绍存储保留前，首先需要了解何谓NTFS预留（reservation）以及为何需要这样的功能。</p>
+<p class="zw">当NTFS文件系统挂载一个卷时，会计算该卷的已用和可用空间。然而，没有哪种磁盘属性可以直接记录这两个数值；NTFS会在磁盘上维持并存储卷位图，借此代表卷上所有簇的状态。NTFS挂载代码会扫描该位图并统计已用簇的数量（已用簇在位图中对应的位会被设置为“1”），随后通过一个简单的公式（卷中簇的总数减去已用簇的总数）就可以得到可用簇的数量。计算得到的这两个计数器会存储在卷控制块（VCB）的数据结构中，代表已挂载的卷，只会在卷被卸载之前存在于内存中。</p>
+<p class="zw">在常规的卷I/O活动中，NTFS必须维持保留簇的总数，该计数器的存在主要出于下列原因。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 写入压缩文件和稀疏文件时，系统必须确保整个文件都是可写入的，因为打开此类文件的应用程序可能会在整个文件中存储未压缩的有效数据。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 首次创建一个可写入的映像支撑节时，文件系统必须为整个节大小预留足够的可用空间，哪怕并未在卷上分配任何物理空间。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> USN日志和TxF会使用该计数器来保证USN日志与NTFS事务可以获得足够的空间。</p>
+<p class="zw">NTFS还会在常规I/O活动中维持另一个计数器——总可用空间，这是用户可以看到并用来存储新文件或数据的最终空间量。这三个概念都是NTFS预留的一部分。NTFS预留最重要的特点是：计数器只是内存中的易失性表示，会在卷卸载时销毁。</p>
+<p class="zw">存储保留则是一种基于NTFS预留的功能，允许文件拥有分配的存储保留区域。存储保留定义了15个不同的保留区域（其中2个由操作系统保留），它们被定义并存储在内存和NTFS磁盘数据结构中。</p>
+<p class="zw">要使用新增的磁盘保留功能，应用程序需使用文件系统控制代码FSCTL_QUERY_ STORAGE_RESERVE定义卷的存储保留区域，借此通过一种数据结构指定要保留的空间总量和区域ID。这会导致VCB中多个计数器被更新（存储保留区域维持在内存中），并在$Bitmap元数据文件的$SRAT命名数据流中插入一个新的数据流。$SRAT数据流中包含的数据结构可跟踪每个保留区域，包括保留簇和已用簇的数量。应用程序可通过文件系统控制代码FSCTL_QUERY_STORAGE_RESERVE查询有关存储保留区域的信息，并使用FSCTL_DELETE_STORAGE_RESERVE代码删除存储保留。</p>
+<p class="zw">定义了存储保留区域后，应用程序就可以保证该空间不会被任何其他组件使用。随后应用程序可以使用NtSetInformationFile原生API以及FileStorageReserveIdInformationEx信息类将文件和目录分配到存储保留区域。NTFS文件系统驱动程序会管理请求，为此需要更新保留区域内存中的保留和已用簇计数器，并更新卷中属于NTFS预留的已保留簇总数。此外还会存储并更新目标文件在磁盘上的$STANDARD_INFO属性。后者通过4位来存储保留区域ID，借此系统只需解析MFT项即可快速枚举属于一个保留的每个文件（NTFS在FSCTL_QUERY_FILE_LAYOUT代码的调度函数中实现了该枚举）。用户可以使用fsutil storageReserve findByID命令枚举属于存储保留的文件，只需指定感兴趣的卷路径名和存储保留ID即可。</p>
+<p class="zw">存储保留为一些基本文件操作（如文件创建和更名）造成了新的副作用。新创建的文件或目录会自动继承父目录的存储保留ID，重命名（移动到）新父目录位置的文件或目录也面临这种情况。由于更名操作会更改文件或目录的存储保留ID，这意味着该操作也可能因为空间不足而失败。将非空目录移动至新父目录位置，意味着新的存储保留ID会以递归的方式应用至所有文件和子目录。在存储保留所保留的空间耗尽后，系统开始使用卷上的可用空间，因此无法总是保证该操作可以成功。</p>
+<p class="zwtsh">实验：观察存储保留</p>
+<p class="zwts1">从Windows 10的2019年5月的更新（19H1）开始，我们可以通过自带的fsutil.exe工具查看现有的NTFS保留：</p>
+<pre class="代码无行号"><code>C:\&gt;fsutil storagereserve query c: 
+Reserve ID:       1 
+flags:            0x00000000 
+Space Guarantee:  0x0                (0 MB) 
+Space Used:       0x0                (0 MB) 
+Reserve ID:       2 
+flags:            0x00000000 
+Space Guarantee:  0x0                (0 MB) 
+Space Used:       0x199ed000         (409 MB) </code></pre>
+<p class="zwts1">Windows安装程序定义了两个NTFS保留：一个硬保留（ID 1），被安装程序用于存储自己的文件，无法被其他应用程序删除或替换；另一个软保留（ID 2），用于存储临时文件，例如系统日志和Windows Update下载的文件。在上述范例中，安装程序已经可以安装自己的所有文件（无须执行Windows Update），因此硬保留为空，软保留已经分配了自己的所有保留空间。我们可以使用fsutil storagereserve findById命令枚举一个保留中包含的所有文件（注意输出内容很长，因此可以考虑使用 &gt; 符号将输出重定向为文件）。</p>
+<pre class="代码无行号"><code>C:\&gt;fsutil storagereserve findbyid c: 2 
+... 
+　
+********* File 0x0002000000018762 ********* 
+File reference number   : 0x0002000000018762 
+File attributes         : 0x00000020: Archive 
+File entry flags        : 0x00000000 
+Link (ParentID: Name)   : 0x0001000000001165: NTFS Name   : 
+Windows\System32\winevt\Logs\OAlerts.evtx 
+Link (ParentID: Name)   : 0x0001000000001165: DOS Name    : OALERT~1.EVT 
+Creation Time           : 12/9/2018 3:26:55 
+Last Access Time        : 12/10/2018 0:21:57 
+Last Write Time         : 12/10/2018 0:21:57 
+Change Time             : 12/10/2018 0:21:57 
+LastUsn                 : 44,846,752 
+OwnerId                 : 0 
+SecurityId              : 551 
+StorageReserveId        : 2 
+Stream                  : 0x010 ::$STANDARD_INFORMATION 
+    Attributes          : 0x00000000: *NONE* 
+    flags               : 0x0000000c: Resident | No clusters allocated 
+    Size                : 72 
+    Allocated Size      : 72 
+Stream                  : 0x030 ::$FILE_NAME 
+    Attributes          : 0x00000000: *NONE* 
+    flags               : 0x0000000c: Resident | No clusters allocated 
+    Size                : 90 
+    Allocated Size      : 96 
+Stream                  : 0x030 ::$FILE_NAME 
+    Attributes          : 0x00000000: *NONE* 
+    flags               : 0x0000000c: Resident | No clusters allocated 
+    Size                : 90 
+    Allocated Size      : 96 
+Stream                  : 0x080 ::$DATA 
+    Attributes          : 0x00000000: *NONE* 
+    flags               : 0x00000000: *NONE* 
+    Size                : 69,632 
+    Allocated Size      : 69,632 
+    Extents             : 1 Extents 
+                        : 1: VCN: 0 Clusters: 17 LCN: 3,820,235 </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":18,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"d1e1ab32-43d4-4b7c-8bd8-cab187ebd0e7"}</p>

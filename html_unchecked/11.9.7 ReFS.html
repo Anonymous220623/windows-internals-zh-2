@@ -1,0 +1,7 @@
+<h3 class="bt3" id="sigil_toc_id_215">11.9.7　ReFS</h3>
+<p class="zw">复原文件系统（Resilient File System，ReFS）是Windows原生支持的另一种文件系统。该文件系统主要针对大型存储服务器设计，目的是克服NTFS的某些局限，例如缺乏联机自愈能力、卷修复能力，以及文件快照功能。ReFS是一种“写新”（write-to-new）的文件系统，这意味着卷的元数据将总是通过向底层介质写入新数据，并将旧的元数据标记为“已删除”的方式进行更新。ReFS文件系统的底层（可理解为磁盘上的数据结构）使用了一种名为Minstore的对象存储库，借此可为调用方提供一个键-值表接口。Minstore类似于现代数据库引擎，具备可移植性，相比NTFS，可使用不同的数据结构和算法（Minstore使用B+树）。</p>
+<p class="zw">ReFS的重要设计目标之一在于能够支持巨大的卷（可通过“存储空间”创建）。与NTFS类似，ReFS也使用64位簇编号，最大可寻址16百亿亿个簇。ReFS对可寻址的值没有大小限制，因此，理论上ReFS可管理最大1&nbsp;YB的卷（使用64&nbsp;KB大小的簇）。</p>
+<p class="zw">与NTFS不同的地方在于，Minstore无须通过一个中心位置存储自己在卷上的元数据（不过对象表也可以看成一种中心机制），对可寻址的值也没有任何限制，因此并不需要为众多不同大小的簇提供支持。ReFS只支持4&nbsp;KB和64&nbsp;KB大小的簇。截至撰写这部分内容，ReFS还不支持DAX卷。</p>
+<p class="zw">下文将详细介绍NTFS和ReFS的数据结构及其高级功能。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":6,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"d6014152-9a79-4335-8bac-5fc500bb9e87"}</p>

@@ -1,0 +1,107 @@
+<h3 class="bt3" id="sigil_toc_id_168">10.9.1　填充码引擎初始化</h3>
+<p class="zw">在操作系统启动的早期阶段，Windows加载器在加载所有“引导加载”的驱动程序同时，还会读取并映射位于%SystemRoot%\apppatch\Drvmain.sdb（以及Drvpatch.sdb文件，如果存在）中的驱动程序兼容性数据库文件。在NT内核初始化阶段1期间，I/O管理器会启动内核填充码引擎初始化工作，相关工作分为两个阶段。NT内核会将数据库文件的二进制内容复制到一个从分页池分配的全局缓冲区中（由内部全局变量KsepShimDb指向）。随后它会检查内核填充码是否被全局禁用。如果系统要启动到安全模式或WinPE模式，或驱动程序验证器已启用，那么填充码引擎将不被启用。内核填充码引擎也可以使用系统策略或HKLM\System\CurrentControlSet\Control\Compatibility\DisableFlags注册表键加以控制。随后，NT内核会收集应用设备填充码时所需的底层系统信息，如BIOS信息和OEM ID，为此需要检查系统固定ACPI描述符表（System Fixed ACPI Descriptor Table，FADT）。内核填充码引擎会使用KseRegisterShimEx API注册第一个内置的填充码提供程序，其名称为DriverScope。Windows内置的填充码请参阅表10-21，其中一些确实是在NT内核中直接实现的，不在任何外部驱动程序中。DriverScope是阶段0注册的唯一的一个填充码。</p>
+<p class="表题">表10-21　Windows自带的内核填充码</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">填充码名称</p> </th> 
+   <th> <p class="bt">GUID</p> </th> 
+   <th> <p class="bt">用途</p> </th> 
+   <th> <p class="bt">模块</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DriverScope</p> </td> 
+   <td> <p class="bg">{BC04AB45-EA7E-4A11-A7BB-<br> 77615F4CAAE}</p> </td> 
+   <td> <p class="bg">该填充码可用于从目标驱动程序收集健康的ETW事件。它的挂钩只会在调用原始未填充回调之前或之后写入ETW事件</p> </td> 
+   <td> <p class="bg">NT内核</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Version Lie</p> </td> 
+   <td> <p class="bg">{3E28B2D1-E633-408C-8E9B-<br> 2AFA6F47FCC3} (7.1)<br> (47712F55-BD93-43FC-9248-<br> B9A83710066E} (8)<br> {21C4FB58-D477-4839-A7EA-<br> D6918FBC518} (8.1)</p> </td> 
+   <td> <p class="bg">该填充码适用于Windows 7、8和8.1，当在应用了该填充码的驱动程序需要时，可与之前版本操作系统进行通信</p> </td> 
+   <td> <p class="bg">NT内核</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SkipDriverUnload</p> </td> 
+   <td> <p class="bg">{3E8C2CA6-34E2-4DE6-8A1E-<br> 692DD3E316B}</p> </td> 
+   <td> <p class="bg">该填充码会将驱动程序的卸载例程替换为另一个不执行其他任何操作，只记录ETW事件的例程</p> </td> 
+   <td> <p class="bg">NT内核</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ZeroPool</p> </td> 
+   <td> <p class="bg">{6B847429-C430-4682-B55F-<br> FD11A7B55465}</p> </td> 
+   <td> <p class="bg">可将ExAllocatePool API替换为分配池内存并将其清零的函数</p> </td> 
+   <td> <p class="bg">NT内核</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ClearPCIDBits</p> </td> 
+   <td> <p class="bg">{B4678DFF-BD3E-46C9-923B-<br> 5733483B0B3}</p> </td> 
+   <td> <p class="bg">当某些反病毒驱动程序映射被CR3引用的物理内存时，可清除PCID位</p> </td> 
+   <td> <p class="bg">NT内核</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Kaspersky</p> </td> 
+   <td> <p class="bg">{B4678DFF-CC3E-46C9-923B-<br> 5733483B0B3}</p> </td> 
+   <td> <p class="bg">针对Kaspersky（卡巴斯基安全软件）的特定过滤器驱动程序创建的填充码，可屏蔽UseVtHardware注册表值的实际值，该值可能导致该公司的旧版本杀毒软件进行错误检查</p> </td> 
+   <td> <p class="bg">NT内核</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Memcpy</p> </td> 
+   <td> <p class="bg">{8A2517C1-35D6-4CA8-9EC8-<br> 98A12762891B}</p> </td> 
+   <td> <p class="bg">提供了一种更安全（但更慢）的内存复制实现，会始终将目标缓冲区清零，可配合设备内存一起使用</p> </td> 
+   <td> <p class="bg">NT内核</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">KernelPadSections<br> Override</p> </td> 
+   <td> <p class="bg">{4F55C0DB-73D3-43F2-9723-<br> A9C7F79D39D}</p> </td> 
+   <td> <p class="bg">防止内存管理器释放任何内核模块的可丢弃内存节，并阻止（应用了该填充码的）目标驱动程序加载</p> </td> 
+   <td> <p class="bg">NT内核</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">NDIS Shim</p> </td> 
+   <td> <p class="bg">{49691313-1362-4e75-8c2a-<br> 2dd72928eba5}</p> </td> 
+   <td> <p class="bg">NDIS版本兼容性填充码（可返回适用于驱动程序的6.40版）</p> </td> 
+   <td> <p class="bg">Ndsi.sys</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SrbShim</p> </td> 
+   <td> <p class="bg">{434ABAFD-08FA-4c3d-A88D-<br> 09A88E2AB17}</p> </td> 
+   <td> <p class="bg">SCSI请求区块兼容性填充码，可拦截IOCTL_ STORAGE_QUERY_PROPERTY</p> </td> 
+   <td> <p class="bg">Storport.sys</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DeviceIdShim</p> </td> 
+   <td> <p class="bg">{0332ec62-865a-4a39-b48f-<br> cda6e855f423}</p> </td> 
+   <td> <p class="bg">RAID设备兼容性填充码</p> </td> 
+   <td> <p class="bg">Storport.sys</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ATADeviceIdShim</p> </td> 
+   <td> <p class="bg">{26665d57-2158-4e4b-a959-<br> c917d03a0d7e}</p> </td> 
+   <td> <p class="bg">串行ATA设备兼容性填充码</p> </td> 
+   <td> <p class="bg">Storport.sys</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Bluetooth Filter<br> Power shim</p> </td> 
+   <td> <p class="bg">{6AD90DAD-C144-4E9D-A0CF-<br> AE9FCB901EBD}</p> </td> 
+   <td> <p class="bg">蓝牙过滤器驱动程序兼容性填充码</p> </td> 
+   <td> <p class="bg">Bthport.sys</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">UsbShim</p> </td> 
+   <td> <p class="bg">{fd8fd62e-4d94-4fc7-8a68-<br> bff7865a706b}</p> </td> 
+   <td> <p class="bg">旧款Conexant USB调制解调器兼容性填充码</p> </td> 
+   <td> <p class="bg">Usbd.sys</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Nokia Usbser<br> Filter Shim</p> </td> 
+   <td> <p class="bg">{7DD60997-651F-4ECB-B893-<br> BEC8050F3BD7}</p> </td> 
+   <td> <p class="bg">Nokia Usbser过滤器驱动程序（被Nokia PC Suite使用）兼容性填充码</p> </td> 
+   <td> <p class="bg">Usbd.sys</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">在系统内部，填充码是由KSE_SHIM数据结构（KSE是指Kernel Shim Engine，即内核填充码引擎）所表示的。该数据结构包含GUID、填充码的人工易读名称，以及挂钩集合数组（KSE_HOOK_COLLECTION数据结构）。驱动程序填充码支持不同类型的挂钩：由NT内核、HAL、驱动程序库导出的函数上的挂钩，以及驱动程序的对象回调函数上的挂钩。在初始化的阶段1过程中，填充码引擎会注册名为MicrosoftWindows-Kernel- ShimEngine的ETW提供程序（GUID为{0bf2fb94-7b60-4b4d-9766-e82f658df540}），打开驱动程序填充码数据库，并初始化NT内核中实现的其余自带填充码（参阅表10-21）。</p>
+<p class="zw">若通过KseRegisterShimEx注册填充码，NT内核需要对KSE_SHIM数据结构以及集合中的每个挂钩（所有挂钩必须位于调用方驱动程序的地址空间内）进行一些初始完整性检查。随后它会分配并填充一个KSE_REGISTERED_SHIM_ENTRY数据结构，顾名思义，该数据结构代表了已注册的填充码。其中包含一个引用计数器和一个指向驱动程序对象的指针（仅在非NT内核中实现的填充码下使用）。分配的这个数据结构会链接至一个全局链表，该链表记录了系统中已注册的所有填充码。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"89b4888a-9a39-47e4-a3ef-e6e0929c62be","id":"4b61bddf-9fb1-42b7-ab04-cfb986188edd"}</p>

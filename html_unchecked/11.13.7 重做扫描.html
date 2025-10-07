@@ -1,0 +1,8 @@
+<h3 class="bt3" id="sigil_toc_id_283">11.13.7　重做扫描</h3>
+<p class="zw">如图11-61所示，在重做阶段，NTFS会从分析阶段确定的最早更新记录对应的LSN处开始，向前扫描日志文件内容。NTFS会寻找页更新记录，其中包含系统故障前已经写入，但尚未刷新到磁盘的卷改动。NTFS会在缓存中重做这些更新。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2722.png" style="width: 100%" />
+<p class="图题">图11-61　重做扫描</p>
+<p class="zw">当NTFS抵达日志文件结尾时，已经使用必要的卷改动更新了缓存，而缓存管理器的惰性写入器可以开始在后台将缓存内容写入磁盘了。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":6,"parentId":"244f39ce-6f59-4168-9f84-d031b04d0916","id":"6e8d9185-2f0f-443c-8dfc-8971af7e3c18"}</p>

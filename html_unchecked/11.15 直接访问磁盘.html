@@ -1,0 +1,11 @@
+<h2 class="bt2" id="sigil_toc_id_295"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 11.15　直接访问磁盘</h2>
+<p class="zw">持久性内存（persistent memory）是固态硬盘技术的一种演进：这是一种新型的非易失性存储介质，具备类似于RAM的性能特征（低延迟、高带宽），驻留在内存总线（DDR）上，但可以像标准磁盘设备那样使用。</p>
+<p class="zw">Windows&nbsp;操作系统使用直接访问磁盘（Direct Access Disk，DAX）这个术语代表此类持久性内存技术（另一个常用术语为存储类内存，Storage Class Memory，缩写为SCM）。图11-73所示的非易失性双列直插内存模块（NVDIMM）就是这种全新存储类型的一个例子。NVDIMM是一种在断电后依然可以维持内容的内存类型，“双列直插”标志着该内存使用DIMM封装方式。截至撰写这部分内容，共有三种类型的NVDIMM：只包含闪存存储的NVIDIMM-F；最常见的，在同一模块上同时包含闪存存储和传统DRAM芯片的NVDIMM-N；使用持久性DRAM芯片，在断电后也不会丢失数据的NVDIMM-P。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3071.png" style="width: 100%" />
+<p class="图题">图11-73 一个包含DRAM和闪存芯片的NVDIMM。需要连接电池或板载超级电容器来维持DRAM芯片中的数据</p>
+<p class="zw">DAX的主要特点之一是支持对持久性内存进行零复制访问，而这也是实现高性能的关键。这意味着很多组件（如文件系统驱动程序和内存管理器）需要更新才能支持DAX，毕竟这是一种颠覆性技术。</p>
+<p class="zw">Windows Server 2016是首款支持DAX的Windows操作系统：这种新的存储模式可兼容大部分现有应用程序，因此，这些应用程序无须改动即可在DAX磁盘上运行。为实现最高性能，DAX卷上的文件和目录需要使用内存映射API映射至内存，而卷也需要使用一种特殊的DAX模式进行格式化。截至撰写这部分内容，仅NTFS支持DAX卷。</p>
+<p class="zw">下文将介绍直接访问磁盘的运作方式和全新驱动程序模型的架构细节，以及对负责支持DAX卷的下列主要组件所进行的修改：NTFS驱动程序、内存管理器、缓存管理器，以及I/O管理器。此外，系统内置的以及第三方文件系统过滤器驱动程序（包括微型过滤器）同样需要更新，才能充分利用DAX。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":14,"parentId":"12042f06-13bb-4487-b2cc-12b9114bd68f","id":"79bbbed1-3a35-4d22-b579-86536ea07e54"}</p>

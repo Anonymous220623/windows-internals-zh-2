@@ -1,0 +1,21 @@
+<h3 class="bt3" id="sigil_toc_id_321">11.17.6　ReFS对分层卷和SMR的支持</h3>
+<p class="zw">分层卷类似于主机感知的SMR磁盘，其中包含一个快速随机访问区域（通常由SSD提供）和一个速度较慢的顺序写入区域。但这并非必备条件，分层磁盘也可以由不同的随机访问磁盘，甚至相同速度的磁盘组成。ReFS通过在卷命名空间基础上构建的文件和目录命名空间之间提供一个新的逻辑间接层，即可正确管理分层卷和SMR磁盘。这个新的间接层将卷划分为多个互不重叠的逻辑容器（因此任何一个簇在任意时间里只能存在于一个容器中）。容器代表了卷中的一个区域，一个卷上的所有容器始终大小相等，这个大小是根据底层磁盘的类型决定的：标准分层磁盘为64&nbsp;MB，SMR磁盘为256&nbsp;MB。容器也可称为ReFS带，因为如果配合SMR磁盘使用，容器的大小将会与SMR带的大小完全一致，每个容器可以一对一映射至每个SMR带。</p>
+<p class="zw">该间接层如图11-92所示，是通过全局容器表配置和提供的。该表的行由存储了容器的ID和类型的键组成。对于不同类型的容器（压实或被压缩容器），各自的行数据内容也有所差异。对于非压缩容器（ReFS压缩的详细介绍请参阅下一节），行数据是一种数据结构，其中包含容器中可寻址簇范围的映射。这样ReFS就获得一种虚拟LCN到真实LCN命名空间的映射。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3614.png" style="width: 100%" />
+<p class="图题">图11-92　容器表提供了一种从虚拟LCN到真实LCN映射的间接层</p>
+<p class="zw">容器表很重要：ReFS和Minstore管理的所有数据都需要通过容器表来管理（只有少数例外），因此ReFS会对这个重要的表创建多个副本。为了对一个块执行I/O操作，ReFS首先必须查找相应范围的容器位置，进而得到数据的实际位置。这是通过范围表实现的，范围表的行数据中包含簇范围的目标虚拟LCN。容器ID可通过数学关系从LCN中派生而来。这个新增的间接层使得ReFS能够在无须查询或修改文件范围表的前提下移动容器位置。</p>
+<p class="zw">ReFS可使用由存储空间、硬件分层卷以及SMR磁盘提供的存储层。ReFS会将小规模的随机I/O重定向到速度更快的存储层，并来用顺序写入方式将这些写入操作移出到速度较慢的存储层（移出操作发生在容器层面上）。实际上在ReFS中，“快速存储层”（或闪存存储层）这个术语指的是随机访问区域，这种区域可能由SMR磁盘的传统带提供，也可能完全由SSD或NVMe设备提供；“慢速存储层”（或HDD层）术语指的是顺序写入区域或机械硬盘。ReFS会根据底层存储介质的类型使用不同的行为。非SMR磁盘没有顺序要求，所以簇可以在卷上任意位置分配；而SMR磁盘如上文所述，需要满足严格的顺序要求，因此ReFS永远不会将随机数据写入慢速存储层。</p>
+<p class="zw">默认情况下，ReFS使用的所有元数据都需要驻留在快速存储层中；即便在处理一般的写入请求时，ReFS也会尽可能使用快速存储层。在非SMR磁盘的配置中，当闪存容器装满后，ReFS会将容器从闪存移动至HDD（这意味着在连续写入工作负载中，ReFS会不断地将容器从闪存移动到HDD）。如果需要，ReFS还能执行反向移动，从HDD中选择容器并将其移动到闪存以供后续执行持续写入。该功能也叫容器旋转（container rotation），可分为两个阶段实现。在存储驱动程序复制了实际数据后，ReFS会修改上文提到的容器LCN映射，但无须修改任何文件的范围表。</p>
+<p class="zw">容器旋转只在非SMR磁盘上实现。这一点很重要，因为在SMR磁盘中，ReFS驱动程序永远不会自动在不同的存储层之间移动数据。如果应用程序可感知SMR磁盘并且希望将数据写入&nbsp;SMR&nbsp;的容量层，此时可使用控制代码FSCTL_SET_REFS_FILE_STRICTLY_ SEQUENTIAL。当应用程序向文件句柄中发送该控制代码时，ReFS驱动程序会将所有新数据写入卷的容量层中。</p>
+<p class="zwtsh">实验：观察SMR磁盘的存储层</p>
+<p class="zwts1">我们可以使用Windows自带的FsUtil工具查询SMR磁盘的信息，如每个层的大小、可用空间和空闲空间等。为此需要以管理员身份打开命令提示符窗口。可以在搜索框中输入cmd，随后右键点击“<strong style="color:#0092dd">命令提示符</strong>”，选择“<strong style="color:#0092dd">以管理员身份运行</strong>”。接下来请运行如下命令：</p>
+<pre class="代码无行号"><code>fsutil volume smrInfo &lt;VolumeDrive&gt; </code></pre>
+<p class="zwts1">请将上述命令中的&lt;VolumeDrive&gt;替换为SMR磁盘的盘符。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3622.png" style="width: 100%" />
+<p class="zwts1">此外，我们还可以通过下列命令启动垃圾回收（有关该功能的详情请参阅下一节）：</p>
+<pre class="代码无行号"><code>fsutil volume smrGc &lt;VolumeDrive&gt; Action=startfullspeed </code></pre>
+<p class="zwts1">甚至可以通过相应的&nbsp;Action&nbsp;参数停止或暂停垃圾回收。也可以指定&nbsp;IoGranularity参数来进行更精确的垃圾回收，该参数指定了垃圾回收I/O的粒度。另外，还可以使用start操作替代startfullspeed操作。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"bfef1a76-a058-4e31-96a2-fa59897a014e","id":"8bfd421e-dbd7-4eaa-a489-6c4e1b9f1f87"}</p>

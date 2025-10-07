@@ -1,0 +1,75 @@
+<h3 class="bt3" id="sigil_toc_id_37">8.8.1　连接模型</h3>
+<p class="zw">通常来说，ALPC消息会被用于服务器进程以及该服务器的一个或多个客户端进程之间。两个或更多个用户模式进程之间，或内核模式组件与一个或多个用户模式进程之间，甚至两个内核模式组件之间（尽管这并非是最有效的通信方式）也可建立ALPC连接。为了维持通信所需要的状态，ALPC会暴露出一个名为端口对象（port object）的执行体对象。虽然这只是一个对象，但可以代表多种类型的ALPC端口。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">服务器连接端口</strong>。一种命名端口，充当了服务器连接的请求点。客户端可以连接到这种端口进而连接到服务器。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">服务器通信端口</strong>。一种未命名端口，服务器可借此与自己的客户端通信。服务器会为每个活跃的客户端提供一个这种端口。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">客户端通信端口</strong>。一种未命名端口，每个客户端需要借此与自己的服务器通信。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">未连接通信端口</strong>。一种未命名端口，客户端可以借此与自己进行本地通信。这种模型在从LPC到ALPC的转换过程中被废除了，但为了保证兼容性，依然会对遗留的LPC进行模拟。</p>
+<p class="zw">ALPC遵循了一种连接和通信模型，这一点类似于BSD Socket编程。服务器首先需要创建一个服务器连接端口（NtAlpcCreatePort），随后客户端尝试着连接到该端口（NtAlpcConnectPort）。如果服务器处于侦听状态（使用NtAlpcSendWaitReceivePort），则将会收到连接请求消息并可选择接受该请求（NtAlpcAcceptConnectPort）。以此将创建客户端和服务器通信端口，并且每个端点进程将会收到一个指向其通信端口的句柄。随后将通过该句柄发送消息（依然使用NtAlpcSendWaitReceivePort），服务器继续使用相同API接收这些消息。因此，在最简单的情况下，将有一个位于循环中的服务器线程调用NtAlpcSendWaitReceivePort接收被自己接受的连接请求，以及自己所要处理并响应的消息。服务器可读取PORT_HEADER结构以区分不同消息，这个结构位于每个消息的头部，包含了与消息类型有关的信息。表8-30列出了各种不同的消息类型。</p>
+<p class="表题">表8-30　ALPC消息类型</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">类型</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_REQUEST</p> </td> 
+   <td> <p class="bg">一种常规的ALPC消息，可能会获得一个同步的回复</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_REPLY</p> </td> 
+   <td> <p class="bg">一种ALPC消息数据报，作为对前一个数据报的异步回复来发送</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_DATAGRAM</p> </td> 
+   <td> <p class="bg">一种ALPC消息数据报，会被立即释放，无法同步回复</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_LOST_REPLY</p> </td> 
+   <td> <p class="bg">已弃用，被遗留的LPC Reply API所使用</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_PORT_CLOSED</p> </td> 
+   <td> <p class="bg">在ALPC端口的最后一个句柄被关闭后发送，通知客户端和服务器另一端已结束</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_CLIENT_DIED</p> </td> 
+   <td> <p class="bg">由进程管理器（PspExitThread）使用遗留LPC发送至线程注册的终止端口以及进程注册的异常端口</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_EXCEPTION</p> </td> 
+   <td> <p class="bg">由用户模式调试框架（DbgkForwardException）使用遗留LPC发送给异常端口</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_DEBUG_EVENT</p> </td> 
+   <td> <p class="bg">已弃用，当遗留的用户模式调试服务属于Windows子系统的一部分时，被这些调试服务所使用</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_ERROR_EVENT</p> </td> 
+   <td> <p class="bg">当用户模式产生硬错误（NtRaiseHardError）后发送，会使用遗留LPC发送至目标线程的异常端口（如果有的话），否则会发送至错误端口，通常是CSRSS所拥有的错误端口</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_CONNECTION_REQUEST</p> </td> 
+   <td> <p class="bg">这种ALPC消息代表客户端企图连接到服务器的连接端口</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_CONNECTION_REPLY</p> </td> 
+   <td> <p class="bg">一种内部消息，会在服务器调用NtAlpcAcceptConnectPort以接收客户端的请求时发送</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_CANCELED</p> </td> 
+   <td> <p class="bg">当所等待的消息被取消后，客户端或服务器收到的回复</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LPC_UNREGISTER_PROCESS</p> </td> 
+   <td> <p class="bg">当前进程的异常端口被交换到另一个端口后进程管理器发送的消息，借此所有者（通常为CSRSS）可以为切换了端口的线程解除其数据结构的注册</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">服务器也可以拒绝连接，这可能是出于安全性方面的原因，或者仅仅是由于协议或版本方面的问题。因为客户端可以通过连接请求发送自定义载荷，这种特性通常被各种服务用来确保正确的客户端，或仅一个客户端可以与服务器通信。如果发现任何异常，那么服务器可以拒绝连接，并且可以选择返回一个包含拒绝客户端连接原因等信息的载荷（这样客户端就可以酌情采取必要应对措施，或进行调试）。</p>
+<p class="zw">连接建立后，会通过一种连接信息结构（实际上是一个Blob，下文很快将会提到）存储所有不同端口之间的联系信息，如图8-40所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx4845.png" style="width: 100%" />
+<p class="图题">图8-40　ALPC端口的使用</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"e3feacd9-ccbb-4c83-b36b-bb1c5293963c","id":"cd62ea72-91b2-42ec-8608-911d70836bb4"}</p>

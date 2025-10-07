@@ -1,0 +1,13 @@
+<h3 class="bt3" id="sigil_toc_id_339">12.1.11　虚拟机监控程序加载器</h3>
+<p class="zw">虚拟机监控程序加载器（文件名为Hvloader.dll）作为一个启动模块，可正确加载并启动Hyper-V虚拟机监控程序和安全内核。有关Hyper-V与安全内核的详细介绍请参阅第9章。虚拟机监控程序加载器模块已深入集成于Windows加载器，其主要目标有两个。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 检测硬件平台，加载并启动正确版本的Windows虚拟机监控程序（Intel系统为Hvix64.exe，AMD系统为Hvax64.exe，ARM64系统为Hvaa64.exe）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 解析虚拟安全模式（Virtual Secure Mode，VSM）策略，加载并启动安全内核。</p>
+<p class="zw">在Windows 8中，该模块是一个由Winload按需加载的外部可执行文件。当时，虚拟机监控程序加载器唯一的作用是加载并启动Hyper-V。随着VSM和可信启动功能的引入，该架构已重新设计，使得不同的组件可实现更紧密的集成。</p>
+<p class="zw">如上文所述，虚拟机监控程序的设置分为两个阶段。第一阶段始于Winload中NT加载器块初始化完成之后的那一刻。HvLoader会通过某些CPUID指令检测目标平台，复制UEFI的物理内存映射，并发现IOAPIC和IOMMU。随后，HvLoader会将正确的虚拟机监控程序映像（以及所有依赖项，如调试器传输）载入内存，并检查虚拟机监控程序的版本信息与预期是否一致（这解释了HvLoader为何无法启动不同版本的Hyper-V）。在这一阶段，HvLoader会收集虚拟机监控程序加载器块，这是一种重要的数据结构，可用于在HvLoader和虚拟机监控程序（类似于Windows加载器块）本身之间传递重要的系统参数。第一阶段最重要的步骤是构建虚拟机监控程序页表层次结构。这种刚生成的页表只包含虚拟机监控程序映像（及其依赖项）与第一个兆字节之下的系统物理页之间的映射。后者是一种由启动过渡代码（详见下文）使用的标识映射。</p>
+<p class="zw">当Winload最后的工作完成时，便会开始第二阶段：UEFI固件的启动服务已被弃用，因此HvLoader代码会将UEFI运行时服务的物理地址范围复制到虚拟机监控程序加载器块，并捕获处理器状态；随后会禁用中断、调试器和分页；接着将调用HvlpTransferToHypervisorViaTransitionSpace，将代码的执行转移到1MB之下的物理页。位于这里的代码（过渡代码）将切换页表，重新启用分页，并转移到虚拟机监控程序代码（实际上会创建两个地址空间）。虚拟机监控程序启动后，将使用保存的处理器上下文，以正确方式将代码的执行转回给一个名为根分区（详见第9章）的新虚拟机上下文中运行的Winload。</p>
+<p class="zw">由于一些操作只能在虚拟机监控程序启动之后进行，因此虚拟安全模式的启动分为三个阶段。</p>
+<p class="zw">1）第一阶段与虚拟机监控程序设置过程的第一阶段非常类似。数据被从Windows加载器块复制到刚分配的VSM加载器块，生成主密钥、IDK密钥和Crashdump密钥，SecureKernel.exe模块会被载入内存。</p>
+<p class="zw">2）第二阶段由Winload在OslPrepareTarget工作过程的后期发起，此时虚拟机监控程序已初始化完成但尚未运行。与虚拟机监控程序设置过程的第二阶段类似，UEFI运行时服务的物理地址范围会被复制到VSM加载器块，同时复制的还有ACPI表、代码完整性数据、完整的系统物理内存映射，以及虚拟化调用的代码页。第二阶段还会使用OslpVsmBuildPageTables函数构建用于受保护VTL1内存空间的受保护页表层次结构及所需GDT。</p>
+<p class="zw">3）第三阶段是最终的“运行”阶段。虚拟机监控程序已经运行起来，第三阶段将执行最终的检查（例如检查是否存在IOMMU，根分区是否具备VSM特权IOMMU，这对VSM很重要，详见第9章）。这个阶段还会设置加密的虚拟机监控程序崩溃转储区域，复制VSM加密密钥，并将执行转移给安全内核入口点（SkiSystemStartup）。安全内核入口点代码运行在VTL 0下。VTL 1则是随后由安全内核代码通过HvCallEnablePartitionVtl这个虚拟化调用启动的（详见第9章）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":10,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"9027b23d-563c-4d9d-b50c-76f5c77221b5"}</p>

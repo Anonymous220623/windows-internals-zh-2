@@ -1,0 +1,67 @@
+<h3 class="bt3" id="sigil_toc_id_299">11.15.4　可执行映像的映射</h3>
+<p class="zw">Windows加载器将可执行映像载入内存时，会用到内存管理器提供的内存映射服务。加载器会向NtCreateSection API提供SEC_IMAGE标记以创建内存映射映像节。该标记会指定加载器将这个节映射为映像，应用所有必要的修复。但在DAX模式下不会发生这样的操作，否则所有重定位和修复操作都会应用给PM磁盘上的原始映像文件。为了正确处理这个问题，内存管理器在映射存储于DAX模式卷的可执行映像时，将应用以下策略：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果已经有一个代表二进制文件数据节的控制区域（意味着应用程序已经打开了该映像并读取了二进制数据），内存管理器会创建一个空的、由内存支撑的映像节，并将数据从现有数据节复制到新创建的映像节，随后对这个映像节应用必要的修复。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果该文件没有数据节，则内存管理器会创建一个常规的非DAX映像节，从而创建出标准的无效原型PTE（详见卷1第5章）。在这种情况下，当属于映像支撑的节的地址上发生无效访问的页面错误时，内存管理器会使用Pmem驱动程序的标准读取和写入例程将数据读入内存。</p>
+<p class="zw">截至撰写这部分内容，Windows 10还不支持原地执行，这意味着加载器无法直接从DAX存储中执行映像。不过这并不是问题，因为DAX模式的卷最初在设计时就是为了存储需要极高访问速度的数据。不过未来版本的Windows将会支持DAX卷的原地执行。</p>
+<p class="zwtsh">实验：使用进程监视器观察DAX I/O</p>
+<p class="zwts1">我们可以使用Sysinternals提供的进程监视器和FsTool.exe工具观察DAX I/O，这些工具都包含在本书的随附资源中。当应用程序从驻留在DAX模式卷上的内存映射文件读取或写入时，系统不会产生任何分页I/O，因此NTFS驱动程序或附加在其上或其下的微型过滤器将看不到任何操作。为了观察到这样的行为，我们需要打开进程监视器，假设有两个卷分别挂载为P:盘和Q:盘，可按照类似下图的方式设置过滤器（Q:盘为DAX卷）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3097.png" style="width: 100%" />
+<p class="zwts1">为了让DAX卷产生I/O，可以使用FsTool工具模拟一次DAX复制。在下列范例内容中，我们将位于P:盘这个DAX块模式卷（即便普通磁盘上创建的标准卷也可以用来完成本实验）上的一个ISO映像文件复制到DAX模式的Q:盘：</p>
+<pre class="代码无行号"><code>P:\&gt;fstool.exe /daxcopy p:\Big_image.iso q:\test.iso 
+NTFS / ReFS Tool v0.1 
+Copyright (C) 2018 Andrea Allievi (AaLl86) 
+　
+Starting DAX copy... 
+   Source file path: p:\Big_image.iso. 
+   Target file path: q:\test.iso. 
+   Source Volume: p:\ - File system: NTFS - Is DAX Volume: False. 
+   Target Volume: q:\ - File system: NTFS - Is DAX Volume: True. 
+　
+   Source file size: 4.34 GB 
+　
+Performing file copy... Success! 
+   Total execution time: 8 Sec. 
+   Copy Speed: 489.67 MB/Sec 
+　
+Press any key to exit... </code></pre>
+<p class="zwts1">进程监视器捕获到了DAX复制操作的踪迹，确认实现了我们预期的结果。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3104.png" style="width: 100%" />
+<p class="zwts1">从上述结果中可以看到，对于目标文件（Q:\test.iso），只有CreateFileMapping操作</p>
+<p class="zwts1">被拦截了，完全没有可见的WriteFile事件。在复制执行过程中，进程监视器只检测到对源文件执行的分页I/O。这些分页I/O是由内存管理器产生的，它需要从源卷中读回数据，因为应用程序在访问内存映射文件时产生了页面错误。</p>
+<p class="zwts1">要看到内存映射I/O和标准缓存I/O之间的差异，我们需要使用标准文件复制操作再次复制该文件。要查看源文件数据上产生的分页I/O，则还需要重启动系统，因为原始数据依然遗留在缓存中：</p>
+<pre class="代码无行号"><code>P:\&gt;fstool.exe /copy p:\Big_image.iso q:\test.iso 
+NTFS / ReFS Tool v0.1 
+Copyright (C) 2018 Andrea Allievi (AaLl86) 
+　
+Copying "Big_image.iso" to "test.iso" file... Success. 
+   Total File-Copy execution time: 13 Sec - Transfer Rate: 313.71 MB/s. 
+Press any key to exit... </code></pre>
+<p class="zwts1">如果将进程监视器获得的跟踪结果与上一次结果比较，就可以确认缓存I/O是一种“一次复制”操作。缓存管理器依然会在应用程序提供的缓冲区（直接映射至DAX磁盘的）和系统缓存之间复制内存块。事实再次证明：目标文件并未产生任何分页I/O。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3112.png" style="width: 100%" />
+<p class="zwts1">作为最后一个实验，我们可以试着在位于同一个DAX卷上的两个文件之间，或在位于不同DAX卷上的两个文件之间执行DAX复制操作：</p>
+<pre class="代码无行号"><code>P:\&gt;fstool /daxcopy q:\test.iso q:\test_copy_2.iso 
+TFS / ReFS Tool v0.1 
+Copyright (C) 2018 Andrea Allievi (AaLl86) 
+　
+Starting DAX copy... 
+   Source file path: q:\test.iso. 
+   Target file path: q:\test_copy_2.iso. 
+   Source Volume: q:\ - File system: NTFS - Is DAX Volume: True. 
+   Target Volume: q:\ - File system: NTFS - Is DAX Volume: True. 
+Great! Both the source and the destination reside on a DAX volume. 
+Performing a full System Speed Copy! 
+   Source file size: 4.34 GB 
+　
+Performing file copy... Success! 
+   Total execution time: 8 Sec. 
+   Copy Speed: 501.60 MB/Sec 
+　
+Press any key to exit... </code></pre>
+<p class="zwts1">最后一个实验捕获的结果证明了DAX卷上的内存映射I/O不会产生任何分页I/O。无论源文件或目标文件，都不会产生任何WriteFile或ReadFile事件。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3119.png" style="width: 100%" />
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"79bbbed1-3a35-4d22-b579-86536ea07e54","id":"6515f4c6-5fc8-498b-895c-c7f1b4093414"}</p>

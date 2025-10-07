@@ -1,0 +1,54 @@
+<h3 class="bt3" id="sigil_toc_id_52">8.9.3　WNF状态名称和存储</h3>
+<p class="zw">WNF状态名称用看起来像是随机的64位标识符来表示，例如0xAC41491908517835，然后使用C预处理器宏（如WNF_AUDC_CAPTURE_ACTIVE）来定义一个友好名称。然而实际上，这些数字会用于对版本号（1）、寿命（持久和临时）、范围（进程实例、容器实例、用户实例、会话实例、计算机实例）、永久数据标记进行编码，而对于众所周知的状态名称，还会通过一个前缀代表状态名称的所有者，后跟唯一序列号。图8-41展示了这种格式。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx5246.png" style="width: 100%" />
+<p class="图题">图8-41　WNF状态名称的格式</p>
+<p class="zw">正如上文所述，状态名称可能是众所周知的，这意味着它们可以被预先配置，以便能够以任意顺序使用。为了实现这一点，WNF会使用注册表作为支撑该功能的存储，将安全描述符、最大数据大小、类型ID（如果有的话）编码后存储在注册表HKLM\SYSTEM\ CurrentControlSet\Control\Notifications键下。对于每个状态名称，这些信息会被存储在一个与64位编码的WNF状态名称标识符相匹配的值中。</p>
+<p class="zw">此外，WNF状态名称还可注册为持久（persistent）名称，这意味着无论注册方进程的寿命如何，在系统持续运行过程中，这些名称都会始终保持为已注册状态。这种做法类似于“对象管理器”一节所介绍的持久对象，同样，注册这种状态名称需要SeCreatePermanentPrivilege权限。此类WNF状态名称同样存在于注册表中，不过会保存在注册表HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\VolatileNotifications键下，并会充分利用注册表的易失（volatile）标记<sup>[9]</sup>功能，在系统重启动后直接消失。使用“易失的”注册表键来保存“持久的”WNF数据，这一点可能让人有些疑惑。不过要注意，如上文所述，这里所谓的“持久”是指系统启动完毕后，下次启动之前这段时间内的“持久”（而非与进程寿命直接关联，因此WNF将其称为“临时的”，下文将详细介绍这个问题）。</p>
+<p class="footnote">[9]应用了“易失标记”的注册表键不会保存在注册表数据库中，只位于内存中，因此，当系统重启动后，这些键会直接丢失。——译者注</p>
+<p class="zw">此外，WNF状态名称也可以注册为永久（permanent）名称，这样的状态名称在系统重启动后依然存在。而这可能也是很多人期待的“持久”类型。这是通过另一个注册表键实现的，只不过此时没有使用易失标记，会被保存在注册表HKLM\SOFTWARE\Microsoft\ Windows NT\CurrentVersion\Notifications&nbsp;键下。这种程度的持久性同样需要具备SeCreatePermanentPrivilege权限。对于这些类型的WNF状态，在注册表层级中还有一个额外的、名为Data的注册表键，对于每个64位编码的WNF状态名称，其中包含标识符、最后更改时间戳以及二进制数据。请注意，如果计算机上从未写入过WNF状态名称，那么后面这些信息可能会缺失。</p>
+<p class="zwtsh">实验：查看注册表中的WNF状态名称和数据</p>
+<p class="zwts1">在这个实验中，我们将使用注册表编辑器查看众所周知的WNF状态名称，以及一些永久和持久的名称范例。通过查看注册表的原始二进制数据，还可看到数据和安全描述符信息。</p>
+<p class="zwts1">打开注册表编辑器并转向HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\ Control\Notifications键。</p>
+<p class="zwts1">查看这里列出的数值，应该能看到类似下图所示的界面。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx5253.png" style="width: 100%" />
+<p class="zwts1">双击名为41950C3EA3BC0875的值（WNF_SBS_UPDATE_AVAILABLE），随后会打开原始注册表数据二进制编辑器。注意下图所示内容，在这里可以看到安全描述符（选中的二进制数据，其中包含SID S-1-5-18）以及最大数据大小（0字节）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx5261.png" style="width: 100%" />
+<p class="zwts1">请注意，不要修改这里看到的任何值，随意修改可能导致系统无法运行或易于受到攻击。</p>
+<p class="zwts1">最后，如果想要查看永久的WNF状态名称，可以使用注册表编辑器打开HKEY_ LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Notifications\Data键，并查看418B1D29A3BC0C75这个值（WNF_DSM_DSMAPPINSTALLED）。如下图所示，在这里可以看到该系统中最后安装的应用程序（MicrosoftWindows.UndockedDevKit）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx5268.png" style="width: 100%" />
+<p class="zw">完全任意的状态名称也可以注册为临时名称。此类名称与上文介绍的名称有些区别。首先，因为其名称事先是未知的，因此需要名称的使用方和生成方能通过某种方式相互传递标识符。一般来说，无论谁先试图使用或创建这样的状态数据，最终都会在内部创建并/或使用匹配的注册表键存储相关数据。然而，对于临时的WNF状态名称，这一点是无法实现的，因为名称将完全基于单调递增的序列号。</p>
+<p class="zw">其次还要注意这样一种情况：无法使用注册表键对临时的状态名称进行编码，这种名称会与注册特定状态名称实例的进程所绑定，所有数据仅存储在内核池中。例如，此类名称可用于实现上文提到的每个进程的唤醒通道。其他用途包括电源管理器通知，以及由SCM使用的直接服务触发器。</p>
+<h4 class="bt4 sigil_not_in_toc">WNF的发布和订阅模型</h4>
+<p class="zw">当发布方使用WNF时，需要遵循一种标准化的模式来注册状态名称（如果是非众所周知的名称）并发布自己想要暴露的数据。此外，发布方也可以选择不发布任何数据，而是直接提供一个0字节缓冲区，这样即可作为一种“点亮”状态的方式向订阅方发送信号，哪怕此时并未存储任何数据。</p>
+<p class="zw">另一端的使用方会使用WNF的注册功能将回调与特定WNF状态名称关联在一起。每当发布了变更后，就会激活该回调。对于内核模式，调用方需要调用适当的WNF API以接收与该状态名称相关的数据（会提供一定大小的缓冲区，这样调用方就可以在需要时分配内存池，或者选择使用栈）。对于用户模式，该Ntdll.dll内部的底层WNF负责分配一个由堆支撑的缓冲区，并直接向订阅方所注册的回调提供一个指向该数据的指针。</p>
+<p class="zw">在上述两种情况下，回调提供了变更戳，它作为一个具备唯一性的单调序列号，可用于检测缺失的已发布数据（如果订阅方因为某些原因不再活跃，而发布方还在继续发生变化，就会出现这种情况）。此外，该回调还可以关联一个自定义的上下文，这在C++的情况下非常有用，可将静态函数指针与它的类关联起来。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　WNF提供了一个API，可用于查询特定WNF状态名称是否已被注册（借此，使用方就可以在检测到发布方尚未激活时实现特殊的逻辑），同时还提供了一个用于查询特定状态名称当前是否有任何活跃订阅的API（借此，发布方即可实现一些特殊逻辑，例如延迟额外数据的发布，因为这可能会覆盖之前发布的状态数据）。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">WNF可能需要管理数千个订阅，为此它会为每个内核或用户模式的订阅关联一种数据结构，并将同一个WNF状态名称的所有订阅绑定在一起。这样，在发布了一个状态名称后，即可解析订阅列表，随后用户模式会将一个交付载荷添加到一个链表中，并向每个进程的通知事件发出信号。这样Ntdll.dll中的WNF交付代码即可调用API以使用该载荷（以及同时添加到列表中的任何其他额外的交付载荷）。对于内核模式，相关机制会简单一些：直接在发布方的上下文中以同步的方式执行回调。</p>
+<p class="zw">请注意，我们可以通过两种模式订阅通知：数据（Data）通知模式和元（Meta）通知模式。前者会执行大部分人所期待的操作，当新数据被关联给WNF状态名称后执行回调；后者则更有趣一些，因为当新的使用方变得活跃或不活跃，以及当发布方被终止（易失状态名会存在此类概念）时，它会发出通知。</p>
+<p class="zw">还要注意，用户模式订阅会产生一个额外的问题：因为Ntdll.dll管理着整个进程的WNF通知，因此多个组件（例如动态链接库/DLL）可能会对同一个WNF状态名称请求自己的回调（但会出于不同原因并使用不同的上下文）。这种情况下，Ntdll.dll库需要将注册上下文与每个模块关联起来，这样每个进程的交付载荷才能被转换为正确的回调，并且仅在所请求的交付模式与订阅方的通知类型相符时才进行交付。</p>
+<p class="zwtsh">实验：使用WnfDump实用工具转储WNF状态名称</p>
+<p class="zwts1">在这个实验中，我们将使用本书随附工具（WnfDump）向WNF_SHEL_DESKTOP_ APPLICATION_STARTED状态名称和WNF_AUDC_RENDER状态名称注册WNF订阅。</p>
+<p class="zwts1">请在命令提示符下使用下列标记执行wnfdump：</p>
+<pre class="代码无行号"><code> -i WNF_SHEL_DESKTOP_APPLICATION_STARTED -v </code></pre>
+<p class="zwts1">该工具会显示状态名称信息并读取其数据，并产生类似这样的输出结果：</p>
+<pre class="代码无行号"><code>C:\&gt;wnfdump.exe -i WNF_SHEL_DESKTOP_APPLICATION_STARTED -v 
+WNF State Name                                  | S | L | P | AC | N | CurSize | MaxSize
+　
+WNF_SHEL_DESKTOP_APPLICATION_STARTED            | S | W | N | RW | I |      28 |     512
+65 00 3A 00 6E 00 6F 00-74 00 65 00 70 00 61 00 e.:.n.o.t.e.p.a. 
+64 00 2E 00 65 00 78 00-65 00 00 00             d...e.x.e... </code></pre>
+<p class="zwts1">由于该事件与启动桌面应用程序的Explorer（“外壳”）相关联，所以可以看到自己通过双击、开始菜单或运行菜单等方式所启动的最后几个应用程序之一（通常是ShellExecute API用到的应用程序）。输出结果中还显示了变更戳，这是一个计数器，借此可以知道自当前Windows实例启动以来（因为这是一个持久事件，而非永久事件），通过这种方式启动的桌面应用程序数量。</p>
+<p class="zwts1">使用开始菜单启动另一个新的桌面应用程序（例如“画图”），尝试再次执行wnfdump命令。随后可以看到变更戳的数值增加了，并且输出结果会包含新的二进制数据。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"97a97022-321b-4466-8ae6-32bec914067f","id":"ac78d58f-8293-4fad-ace8-ed2cddc59b0f"}</p>

@@ -1,0 +1,124 @@
+<h3 class="bt3" id="sigil_toc_id_329">12.1.1　UEFI引导</h3>
+<p class="zw">Windows的引导过程并非从用户打开计算机电源或按下重置按钮时开始的，而是始于在计算机上安装Windows的那一刻。在执行Windows安装程序的某一时刻即会对系统的主硬盘进行一些准备工作，使其能够被Windows启动管理器和UEFI固件所理解。在讨论Windows启动管理器代码的作用前，先简单看看UEFI平台接口。</p>
+<p class="zw">UEFI是一套软件，它为平台提供了第一个基础编程接口。“平台”这个词在这里代表了主板、芯片组、中央处理器（CPU）以及构成计算机“引擎”的其他组件。如图12-1所示，UEFI规范提供了四种基础服务，可以在大部分可用的CPU架构（x86、ARM等）中运行。下面以x86-64架构为主进行简要介绍。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">上电</strong>：平台上电后，UEFI Security Phase（安全阶段）开始处理平台重启动事件，验证Pre EFI初始化模块代码，将处理器从16位实模式切换为32位扁平模式（此时依然不支持分页）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">平台初始化</strong>：PEI（EFI预初始化）阶段会初始化CPU、UEFI内核代码和芯片组，并最终将控制权转交给DXE（Driver Execution Environment，驱动程序执行环境）阶段。DXE阶段是首个完全以64位模式运行的代码。实际上，最后一个PEI模块（名为DXE IPL）会将执行模式切换为64位长模式。该阶段会在固件卷（存储在系统SPI闪存芯片中）内部搜索并执行每个外设的启动驱动程序（也叫DXE驱动程序）。下文介绍的重要安全功能“安全启动”就是以UEFI DXE驱动程序的形式实现的。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">操作系统引导</strong>：UEFI DXE阶段结束后，执行控制权会交给BDS（Boot Device Selection，启动设备选择）阶段。该阶段负责实现UEFI引导加载器。BDS阶段会寻找并执行安装程序的Windows UEFI引导管理器。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">关闭</strong>：UEFI固件实现了一些运行时服务（甚至可用于操作系统），这些服务负责关闭平台电源。Windows通常不会使用这些功能（而是依赖于ACPI接口）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx417.png" style="width: 100%" />
+<p class="图题">图12-1　UEFI框架</p>
+<p class="zw">有关完整UEFI框架的介绍已经超出了本书范围。当UEFI BDS阶段结束后，固件依然拥有整个平台，并向操作系统的引导加载器提供下列服务。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">引导服务：</strong>为引导加载器和其他EFI应用程序提供基本功能，如基本内存管理、同步、文本和图形控制台I/O，以及磁盘和文件I/O。引导服务实现的某些例程可以枚举并查询已安装的“协议”（EFI接口）。此类服务只在固件拥有整个平台时可用，当引导加载器调用ExitBootService EFI运行时API后会被丢弃。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">运行时服务：</strong>提供日期和时间服务、胶囊式固件更新（固件升级），以及访问NVRAM数据（如UEFI变量）的方法。操作系统正常运行后，这些服务依然可以访问。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">平台配置数据：</strong>系统ACPI和SMBIOS表总是可以通过UEFI框架访问。</p>
+<p class="zw">UEFI引导管理器可以读/写计算机硬盘并理解FAT/FAT32以及El Torito这样的基础文件系统（El Torito用于从光盘引导）。规范要求引导硬盘使用GPT（GUID分区表）方案创建分区，这种方案可以使用GUID识别不同的分区以及这些分区在系统中所起的作用。GPT方案克服了老旧的MBR方案所受的一些局限，最多支持&nbsp;128&nbsp;个分区，使用了&nbsp;64&nbsp;位LBA寻址模式（因此可以支持容量更大的分区）。每个分区可以使用一个唯一的&nbsp;128&nbsp;位GUID值进行识别。此外，还会用另外一个GUID来识别分区的类型。虽然UEFI只定义了三种分区类型，但不同的操作系统厂商会定义自己的分区GUID类型。UEFI标准要求至少具备一个格式化为FAT32文件系统的EFI系统分区。</p>
+<p class="zw">Windows安装程序在初始化磁盘时，通常会创建至少四个分区。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> EFI系统分区，其中复制了Windows启动管理器（Bootmgrfw.efi）、内存测试应用程序（Memtest.efi）、系统锁定策略（Winsipolicy.p7b，仅适用于启用Device Guard的系统）以及引导资源文件（Bootres.dll）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个恢复分区，其中存储了当系统启动出现问题时，需要引导至Windows环境所需的文件（boot.sdi和Winre.wim）。该分区会格式化为NTFS。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个Windows保留分区，安装工具会将其作为一种高速、可恢复的临时存储区来保存临时数据。此外，一些系统工具会使用这个保留分区来重映射引导卷中损坏的扇区（保留分区不包含任何文件系统）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个引导分区（这是安装Windows的分区，通常与系统分区是不同的），其中包含了引导文件。该分区会格式化为NTFS，安装在内置硬盘上的Windows只支持从NTFS的分区上引导。</p>
+<p class="zw">在将Windows文件放置到引导分区后，Windows安装程序会将引导管理器复制到EFI系统分区，并将引导分区的内容对系统的其他部分隐藏起来。UEFI规范定义了一些全局变量，这些变量驻留在NVRAM（系统的非易失RAM）中，即便在运行阶段，当操作系统完整控制整个平台后，这些变量依然可供访问（UEFI的其他一些变量甚至可以驻留在系统RAM中）。Windows安装程序通过设置某些UEFI变量（如Boot000X变量，其中“X”是一个由引导加载选项编号决定的唯一数字，此外还有BootOrder变量）来配置UEFI平台，以便启动Windows启动管理器。当系统在安装结束后重启时，UEFI引导管理器将能自动执行Windows启动管理器的代码。</p>
+<p class="zw">表12-1总结了UEFI引导过程所涉及的组件，图12-2展示了一个采用GPT分区方案的硬盘布局范例（位于Windows引导分区中的文件实则存储在\Windows\System32目录下）。</p>
+<p class="表题">表12-1　UEFI引导过程涉及的组件</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">组件</p> </th> 
+   <th> <p class="bt">用途</p> </th> 
+   <th> <p class="bt">位置</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bootmgfw.efi</p> </td> 
+   <td> <p class="bg">读取引导配置数据库（Boot Configuration Database，BCD），并在需要时显示引导菜单以执行预引导程序，如内存测试工具（Memtest.efi）</p> </td> 
+   <td> <p class="bg">EFI系统分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Winload.efi</p> </td> 
+   <td> <p class="bg">加载Ntoskrnl.exe及其依赖项（SiPolicy.p7b、hvloader.dll、hvix64.exe、Hal.dll、Kdcom.dll、Ci.dll、Clfs.sys、Pshed.dll）以及需要在引导时启动的设备驱动程序</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Winresume.efi</p> </td> 
+   <td> <p class="bg">如果从休眠状态恢复，则将从休眠文件（Hiberfil.sys）恢复，而不需要执行常规的Windows加载过程</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Memtest.efi</p> </td> 
+   <td> <p class="bg">如果从引导菜单（或引导管理器）选择该选项，则可启动一个图形界面，供用户扫描内存并检测内存错误</p> </td> 
+   <td> <p class="bg">EFI系统分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Hvloader.dll</p> </td> 
+   <td> <p class="bg">如果被引导管理器检测到并正确启用，则该模块将成为虚拟机监控程序启动器（之前版本的Windows中叫作hvloader.efi）</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Hvix64.exe<br> （或hvax64.exe）</p> </td> 
+   <td> <p class="bg">Windows虚拟机监控程序（Hyper-V）。取决于处理器架构，该文件可能使用不同的名称。这也是基于虚拟化的安全性（VBS）的基础组件</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Ntoskrnl.exe</p> </td> 
+   <td> <p class="bg">负责初始化执行体子系统以及引导启动和系统启动设备驱动程序，帮助系统做好准备以运行原生应用程序和Smss.exe</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Securekernel.exe</p> </td> 
+   <td> <p class="bg">Windows安全内核。为安全的VTL 1环境提供内核模式服务，并为常规环境提供一些基础服务（详见第9章）</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Hal.dll</p> </td> 
+   <td> <p class="bg">内核模式DLL，负责将Ntoskrnl和服务连接到硬件。它还充当了主板的驱动程序，为主板上未通过其他驱动程序加以管理的组件提供支持</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Smss.exe</p> </td> 
+   <td> <p class="bg">初始实例，通过启动自己的副本来初始化每个会话。会话0实例会加载Windows子系统驱动程序（Win32k.sys）并启动Windows子系统进程（Csrss.exe）和Windows初始化进程（Wininit.exe）。所有其他会话实例均会启动一个Csrss和一个Winlogon进程</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Wininit.exe</p> </td> 
+   <td> <p class="bg">启动服务控制管理器（SCM）、本地安全机构进程（LSASS）及本地会话管理器（LSM）。初始化注册表的其余部分并执行用户模式初始化任务</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Winlogon.exe</p> </td> 
+   <td> <p class="bg">协调登录和用户安全性，启动Bootim和LogonUI</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Logonui.exe</p> </td> 
+   <td> <p class="bg">在登录界面上展示交互式登录</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Bootim.exe</p> </td> 
+   <td> <p class="bg">展示图形化的交互式引导菜单</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Services.exe</p> </td> 
+   <td> <p class="bg">加载并初始化自启动设备驱动程序和Windows服务</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TcbLaunch.exe</p> </td> 
+   <td> <p class="bg">在支持全新Intel TXT技术的系统中，协调操作系统的安全运行功能</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TcbLoader.dll</p> </td> 
+   <td> <p class="bg">包含在安全运行上下文中运行的Windows加载程序代码</p> </td> 
+   <td> <p class="bg">Windows引导分区</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx479.png" style="width: 100%" />
+<p class="图题">图12-2　UEFI系统的硬盘布局范例</p>
+<p class="zw">安装程序的另一个用途是准备BCD，在UEFI系统中，BCD存储于系统卷根目录下的\EFI\Microsoft\Boot\BCD文件中。该文件包含的选项可启动安装程序所安装版本的Windows，以及之前已经安装的其他版本的Windows。如果BCD已存在，那么安装程序会直接向其中添加与新安装系统有关的条目。有关BCD的详细信息请参阅第10章。</p>
+<p class="zw">所有UEFI规范，包括PEI和BDS阶段、安全启动等概念的详细信息，可参阅https:// uefi.org/specifications。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"efd4d87c-5612-4798-b28c-12b89797393d"}</p>

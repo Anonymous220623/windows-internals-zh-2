@@ -1,0 +1,4 @@
+<h3 class="bt3" id="sigil_toc_id_200">11.8.4　为某个文件禁用惰性写入</h3>
+<p class="zw">如果在调用Windows的CreateFile函数时通过指定FILE_ATTRIBUTE_TEMPORARY标记创建了一个临时文件，那么惰性写入器就不会将脏页写入磁盘，除非物理内存严重不足或文件明确要求被刷新。惰性写入器的这一特性改善了系统性能：惰性写入器不会将最终可能被丢弃的数据立即写入磁盘。应用程序在关闭时通常都会删除自己的临时文件。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"12f97583-be18-467a-a595-eb74d0d9db22","id":"609ab75f-67ad-4892-a938-9260152c2db3"}</p>

@@ -1,0 +1,10 @@
+<h3 class="bt3" id="sigil_toc_id_204">11.8.8　系统线程</h3>
+<p class="zw">如上文所述，缓存管理器通过将请求提交到通用关键系统工作线程池的方式执行惰性写入和预读取I/O操作。然而，通过限制，使用的这些线程的数量始终少于关键系统工作线程的总数量。在客户端系统中，共有5个关键系统工作线程，服务器系统中则有10个。</p>
+<p class="zw">在内部，缓存管理器会将自己的工作请求整理成四个列表（所有列表都由同一组执行体的工作线程提供服务）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 快速队列（express queue），用于预读取操作。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 常规队列（regular queue），用于（刷新脏数据所需的）惰性写入扫描以及后写入和延迟关闭。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 快速销毁队列（fast teardown queue），用于内存管理器等待缓存管理器所拥有的数据节被释放，以便可以通过映像节打开文件，这会导致CcWriteBehind刷新整个文件并销毁共享的缓存映射。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 时钟周期后队列（post tick queue），可供缓存管理器在惰性写入器线程的每个时钟周期之后（即每次操作结束后）注册一个内部通知。</p>
+<p class="zw">为了跟踪工作线程需要执行的工作项，缓存管理器会创建自己内部每个处理器的备用列表（look-aside list），这是一种包含工作队列条目结构的固定长度的列表（每个处理器一个）（备用列表详见卷1第5章）。工作队列项的数量取决于系统类型：客户端系统为128个，服务器系统为256个。为提高跨处理器的性能，缓存管理器还分配了一个全局备用列表，其大小与上文介绍的列表大小相同。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"12f97583-be18-467a-a595-eb74d0d9db22","id":"95218cea-2771-4f27-90cc-42a5d8a3fbde"}</p>

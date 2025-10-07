@@ -1,0 +1,16 @@
+<h3 class="bt3" id="sigil_toc_id_131">10.2.9　接受启动和最近一次的正确配置</h3>
+<p class="zw">除了启动服务，系统还依赖SCM决定在什么时候将系统的注册表配置HKLM\ SYSTEM\CurrentControlSet保存为“最近一次的正确配置”。CurrentControlSet键中包含了作为子键的Services键，因此CurrentControlSet也包含了SCM数据库在注册表中的内容。此外，它还包含Control键，其中存储了很多内核模式和用户模式的子系统配置设置。默认情况下，系统的成功启动也意味着自启动服务均已成功启动，并且用户成功登录。如果由于系统启动过程中设备驱动程序崩溃导致系统挂起，或ErrorControl值为SERVICE_ ERROR_SEVERE或SERVICE_ERROR_CRITICAL的自动启动服务报错，则意味着系统启动失败。</p>
+<p class="zw">客户端版本的Windows通常会禁用最近一次正确配置功能。若要启动该功能，请将HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Configuration Manager\ LastKnownGood\Enabled注册表值设置为1。在服务器版本的Windows中，该设置的默认值就是1。</p>
+<p class="zw">SCM知道自己何时成功启动了自启动服务，但必须由Winlogon（%SystemRoot%\System32\ Winlogon.exe）告知登录是否成功。用户登录时，Winlogon会调用NotifyBootConfigStatus函数，并借此向SCM发送消息。当成功启动了自启动服务，或收到来自NotifyBootConfigStatus的消息后（以较晚满足的情况为准），如果最近一次正确配置功能已启用，SCM会调用系统函数NtInitializeRegistry保存当前的注册表启动配置。</p>
+<p class="zw">第三方软件开发者可以用自己的定义取代Winlogon中对于“成功登录”的定义。例如，运行Microsoft SQL Server的系统只有在SQL Server可以成功接受并处理事务后才可以视为成功启动。开发者可以通过编写一个启动验证程序，并将注册表键HKLM\ SYSTEM\CurrentControlSet\Control\BootVerificationProgram存储的值指向这个验证程序在磁盘上的位置（这等于安装了这个验证程序），从而设置自己对于“成功启动”的定义。此外，这种启动验证程序的安装必须禁用Winlogon对NotifyBootConfigStatus的调用，为此可将HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\ReportBootOk注册表键设置为&nbsp;0。在安装启动验证程序后，SCM会在完成自动启动服务的启动工作后运行该验证程序，并等待程序调用NotifyBootConfigStatus，随后存储最近一次正确配置。</p>
+<p class="zw">Windows维护了CurrentControlSet的多个副本，而CurrentControlSet实际上是一个指向其中一个副本的注册表符号链接。这些ControlSet（控制集）的名称类似于HKLM\ SYSTEM\ControlSetnnn，其中“nnn”是001、002这样的编号。HKLM\SYSTEM\Select键包含的值决定了每个控制集的角色。举例来说，如果CurrentControlSet指向ControlSet001，那么Select下的Current值就是1。Select下的LastKnownGood值包含了最近一次正确配置对应的编号，这也是最近一次成功启动系统所用的配置。系统中的Select键可能还会包含另一个值：Failed，这样的值指向了系统最近一次未能成功启动时所使用的配置集，随后系统放弃该配置集并使用最近一次正确配置，然后成功启动了。图10-19展示了Windows Server的系统控制集和Select值。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2031.png" style="width: 100%" />
+<p class="图题">图10-19　Windows Server 2019上的控制集选择键</p>
+<p class="zw">NtInitializeRegistry函数获取最近一次正确配置集的内容，并将其与CurrentControlSet键的树进行同步。如果系统是首次成功启动，此时将不存在最近一次正确配置，系统将为其新建一个控制集。如果最近一次正确配置树存在，则系统将使用该配置与CurrentControlSet之间的差异对其进行更新。</p>
+<p class="zw">最近一次正确配置在某些情况下非常有用，例如对CurrentControlSet的改动（如为了优化性能而更改了HKLM\SYSTEM\Control下的值，或增添了服务或设备驱动程序）导致后续启动无法成功时。图10-20展示了现代启动菜单的“启动设置”。实际上，在启用最近一次正确配置功能，并且系统正在启动过程中的情况下，用户可以通过现代启动菜单（或在Windows恢复环境中）的“故障排查”选项选择“启动设置”，随后即可通过选项，用最近一次正确配置控制集来启动系统。（如果系统依然使用了旧版的启动菜单，用户可以按下F8并选择“高级启动选项”）。如图所示，在选中“启用最近一次的正确配置”选项后，系统在启动时会将注册表配置回滚为最近一次成功启动时的配置。第12章将详细介绍现代启动菜单、Windows恢复环境，以及可对系统启动问题进行排错的其他恢复机制。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2039.png" style="width: 100%" />
+<p class="图题">图10-20　启用最近一次正确配置</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":8,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"57395f74-5158-4c28-a2c5-58d6fd51d882"}</p>

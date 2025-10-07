@@ -1,0 +1,19 @@
+<h3 class="bt3" id="sigil_toc_id_258">11.12.7　隧道</h3>
+<p class="zw">NTFS使用隧道（Tunneling）的概念实现与旧式应用程序的兼容，这些应用程序会依赖文件系统来缓存某些文件元数据，甚至在文件消失（例如被删除或更名后）一段时间后依然会维持这样的缓存。借助隧道功能，任何与原文件使用相同名称创建的新文件，在一定时间内都将保持与原文件相同的元数据。这种机制开始是为了使用Safe save编程方法复制MS-DOS程序的预期行为，借此将修改后的数据复制到一个临时文件中，原文件被删除，随后将临时文件更名为原文件的名称。这种情况下，预期的行为是：更名后的临时文件应该看起来与原文件完全相同，否则创建时间应该在每次修改后持续更新（这也是“已修改时间”的用法）。</p>
+<p class="zw">NTFS使用了隧道技术，这样在从目录中删除一个文件名时，其长名称和短名称以及创建时间信息都会保存在缓存中。在向目录添加新文件后，可以搜索缓存查看是否有可还原的隧道数据。因为这些操作会应用给目录，而每个目录实例都有自己的缓存，因此，目录删除后缓存也会被删除。</p>
+<p class="zw">如果所使用的名称会导致删除并重建同名文件，NTFS将为下列一系列操作使用隧道。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 删除 + 创建。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 删除 + 更名。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 更名 + 创建。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 更名 + 更名。</p>
+<p class="zw">默认情况下，NTFS会将隧道缓存保留15秒，不过我们可以修改HKLM\SYSTEM\ CurrentControlSet\Control\FileSystem注册表键下的MaximumTunnelEntryAgeInSeconds值来更改默认的超时值。新建一个名为MaximumTunnelEntries的值并将其设置为0也可以彻底禁用隧道功能，不过这可能导致依赖该功能的老旧应用程序无法运行。在禁用短名称生成（参见上一节）功能的NTFS卷上，隧道默认已被禁用。</p>
+<p class="zw">我们可以在命令提示符下通过下列实验看到隧道的作用。</p>
+<p class="zw">1）创建一个名为file1的文件。</p>
+<p class="zw">2）等待15秒以上（隧道缓存的默认超时值）。</p>
+<p class="zw">3）新建一个名为file2的文件。</p>
+<p class="zw">4）执行dir /TC，请留意创建时间。</p>
+<p class="zw">5）将file1更名为file。</p>
+<p class="zw">6）将file2更名为file1。</p>
+<p class="zw">7）执行dir /TC，留意完全相同的创建时间。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":6,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"167d4a26-c4ea-4552-83ec-694f84b3a67e"}</p>

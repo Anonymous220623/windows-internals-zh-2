@@ -1,0 +1,12 @@
+<h3 class="bt3" id="sigil_toc_id_179">11.2.5　基于流的缓存</h3>
+<p class="zw">缓存管理器在设计上不仅可以进行文件缓存，还可以进行流缓存。流（stream）是指文件中的字节序列。一些文件系统（如NTFS）允许一个文件包含多个流，缓存管理器通过分别缓存每个流来适应这种文件系统。NTFS可以将自己的主文件表（详见下文“主文件表”一节）组织成不同的流，并缓存这些流，由此利用这一功能。实际上，虽然缓存管理器可以说是在缓存文件，但实际上它缓存的是流（所有文件都至少有一个数据流），这些数据流可以通过文件名以及流名称（如果文件中包含多个流的话）加以识别。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　在内部，缓存管理器并不知道文件或流的名称，而是会使用指向这些结构的指针。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"3ad34383-9660-4e89-b628-a8cbdfed9828","id":"8cdc1d00-75c9-47e0-9a50-f87292a44616"}</p>

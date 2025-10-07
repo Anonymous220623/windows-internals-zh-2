@@ -1,0 +1,8 @@
+<h3 class="bt3" id="sigil_toc_id_169">10.9.2　填充码数据库</h3>
+<p class="zw">填充码数据库（SDB）文件格式最早出现在Windows XP中，其目的在于改善应用程序的兼容性。该文件格式最初的用途是，为需要在操作系统的帮助下才能正常运行的程序和驱动程序存储一种二进制XML样式的数据库。经过调整，SDB文件已经可以包含内核模式填充码。该文件格式使用标签来描述一种XML数据库。标签是一种2字节的基础数据结构，可充当数据库中项和特性的唯一标识符。它由4位的类型和12位的索引组成，类型标识了与标签相关数据的格式。每个标签都表示了数据类型、大小，以及标签本身的解释。SDB文件有一个12字节的头和一组标签，这一组标签通常定义了填充码数据库文件中的三个主要块。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> INDEX块，包含索引标签，用于快速索引数据库中的元素。INDEX块中的索引以升序的形式存储，因此在索引中搜索元素的速度非常快（使用了二分搜索算法）。对于内核填充码引擎，元素使用从填充码名称派生而来的一个8字节键存储在INDEX块中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> DATABASE块，包含描述填充码、驱动程序、设备以及可执行文件的顶级标签。每个顶级标签都包含子标签，这些子标签描述了根项之下包含的属性或内联块。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> STRING TABLE块，其中包含的字符串可被DATABASE块中的下层标签所引用。DATABASE块中的标签通常不直接描述字符串，而是包含对标签（名为STRINGREF）的引用，描述了位于字符串表中的字符串。这样包含大量通用字符串的数据库就不会变的体积过于巨大。</p>
+<p class="zw">微软已经部分公开了SDB文件格式和读/写SDB的API，详见https://docs.microsoft. com/windows/win32/devnotes/application-compatibility-database。所有SDB API都是在应用程序兼容性客户端库（apphelp.dll）中实现的。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"89b4888a-9a39-47e4-a3ef-e6e0929c62be","id":"810a016f-f481-4f89-86d6-ce978b112792"}</p>

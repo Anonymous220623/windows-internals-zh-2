@@ -1,0 +1,13 @@
+<h3 class="bt3" id="sigil_toc_id_41">8.8.5　属性</h3>
+<p class="zw">ALPC不仅可以进行简单的消息传递，还能将特定上下文信息添加到每个消息中，并让内核借此跟踪消息的有效性、寿命和具体的实现等信息。ALPC的用户也可以分配自己的自定义上下文信息。无论是由系统管理或由用户管理，ALPC都会把这些数据称为属性（Attribute）。内核总共管理了七个属性。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 安全属性，包含模仿客户端，以及高级ALPC安全功能（详见下文）所需的关键信息。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 数据视图属性，负责管理与ALPC节相关区域所关联的不同视图，此外也可用于设置某些标记，例如auto-release（自动释放）标记，回复时，需要手动撤销对视图的映射。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 上下文属性，可将用户管理的上下文指针放置在端口，或通过某个端口发送的消息上。此外，序列号、消息ID以及回调ID也保存在这里并由内核负责管理，借此ALPC用户即可实现唯一性、基于消息的哈希和排序。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 句柄属性，包含与消息相关的句柄有关的信息（详见下文“句柄处理”一节）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 令牌属性，可用于在无须使用完整安全属性的情况下，获取消息发送方的Token ID、Authentication ID和Modified ID（但无法单独用于实现模仿）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 直接属性，可用于发送关联有同步对象的直接消息（详见下文“直接事件”一节）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 代表xxx工作（work-on-behalf-of）属性，用于对工单（work ticket）进行编码，进而实现更完善的电源管理和资源管理决策（详见下文“电源管理”一节）。</p>
+<p class="zw">上述部分属性最初由服务器或客户端在发送消息时传入，会被转换为内核自己的内部ALPC表达。如果ALPC用户请求返回这些数据，内核会以安全的方式提供。在少数情况下，服务器或客户端始终可请求这些属性，因为ALPC在内部已将其关联给消息，并使其始终可用（如上下文属性或令牌属性）。通过实现这种模型并将其与内部的句柄表相结合（详见下文），ALPC可以在客户端和服务器之间保持关键数据的不透明，同时依然维持内核模式下真正的指针。</p>
+<p class="zw">为了正确定义属性，内部的ALPC用户可以使用多种API，例如AlpcInitializeMessageAttribute和AlpcGetMessageAttribute。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"e3feacd9-ccbb-4c83-b36b-bb1c5293963c","id":"07e61da2-c14f-4963-9464-5a1291905f27"}</p>

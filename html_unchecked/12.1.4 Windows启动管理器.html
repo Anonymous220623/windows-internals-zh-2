@@ -1,0 +1,933 @@
+<h3 class="bt3" id="sigil_toc_id_332">12.1.4　Windows启动管理器</h3>
+<p class="zw">如上文所述，UEFI固件需要读取并执行Windows启动管理器（Bootmgfw.efi）。EFI固件会将控制权转交给启用了分页并以长模式运行的启动管理器，而UEFI内存映射所定义的内存空间也会进行一一映射。因此与BIOS系统不同，此时并不需要切换执行上下文。当从彻底关机或休眠（S4电源状态）下启动或恢复Windows操作系统时，Windows启动管理器实际上是第一个被调用的应用程序。自Windows Vista开始，Windows启动管理器就进行了全面的重新设计，其目的在于：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 为使用各类复杂技术的多种操作系统的启动提供支持。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 将操作系统的特定启动代码区分为启动应用程序（Windows加载器）和恢复应用程序（Winresume）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 隔离并向启动应用程序提供通用启动服务，这也是启动库的作用。</p>
+<p class="zw">尽管Windows启动管理器的最终目标很明显，但它的整个架构依然很复杂。从这里开始，我们将用“启动应用程序”这个词组代表各种操作系统加载器，例如Windows加载器以及其他加载器。启动管理器有很多用途，例如：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 初始化启动记录器和启动应用程序所需的基本系统服务（详见下文）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 初始化安全功能（如安全启动和测量启动），加载它们的系统策略，验证它们的完整性。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 定位、打开并读取引导配置数据存储器。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 创建“引导列表”并展示基本引导菜单（如果引导菜单策略被设置为“Legacy”）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 管理TPM并解锁被BitLocker加密的驱动器（如果获取解密密钥失败，则会显示BitLocker解锁界面并提供恢复方法）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 运行指定的启动应用程序，管理启动失败后的恢复程序（Windows恢复环境）。</p>
+<p class="zw">首先需要执行的操作之一是配置启动日志设施并初始化启动库。启动应用程序包含一套标准库，这个库会在启动管理器运行时进行初始化。一旦标准启动库初始化完成，随后它们的核心服务就可以被所有启动应用程序所使用。这些服务包括一个基础的内存管理器（支持地址转换、分页和堆分配）、固件参数（例如引导设备和BCD中的启动管理器项）、一个事件通知系统（用于测量启动）、时间、启动记录器、加密模块、受信任平台模块（Trusted Platform Module，TPM）、网络、显示驱动程序以及I/O系统（还有一个基础的PE加载器）。我们可以把启动库设想成一种适用于启动管理器和启动应用程序的特殊基本硬件抽象层（HAL）。在该库初始化的早期阶段，还将初始化“系统完整性”启动库组件。系统完整性服务的目标是为安全相关系统事件（如加载了新代码、连接了调试器等）的报告和记录提供所需平台。这是利用TPM提供的功能实现的，主要用于测量启动功能中。我们将在下文“测量启动”一节详细介绍该功能。</p>
+<p class="zw">为了正确执行，启动管理器初始化函数（BmMain）需要一种名为ApplicationParameters（应用程序参数）的数据结构，顾名思义，该数据结构描述了自己的启动参数（如引导设备、BCD对象的GUID等）。为了编译这个数据结构，启动管理器会使用EFI固件服务，这样做的目的在于获得其自身可执行文件的完整相对路径，并获得存储在活跃EFI启动变量（BOOT000X）中的启动加载选项。EFI规范中规定，EFI启动变量必须包含有关启动项的简短描述、启动管理器的完整设备和文件路径，以及其他一些可选数据。Windows使用这种可选数据来存储和描述自己BCD对象的GUID。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　可选数据可以包含任何其他由启动管理器在后续阶段解析的启动选项。这就可以从UEFI变量配置启动管理器，而完全无须使用Windows注册表。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：操作UEFI启动变量</p>
+<p class="zwts1">我们可以使用本书随附资源提供的UefiTool工具转储系统中的所有UEFI启动变量。为此请以管理员身份启动该工具并指定/enum参数（在搜索框中搜索cmd，右键点击“<strong style="color:#0092dd">命令提示符</strong>”，选择“<strong style="color:#0092dd">以管理员身份运行</strong>”）。常规系统会使用大量UEFI变量。该工具支持按照名称和GUID过滤变量，甚至可使用/out参数将所有变量名和数据导出为文本文件。</p>
+<p class="zwts1">首先将所有UEFI变量导出为文本文件：</p>
+<pre class="代码无行号"><code>C:\Tools&gt;UefiTool.exe /enum /out Uefi_Variables.txt 
+UEFI Dump Tool v0.1 
+Copyright 2018 by Andrea Allievi (AaLl86) 
+　
+Firmware type: UEFI 
+Bitlocker enabled for System Volume: NO 
+　
+Successfully written “Uefi_Variables.txt” file. </code></pre>
+<p class="zwts1">随后可使用下列过滤器得到UEFI启动变量列表：</p>
+<pre class="代码无行号"><code>C:\Tools&gt;UefiTool.exe /enum Boot 
+UEFI Dump Tool v0.1 
+Copyright 2018 by Andrea Allievi (AaLl86) 
+　
+Firmware type: UEFI 
+Bitlocker enabled for System Volume: NO 
+EFI Variable "BootCurrent" 
+   Guid : {8BE4DF61-93CA-11D2-AA0D-00E098032B8C} 
+   Attributes: 0x06 ( BS RT ) 
+   Data size : 2 bytes 
+   Data: 
+   00 00                                           | 
+　
+EFI Variable "Boot0002" 
+   Guid      : {8BE4DF61-93CA-11D2-AA0D-00E098032B8C} 
+   Attributes: 0x07 ( NV BS RT ) 
+   Data size : 78 bytes 
+   Data: 
+   01 00 00 00 2C 00 55 00 53 00 42 00 20 00 53 00 |    , U S B S 
+   74 00 6F 00 72 00 61 00 67 00 65 00 00 00 04 07 | t o r a g e 
+   14 00 67 D5 81 A8 B0 6C EE 4E 84 35 2E 72 D3 3E | g ü¿ l Nä5.r &gt; 
+   45 B5 04 06 14 00 71 00 67 50 8F 47 E7 4B AD 13 | E q gPÅG K¡ 
+   87 54 F3 79 C6 2F 7F FF 04 00 55 53 42 00       | çT≤y / USB 
+　
+EFI Variable "Boot0000" 
+   Guid      : {8BE4DF61-93CA-11D2-AA0D-00E098032B8C} 
+   Attributes: 0x07 ( NV BS RT ) 
+   Data size : 300 bytes 
+   Data: 
+   01 00 00 00 74 00 57 00 69 00 6E 00 64 00 6F 00 |    t W I n d o 
+   77 00 73 00 20 00 42 00 6F 00 6F 00 74 00 20 00 | w s B o o t 
+   4D 00 61 00 6E 00 61 00 67 00 65 00 72 00 00 00 | M a n a g e r 
+   04 01 2A 00 02 00 00 00 00 A0 0F 00 00 00 00 00 | * á 
+   00 98 0F 00 00 00 00 00 84 C4 AF 4D 52 3B 80 44 |   ÿ    ä »MR;ÇD 
+   98 DF 2C A4 93 AB 30 B0 02 02 04 04 46 00 5C 00 | ÿ ,ñô½0 F \ 
+   45 00 46 00 49 00 5C 00 4D 00 69 00 63 00 72 00 | E F I \ M i c r 
+   6F 00 73 00 6F 00 66 00 74 00 5C 00 42 00 6F 00 | o s o f t \ B o 
+   6F 00 74 00 5C 00 62 00 6F 00 6F 00 74 00 6D 00 | o t \ b o o t m 
+   67 00 66 00 77 00 2E 00 65 00 66 00 69 00 00 00 | g f w . e f i 
+   7F FF 04 00 57 49 4E 44 4F 57 53 00 01 00 00 00 |     WINDOWS 
+   88 00 00 00 78 00 00 00 42 00 43 00 44 00 4F 00 | ê x B C D O 
+   42 00 4A 00 45 00 43 00 54 00 3D 00 7B 00 39 00 | B J E C T = { 9 
+   64 00 65 00 61 00 38 00 36 00 32 00 63 00 2D 00 | d e a 8 6 2 c -
+   35 00 63 00 64 00 64 00 2D 00 34 00 65 00 37 00 | 5 c d d - 4 e 7 
+   30 00 2D 00 61 00 63 00 63 00 31 00 2D 00 66 00 | 0 - a c c 1 - f 
+   33 00 32 00 62 00 33 00 34 00 34 00 64 00 34 00 | 3 2 b 3 4 4 d 4 
+   37 00 39 00 35 00 7D 00 00 00 6F 00 01 00 00 00 | 7 9 5 } o 
+   10 00 00 00 04 00 00 00 7F FF 04 00             |  
+　
+EFI Variable "BootOrder" 
+   Guid      : {8BE4DF61-93CA-11D2-AA0D-00E098032B8C} 
+   Attributes: 0x07 ( NV BS RT ) 
+   Data size : 8 bytes 
+   Data: 
+   02 00 00 00 01 00 03 00                         | 
+　
+&lt;Full output cut for space reasons&gt; </code></pre>
+<p class="zwts1">该工具甚至可以解释每个启动变量的内容。你可以使用/enumboot参数来运行：</p>
+<pre class="代码无行号"><code>C:\Tools&gt;UefiTool.exe /enumboot 
+UEFI Dump Tool v0.1 
+Copyright 2018 by Andrea Allievi (AaLl86) 
+　
+Firmware type: UEFI 
+Bitlocker enabled for System Volume: NO 
+　
+System Boot Configuration 
+   Number of the Boot entries: 4 
+   Current active entry: 0 
+   Order: 2, 0, 1, 3 
+　
+Boot Entry #2 
+   Type: Active 
+   Description: USB Storage 
+　
+Boot Entry #0 
+   Type: Active 
+   Description: Windows Boot Manager 
+   Path: Harddisk0\Partition2 [LBA: 0xFA000]\\EFI\Microsoft\Boot\bootmgfw.efi 
+   OS Boot Options: BCDOBJECT={9dea862c-5cdd-4e70-acc1-f32b344d4795} 
+　
+Boot Entry #1 
+   Type: Active 
+   Description: Internal Storage 
+　
+Boot Entry #3 
+   Type: Active 
+   Description: PXE Network </code></pre>
+<p class="zwts1">当该工具可以解析启动路径时，即可输出相对路径行（同样适用于Winload操作系统加载选项）。UEFI规范为启动项的路径字段定义了不同的解释，这主要取决于硬件接口。如果要更改系统启动顺序，则只需设置BootOrder变量的值，或者使用/setbootorder命令行参数即可做到。不过需要注意，这可能会让BitLocker卷主密钥失效（详见下文“测量启动”一节）：</p>
+<pre class="代码无行号"><code>C:\Tools&gt;UefiTool.exe /setvar bootorder {8BE4DF61-93CA-11D2-AA0D-00E098032B8C} 
+0300020000000100 
+UEFI Dump Tool v0.1 
+Copyright 2018 by Andrea Allievi (AaLl86) 
+　
+Firmware type: UEFI 
+BitLocker enabled for System Volume: YES 
+　
+Warning, The "bootorder" firmware variable already exist. 
+Overwriting it could potentially invalidate the system BitLocker Volume Master Key. 
+Make sure that you have made a copy of the System volume Recovery Key. 
+Are you really sure that you would like to continue and overwrite its content? [Y/N] y
+The "bootorder" firmware variable has been successfully written. </code></pre>
+<p class="zw">在构建了ApplicationParameters数据结构并获得了所有启动路径（\EFI\Microsoft\Boot是主工作目录）后，启动管理器会打开并解析引导配置数据（Boot Configuration Data）文件。从系统内部来看，该文件是一个注册表配置单元，其中包含了所有的启动应用程序描述符，通常会在系统启动完毕后映射至HKLM\BCD00000000虚拟键。启动管理器使用启动库打开并读取BCD文件。该库可以使用EFI服务读/写硬盘上的物理扇区。截至撰写这部分内容，该库实现了多种文件系统的轻量级版本，包括NTFS、FAT、ExFAT、UDFS、El Torito，以及为Network Boot I/O、VMBus I/O（适用于Hyper-V虚拟机）和WIM映像I/O提供支持的虚拟文件系统。引导配置数据配置单元解析完成后，即可通过GUID定位描述启动管理器的BCD对象，代表启动参数的所有项都会被添加到ApplicationParameters数据结构的Startup节。BCD中的项可以包含启动管理器、Winload以及启动过程所涉及的其他组件解释的可选参数。表12-2列出了这些选项以及它们对启动管理器的影响，表12-3列出了所有启动应用程序可用的BCD选项列表，表12-4列出了适用于Windows启动加载器的BCD选项，表12-5列出了控制Windows虚拟机监控程序执行的BCD选项。</p>
+<p class="表题">表12-2　Windows启动管理器（Bootmgr）的BCD选项</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">可读名称</p> </th> 
+   <th> <p class="bt">值</p> </th> 
+   <th> <p class="bt">BCD元素代码</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bcdfilepath</p> </td> 
+   <td> <p class="bg">路径</p> </td> 
+   <td> <p class="bg">BCD_FILEPATH</p> </td> 
+   <td> <p class="bg">指向磁盘上的BCD文件（通常为\Boot\ BCD）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">displaybootmenu</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">DISPLAY_BOOT_MENU</p> </td> 
+   <td> <p class="bg">决定启动管理器是否显示引导菜单或自动选择默认项</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">noerrordisplay</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">NO_ERROR_DISPLAY</p> </td> 
+   <td> <p class="bg">隐藏启动管理器遇到的错误信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">resume</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">ATTEMPT_RESUME</p> </td> 
+   <td> <p class="bg">决定是否尝试从休眠状态恢复，Windows休眠后会自动设置该选项</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">timeout</p> </td> 
+   <td> <p class="bg">秒</p> </td> 
+   <td> <p class="bg">TIMEOUT</p> </td> 
+   <td> <p class="bg">启动管理器选择默认项之前的等待秒数</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">resumeobject</p> </td> 
+   <td> <p class="bg">GUID</p> </td> 
+   <td> <p class="bg">RESUME_OBJECT</p> </td> 
+   <td> <p class="bg">标识从休眠状态恢复时要使用的启动应用程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">displayorder</p> </td> 
+   <td> <p class="bg">列表</p> </td> 
+   <td> <p class="bg">DISPLAY_ORDER</p> </td> 
+   <td> <p class="bg">定义启动管理器的显示顺序列表</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">toolsdisplayorder</p> </td> 
+   <td> <p class="bg">列表</p> </td> 
+   <td> <p class="bg">TOOLS_DISPLAY_ORDER</p> </td> 
+   <td> <p class="bg">定义启动管理器的工具显示顺序列表</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bootsequence</p> </td> 
+   <td> <p class="bg">列表</p> </td> 
+   <td> <p class="bg">BOOT_SEQUENCE</p> </td> 
+   <td> <p class="bg">定义一次性启动序列</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">default</p> </td> 
+   <td> <p class="bg">GUID</p> </td> 
+   <td> <p class="bg">DEFAULT_OBJECT</p> </td> 
+   <td> <p class="bg">要运行的默认启动项</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">customactions</p> </td> 
+   <td> <p class="bg">列表</p> </td> 
+   <td> <p class="bg">CUSTOM_ACTIONS_LIST</p> </td> 
+   <td> <p class="bg">定义在按下特定键盘按键组合后要采取的自定义操作</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">processcustomactionsfirst</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">PROCESS_CUSTOM_ACTIONS_<br> FIRST</p> </td> 
+   <td> <p class="bg">决定启动管理器在按顺序启动前是否要运行自定义操作</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bcddevice</p> </td> 
+   <td> <p class="bg">GUID</p> </td> 
+   <td> <p class="bg">BCD_DEVICE</p> </td> 
+   <td> <p class="bg">BCD存储所在位置的设备ID</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hiberboot</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">HIBERBOOT</p> </td> 
+   <td> <p class="bg">表示该启动是否为混合启动</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">fverecoveryurl</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">FVE_RECOVERY_URL</p> </td> 
+   <td> <p class="bg">指定BitLocker恢复URL字符串</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">fverecoverymessage</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">FVE_RECOVERY_MESSAGE</p> </td> 
+   <td> <p class="bg">指定BitLocker恢复消息字符串</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">flightedbootmgr</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">BOOT_FLIGHT_BOOTMGR</p> </td> 
+   <td> <p class="bg">决定是否通过Flight Bootmgr来执行</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">其中，Windows启动管理器的所有BCD元素代码均以BCDE_BOOTMGR_TYPE开头，为了节省版面，已在表12-2中删除。</p>
+<p class="表题">表12-3　适用于启动应用程序的BCD库选项（对所有对象类型均有效）</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">可读名称</p> </th> 
+   <th> <p class="bt">值</p> </th> 
+   <th> <p class="bt">BCD元素代码</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">advancedoptions</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">DISPLAY_ADVANCED_<br> OPTIONS</p> </td> 
+   <td> <p class="bg">如果为False，则将在启动失败后执行默认行为，启动自动恢复命令启动项；否则显示启动错误信息，为用户提供与启动项有关的高级启动选项菜单。等同于按下F8键</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">avoidlowmemory</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">AVOID_LOW_PHYSICAL_<br> MEMORY</p> </td> 
+   <td> <p class="bg">强制让启动加载器尽量避免使用低于指定值的物理地址。有时一些老旧的设备（如ISA设备）需要该选项，因为只有低于16&nbsp;MB的内存是可用的或可见的</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">badmemoryaccess</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">ALLOW_BAD_MEMORY_<br> ACCESS</p> </td> 
+   <td> <p class="bg">强制使用坏页列表中的内存页（有关页面列表的详情，请参阅卷1第5章）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">badmemorylist</p> </td> 
+   <td> <p class="bg">页帧号（PFN）<br> 数组</p> </td> 
+   <td> <p class="bg">BAD_MEMORY_LIST</p> </td> 
+   <td> <p class="bg">指定系统中已知因RAM故障而损坏的物理页列表</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">baudrate</p> </td> 
+   <td> <p class="bg">波特率bps数</p> </td> 
+   <td> <p class="bg">DEBUGGER_BAUDRATE</p> </td> 
+   <td> <p class="bg">当远程内核调试器主机通过串口连接时，指定要使用的非默认波特率（默认为19200）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bootdebug</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">DEBUGGER_ENABLED</p> </td> 
+   <td> <p class="bg">为启动加载器启用远程启动调试。启用该选项后，即可使用Kd.exe或Windbg.exe连接启动加载器</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bootems</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">EMS_ENABLED</p> </td> 
+   <td> <p class="bg">可让Windows为启动应用程序启用紧急管理服务（Emergency Management Services，EMS），借此通过串口报告启动信息并接收系统管理命令</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">busparams</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">DEBUGGER_BUS_<br> PARAMETERS</p> </td> 
+   <td> <p class="bg">如果使用物理PCI调试设备提供内核调试，可为该设备指定PCI总线、功能和设备编号（或ACPI DBG表索引）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">channel</p> </td> 
+   <td> <p class="bg">0到62之间的通道编号</p> </td> 
+   <td> <p class="bg">DEBUGGER_1394_<br> CHANNEL</p> </td> 
+   <td> <p class="bg">与&lt;debugtype&gt; 1394配合使用，指定内核调试通信所使用的IEEE 1394通道</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">configaccesspolicy</p> </td> 
+   <td> <p class="bg">Default<br> DisallowMmConfig</p> </td> 
+   <td> <p class="bg">CONFIG_ACCESS_POLICY</p> </td> 
+   <td> <p class="bg">配置系统是否使用内存映射的I/O访问PCI制造商的配置空间，或回退为使用HAL的I/O端口访问例程。有时可用于解决平台设备出现的问题</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">debugaddress</p> </td> 
+   <td> <p class="bg">硬件地址</p> </td> 
+   <td> <p class="bg">DEBUGGER_PORT_<br> ADDRESS</p> </td> 
+   <td> <p class="bg">指定调试所用串口（COM）的硬件地址</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">debugport</p> </td> 
+   <td> <p class="bg">COM端口号</p> </td> 
+   <td> <p class="bg">DEBUGGER_PORT_<br> NUMBER</p> </td> 
+   <td> <p class="bg">通过远程内核调试器主机连接时，为默认串口（对于至少有两个串口的系统，通常为COM2）指定替代值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">debugstart</p> </td> 
+   <td> <p class="bg">Active<br> AutoEnable<br> Disable</p> </td> 
+   <td> <p class="bg">DEBUGGER_START_<br> POLICY</p> </td> 
+   <td> <p class="bg">启用内核调试的情况下，指定调试器设置。当遇到断点或内核异常，包括内核崩溃时，AutoEnable可启用调试器</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">debugtype</p> </td> 
+   <td> <p class="bg">Serial<br> 1394<br> USB<br> Net</p> </td> 
+   <td> <p class="bg">DEBUGGER_TYPE</p> </td> 
+   <td> <p class="bg">指定内核调试器是要通过串口、火线（IEEE 1394）、USB或以太网端口进行通信（默认为串口）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hostip</p> </td> 
+   <td> <p class="bg">IP地址</p> </td> 
+   <td> <p class="bg">DEBUGGER_NET_HOST_<br> IP</p> </td> 
+   <td> <p class="bg">通过以太网启用内核调试器的情况下，指定要连接的目标IP地址</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">port</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">DEBUGGER_NET_PORT</p> </td> 
+   <td> <p class="bg">通过以太网启用内核调试器的情况下，指定要连接的目标端口号</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">key</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">DEBUGGER_NET_KEY</p> </td> 
+   <td> <p class="bg">通过以太网启用内核调试器的情况下，指定对调试器数据包进行加密所用的加密密钥</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">emsbaudrate</p> </td> 
+   <td> <p class="bg">波特率bps数</p> </td> 
+   <td> <p class="bg">EMS_BAUDRATE</p> </td> 
+   <td> <p class="bg">指定EMS要使用的波特率</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">emsport</p> </td> 
+   <td> <p class="bg">COM端口号</p> </td> 
+   <td> <p class="bg">EMS_PORT_NUMBER</p> </td> 
+   <td> <p class="bg">指定EMS要使用的串口（COM）端口</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">extendedinput</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">CONSOLE_EXTENDED_<br> INPUT</p> </td> 
+   <td> <p class="bg">允许启动应用程序利用BIOS的支持获得扩展的控制台输入功能</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">keyringaddress</p> </td> 
+   <td> <p class="bg">物理地址</p> </td> 
+   <td> <p class="bg">FVE_KEYRING_ADDRESS</p> </td> 
+   <td> <p class="bg">指定BitLocker密钥环所在的物理地址</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">firstmegabytepolicy</p> </td> 
+   <td> <p class="bg">UseNone<br> UseAll<br> UsePrivate</p> </td> 
+   <td> <p class="bg">FIRST_MEGABYTE_<br> POLICY</p> </td> 
+   <td> <p class="bg">指定HAL如何使用低1&nbsp;MB物理内存缓解电源状态过渡期间BIOS损坏的情况</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">fontpath</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">FONT_PATH</p> </td> 
+   <td> <p class="bg">指定启动应用程序要使用的OEM字体文件的路径</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">graphicsmodedisabled</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">GRAPHICS_MODE_<br> DISABLED</p> </td> 
+   <td> <p class="bg">禁用启动应用程序的图形模式</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">graphicsresolution</p> </td> 
+   <td> <p class="bg">分辨率</p> </td> 
+   <td> <p class="bg">GRAPHICS_RESOLUTION</p> </td> 
+   <td> <p class="bg">设置启动应用程序图形分辨率</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">initialconsoleinput</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">INITIAL_CONSOLE_<br> INPUT</p> </td> 
+   <td> <p class="bg">指定系统插入PC/AT键盘输入缓冲区的初始字符</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">integrityservices</p> </td> 
+   <td> <p class="bg">Default<br> Disable<br> Enable</p> </td> 
+   <td> <p class="bg">SI_POLICY</p> </td> 
+   <td> <p class="bg">启用或禁用代码完整性服务，该服务被内核模式代码签名所使用，默认启用</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">locale</p> </td> 
+   <td> <p class="bg">本地化字符串</p> </td> 
+   <td> <p class="bg">PREFERRED_LOCALE</p> </td> 
+   <td> <p class="bg">设置启动应用程序的区域选项（如EN-US）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">noumex</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">DEBUGGER_IGNORE_<br> USERMODE_EXCEPTIONS</p> </td> 
+   <td> <p class="bg">启用内核调试的情况下禁用用户模式异常。如果启动到调试模式后遇到系统挂起（冻结），则可尝试启用该选项</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">recoveryenabled</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">AUTO_RECOVERY_<br> ENABLED</p> </td> 
+   <td> <p class="bg">启用可能存在的恢复序列。全新安装的Windows可借此设置基于Windows PE的启动和恢复界面</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">recoverysequence</p> </td> 
+   <td> <p class="bg">列表</p> </td> 
+   <td> <p class="bg">RECOVERY_SEQUENCE</p> </td> 
+   <td> <p class="bg">定义恢复序列（详见上文）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">relocatephysical</p> </td> 
+   <td> <p class="bg">物理地址</p> </td> 
+   <td> <p class="bg">RELOCATE_PHYSICAL_<br> MEMORY</p> </td> 
+   <td> <p class="bg">将自动选择的NUMA节点的物理内存重定位到指定的物理地址</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">targetname</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">DEBUGGER_USB_<br> TARGETNAME</p> </td> 
+   <td> <p class="bg">在与USB2或USB3调试器一起使用时（debugtype设置为USB），定义USB调试器的目标名称</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">testsigning</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">ALLOW_PRERELEASE_<br> SIGNATURES</p> </td> 
+   <td> <p class="bg">启用测试签名模式，驱动程序开发者可以借此加载本地签名的64位驱动程序。该选项会导致桌面上显示水印</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">truncatememory</p> </td> 
+   <td> <p class="bg">以字节为单位的<br> 地址</p> </td> 
+   <td> <p class="bg">TRUNCATE_PHYSICAL_<br> MEMORY</p> </td> 
+   <td> <p class="bg">忽略指定物理地址以上的物理内存</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">其中，启动应用程序的所有BCD元素代码均以BCDE_LIBRARY_TYPE开头，为了节省版面，已在表12-3中删除。</p>
+<p class="表题">表12-4　Windows操作系统加载器（Winload）的BCD选项</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">BCD元素</p> </th> 
+   <th> <p class="bt">值</p> </th> 
+   <th> <p class="bt">BCD元素代码</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bootlog</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">LOG_INITIALIZATION</p> </td> 
+   <td> <p class="bg">会让Windows将启动记录写入%System Root%\Ntbtlog.txt</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bootstatuspolicy</p> </td> 
+   <td> <p class="bg">DisplayAllFailures<br> ignoreAllFailures<br> IgnoreShutdownFailures<br> IgnoreBootFailures</p> </td> 
+   <td> <p class="bg">BOOT_STATUS_<br> POLICY</p> </td> 
+   <td> <p class="bg">如果系统上次启动或关机未成功完成，则默认会向用户显示启动排错菜单，该元素可修改系统的这一默认行为</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bootux</p> </td> 
+   <td> <p class="bg">Disabled<br> Basic<br> Standard</p> </td> 
+   <td> <p class="bg">BOOTUX_POLICY</p> </td> 
+   <td> <p class="bg">定义用户在启动过程中看到的图形界面。Disabled意味着启动过程不显示任何图形界面（仅显示黑屏），Basic将只显示加载进度条，Standard会显示常规的Windows登录动画</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">bootmenupolicy</p> </td> 
+   <td> <p class="bg">遗留支持</p> </td> 
+   <td> <p class="bg">BOOT_MENU_<br> POLICY</p> </td> 
+   <td> <p class="bg">指定存在多个启动项时要显示的启动菜单类型（详见下文“启动菜单”一节）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">clustermodeaddressing</p> </td> 
+   <td> <p class="bg">处理器数量</p> </td> 
+   <td> <p class="bg">CLUSTERMODE_<br> ADDRESSING</p> </td> 
+   <td> <p class="bg">定义一个高级可编程中断控制器（APIC）集群中可包含的处理器的数量最大值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">configflags</p> </td> 
+   <td> <p class="bg">标记</p> </td> 
+   <td> <p class="bg">PROCESSOR_<br> CONFIGURATION_<br> FLAGS</p> </td> 
+   <td> <p class="bg">指定与处理器相关的配置标记</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">dbgtransport</p> </td> 
+   <td> <p class="bg">传输映像名</p> </td> 
+   <td> <p class="bg">DBG_TRANSPORT_<br> PATH</p> </td> 
+   <td> <p class="bg">不再使用默认内核调试传输（Kdcom.dll、Kd1394、Kdusb.dll），转为使用指定的文件，借此可使用通常不受Windows支持的特殊调试传输方式</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">debug</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">KERNEL_DEBUGGER_<br> ENABLED</p> </td> 
+   <td> <p class="bg">启用内核模式调试</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">detecthal</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">DETECT_KERNEL_<br> AND_HAL</p> </td> 
+   <td> <p class="bg">启用HAL动态检测</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">driverloadfailurepolicy</p> </td> 
+   <td> <p class="bg">Fatal<br> UseErrorControl</p> </td> 
+   <td> <p class="bg">DRIVER_LOAD_<br> FAILURE_POLICY</p> </td> 
+   <td> <p class="bg">指定了当启动驱动程序加载失败后的加载器行为。Fatal将禁止启动，UseErrorControl会让系统采用驱动程序的默认错误行为，具体行为由相应的服务键来指定</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ems</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">KERNEL_EMS_<br> ENABLED</p> </td> 
+   <td> <p class="bg">让内核使用EMS（如果只使用 bootems，则只有启动加载器可以使用EMS）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">evstore</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">EVSTORE</p> </td> 
+   <td> <p class="bg">存储启动预加载配置单元的位置</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">groupaware</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">FORCE_GROUP_<br> AWARENESS</p> </td> 
+   <td> <p class="bg">在将组种子成员关联给新进程时，迫使系统使用组0之外的其他组。仅适用于64位Windows</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">groupsize</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">GROUP_SIZE</p> </td> 
+   <td> <p class="bg">强制设置可以包含在一个组中的逻辑处理器数量最大值（最大为64）。可借此强制在通常不需要的系统中创建处理器组。数值必须为2的幂次方，通常只适用于64位的Windows</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hal</p> </td> 
+   <td> <p class="bg">HAL映像名</p> </td> 
+   <td> <p class="bg">HAL_PATH</p> </td> 
+   <td> <p class="bg">覆盖HAL映像的默认文件名（Hal.dll）。在使用已检查的HAL和内核时，该选项较为有用（同时需要指定内核元素）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">halbreakpoint</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">DEBUGGER_HAL_<br> BREAKPOINT</p> </td> 
+   <td> <p class="bg">会让HAL在初始化的早期停止在断点上。Windows内核初始化过程要做的第一件事是初始化HAL，因此这个断点将会是最早的一个断点（除非使用了启动调试）。如果在不使用/DEBUG开关的情况下使用该选项，则系统将蓝屏并显示STOP错误代码0x00000078 (PHASE0_ EXCEPTION)</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">novesa</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">BCDE_OSLOADER_TYPE_DISABLE_<br> VESA_BIOS</p> </td> 
+   <td> <p class="bg">禁止使用VESA显示模式</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">optionsedit</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">OPTIONS_EDIT_<br> ONE_TIME</p> </td> 
+   <td> <p class="bg">启用启动管理器中的选项编辑器。通过该选项，启动管理器允许用户以交互的方式为当前启动过程设置所需的命令行选项和开关。这类似于按下F10键后的效果</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">osdevice</p> </td> 
+   <td> <p class="bg">GUID</p> </td> 
+   <td> <p class="bg">OS_DEVICE</p> </td> 
+   <td> <p class="bg">指定安装了操作系统的设备</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">pae</p> </td> 
+   <td> <p class="bg">Default<br> ForceEnable<br> ForceDisable</p> </td> 
+   <td> <p class="bg">PAE_POLICY</p> </td> 
+   <td> <p class="bg">Default可以让启动加载器确定系统是否支持PAE并加载PAE内核。ForceEnable可以强制执行此行为，而ForceDisable强制加载器加载非PAE版本的Windows内核（即使系统已被检测出支持x86 PAE并且具有超过4&nbsp;GB的物理内存）。但是，Windows 10已不再支持非PAE x86内核</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">pciexpress</p> </td> 
+   <td> <p class="bg">Default<br> ForceDisable</p> </td> 
+   <td> <p class="bg">PCI_EXPRESS_<br> POLICY</p> </td> 
+   <td> <p class="bg">可用于禁止对PCI Express总线和设备的支持</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">perfmem</p> </td> 
+   <td> <p class="bg">大小（MB）</p> </td> 
+   <td> <p class="bg">PERFORMANCE_<br> DATA_MEMORY</p> </td> 
+   <td> <p class="bg">为性能数据记录分配的缓冲区大小。该选项的作用与removememory类似，可以防止Windows看到指定的可用内存大小</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">quietboot</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">DISABLE_BOOT_<br> DISPLAY</p> </td> 
+   <td> <p class="bg">可让Windows不要初始化负责在启动过程中展示位图图像界面所需的VGA视频驱动程序。该驱动程序可用于显示启动进度信息，因此禁用后Windows将不再显示此类信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ramdiskimagelength</p> </td> 
+   <td> <p class="bg">长度（字节）</p> </td> 
+   <td> <p class="bg">RAMDISK_IMAGE_<br> LENGTH</p> </td> 
+   <td> <p class="bg">指定内存盘（Ram Disk）的大小</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ramdiskimageoffset</p> </td> 
+   <td> <p class="bg">偏移量（字节）</p> </td> 
+   <td> <p class="bg">RAMDISK_IMAGE_<br> OFFSET</p> </td> 
+   <td> <p class="bg">如果内存盘包含虚拟文件系统之外的其他数据（如头数据），则可以指定启动加载器该从哪里开始读取内存盘文件</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ramdisksdipath</p> </td> 
+   <td> <p class="bg">映像文件名</p> </td> 
+   <td> <p class="bg">RAMDISK_SDI_<br> PATH</p> </td> 
+   <td> <p class="bg">指定要加载的SDI内存盘的名称</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ramdisktftpblocksize</p> </td> 
+   <td> <p class="bg">块大小</p> </td> 
+   <td> <p class="bg">RAMDISK_TFTP_<br> BLOCK_SIZE</p> </td> 
+   <td> <p class="bg">如果从网络上的TFTP服务器加载WIM内存盘，则指定要使用的块大小</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ramdisktftpclientport</p> </td> 
+   <td> <p class="bg">端口号</p> </td> 
+   <td> <p class="bg">RAMDISK_TFTP_<br> CLIENT_PORT</p> </td> 
+   <td> <p class="bg">如果从网络上的TFTP服务器加载WIM内存盘，则指定要使用的端口</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ramdisktftpwindowsize</p> </td> 
+   <td> <p class="bg">窗口大小</p> </td> 
+   <td> <p class="bg">RAMDISK_TFTP_<br> WINDOW_SIZE</p> </td> 
+   <td> <p class="bg">如果从网络上的TFTP服务器加载WIM内存盘，则指定要使用的窗口大小</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">removememory</p> </td> 
+   <td> <p class="bg">大小（字节）</p> </td> 
+   <td> <p class="bg">REMOVE_MEMORY</p> </td> 
+   <td> <p class="bg">指定不允许Windows使用的内存数量</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">restrictapiccluster</p> </td> 
+   <td> <p class="bg">集群存编号</p> </td> 
+   <td> <p class="bg">RESTRICT_APIC_<br> CLUSTER</p> </td> 
+   <td> <p class="bg">定义系统可使用的APIC集群数量最大值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">resumeobject</p> </td> 
+   <td> <p class="bg">对象GUID</p> </td> 
+   <td> <p class="bg">ASSOCIATED_<br> RESUME_OBJECT</p> </td> 
+   <td> <p class="bg">指定从休眠状态恢复要使用的应用程序，通常为Winresume.exe</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">safeboot</p> </td> 
+   <td> <p class="bg">Minimal<br> Network<br> DsRepair</p> </td> 
+   <td> <p class="bg">SAFEBOOT</p> </td> 
+   <td> <p class="bg">指定安全模式启动选项。Minimal对应于无网络的安全模式，Network对应有网络的安全模式，DsRepair是指目录服务还原模式的安全模式（详见下文“安全模式”一节）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">safebootalternateshell</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">SAFEBOOT_<br> ALTERNATE_SHELL</p> </td> 
+   <td> <p class="bg">可以让Windows使用HKLM\SYSTEM\ CurrentControlSet\Control\SafeBoot\<br> AlternateShell值所指定的程序作为图形化shell，而不是默认值（即Windows资源管理器）。该选项在备用启动菜单中称为“带命令提示符的安全模式”</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">sos</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">SOS</p> </td> 
+   <td> <p class="bg">可以让Windows列出标记为在启动时加载的设备驱动程序，随后显示系统版本号（包括构建号）、物理内存量以及处理器数量</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">systemroot</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">SYSTEM_ROOT</p> </td> 
+   <td> <p class="bg">指定操作系统相对于osdevice的安装路径</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">targetname</p> </td> 
+   <td> <p class="bg">名称</p> </td> 
+   <td> <p class="bg">KERNEL_DEBUGGER_<br> USB_TARGETNAME</p> </td> 
+   <td> <p class="bg">对于USB调试，可借此为被调试计算机分配名称</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">tpmbootentropy</p> </td> 
+   <td> <p class="bg">Default<br> ForceDisable<br> ForceEnable</p> </td> 
+   <td> <p class="bg">TPM_BOOT_<br> ENTROPY_<br> POLICY</p> </td> 
+   <td> <p class="bg">迫使启动加载器选择特定的TPM引导熵策略并传递给内核。使用TPM引导熵的情况下，可使用通过TPM（如果存在）获得的数据填充内核的随机数生成器（RNG）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">usefirmwarepcisettings</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">USE_FIRMWARE_<br> PCI_SETTINGS</p> </td> 
+   <td> <p class="bg">让Windows不再为PCI设备动态分配IO/IRQ资源，让设备由BIOS配置。详见微软知识库文章148501</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">uselegacyapicmode</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">USE_LEGACY_<br> APIC_MODE</p> </td> 
+   <td> <p class="bg">强制使用基本APIC功能，哪怕芯片组支持扩展APIC功能。主要在硬件错误或不兼容的情况下使用</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">usephysicaldestination</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">USE_PHYSICAL_<br> DESTINATION</p> </td> 
+   <td> <p class="bg">强制使用物理目标模式下的APIC</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">useplatformclock</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">USE_PLATFORM_<br> CLOCK</p> </td> 
+   <td> <p class="bg">强制使用平台的时钟源作为系统的性能计数器</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">vga</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">USE_VGA_DRIVER</p> </td> 
+   <td> <p class="bg">强制Windows使用VGA显示驱动程序，而非第三方高性能驱动程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">winpe</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">WINPE</p> </td> 
+   <td> <p class="bg">被Windows PE用于让配置管理器将注册表的SYSTEM配置单元加载为易失性配置单元，这样在内存中对该配置单元进行的改动将不被保存到配置单元映像中</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">x2apicpolicy</p> </td> 
+   <td> <p class="bg">Disabled<br> Enabled<br> Default</p> </td> 
+   <td> <p class="bg">X2APIC_POLICY</p> </td> 
+   <td> <p class="bg">指定在芯片组支持的情况下是否使用扩展APIC功能。Disabled等同于设置了uselegacyapicmode，Enabled可以强制打开ACPI功能（即使检测到错误），Default则可以使用芯片组自己的报告功能（除非存在错误）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">xsavepolicy</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">XSAVEPOLICY</p> </td> 
+   <td> <p class="bg">强制从&nbsp;XSAVE&nbsp;策略资源驱动程序（Hwpolicy.sys）加载特定的XSAVE策略</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">xsaveaddfeature0-7</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">XSAVEADDFEATURE0-7</p> </td> 
+   <td> <p class="bg">用于测试现代Intel处理器对XSAVE的支持，借此可伪造处理器的某些特性（即使实际上并不支持）。这有助于增加CONTEXT结构的大小，并确认当未来出现新的扩展功能后，应用程序依然可以正常运行。不过这并不能启用任何实际的额外功能</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">xsaveremovefeature</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">XSAVEREMOVEFEATURE</p> </td> 
+   <td> <p class="bg">强制让进入的XSAVE功能不报告给内核，即使处理器本身是支持的</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">xsaveprocessorsmask</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">XSAVEPROCESSORSMASK</p> </td> 
+   <td> <p class="bg">XSAVE策略适用的处理器位掩码</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">xsavedisable</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">XSAVEDISABLE</p> </td> 
+   <td> <p class="bg">关闭对XSAVE功能的支持，即使处理器本身是支持的</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">其中，Windows操作系统加载器的所有BCD元素代码均以BCDE_OSLOADER_TYPE开头，为了节省版面，已在表12-4中删除。</p>
+<p class="表题">表12-5　Windows虚拟机监控程序加载器（hvloader）的BCD选项</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">BCD元素</p> </th> 
+   <th> <p class="bt">值</p> </th> 
+   <th> <p class="bt">BCD元素代码</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorlaunchtype</p> </td> 
+   <td> <p class="bg">Off<br> Auto</p> </td> 
+   <td> <p class="bg">HYPERVISOR_LAUNCH_<br> TYPE</p> </td> 
+   <td> <p class="bg">启用Hyper-V系统中加载的虚拟机监控程序，或将其强制禁用</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisordebug</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> ENABLED</p> </td> 
+   <td> <p class="bg">启用或禁用虚拟机监控程序调试器</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisordebugtype</p> </td> 
+   <td> <p class="bg">Serial<br> 1394<br> None<br> Net</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> TYPE</p> </td> 
+   <td> <p class="bg">指定虚拟机监控程序调试器类型（使用串口、IEEE 1394或网络接口）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisoriommupolicy</p> </td> 
+   <td> <p class="bg">Default<br> Enable<br> Disable</p> </td> 
+   <td> <p class="bg">HYPERVISOR_IOMMU_<br> POLICY</p> </td> 
+   <td> <p class="bg">启用或禁用虚拟机监控程序DMA保护，该功能可阻止所有热插拔PCI端口的直接内存访问（DMA），直到用户登录Windows为止</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisormsrfilterpolicy</p> </td> 
+   <td> <p class="bg">Disable<br> Enable</p> </td> 
+   <td> <p class="bg">HYPERVISOR_MSR_<br> FILTER_POLICY</p> </td> 
+   <td> <p class="bg">控制根分区是否允许访问受限制的MSR（特殊模块寄存器）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisormmionxpolicy</p> </td> 
+   <td> <p class="bg">Disable<br> Enable</p> </td> 
+   <td> <p class="bg">HYPERVISOR_MMIO_<br> NX_POLICY</p> </td> 
+   <td> <p class="bg">启用或禁用对UEFI运行时服务代码和数据内存区的不可执行（NX）保护</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorenforcedcodeintegrity</p> </td> 
+   <td> <p class="bg">Disable<br> Enable<br> Strict</p> </td> 
+   <td> <p class="bg">HYPERVISOR_ENFORCED_<br> CODE_INTEGRITY</p> </td> 
+   <td> <p class="bg">启用或禁用HVCI，该功能可以防止根分区内核分配无符号的可执行内存页</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorschedulertype</p> </td> 
+   <td> <p class="bg">Classic<br> Core<br> Root</p> </td> 
+   <td> <p class="bg">HYPERVISOR_SCHEDULER_<br> TYPE</p> </td> 
+   <td> <p class="bg">指定虚拟机监控程序的分区调度类型</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisordisableslat</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">HYPERVISOR_SLAT_<br> DISABLED</p> </td> 
+   <td> <p class="bg">如果处理器支持，则可迫使虚拟机监控程序忽略二级地址转换（SLAT）功能</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisornumproc</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">HYPERVISOR_NUM_PROC</p> </td> 
+   <td> <p class="bg">指定虚拟机监控程序可用的逻辑处理器的最大数量</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorrootprocpernode</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">HYPERVISOR_ROOT_PROC_<br> PER_NODE</p> </td> 
+   <td> <p class="bg">指定每个节点的根虚拟处理器的总数</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorrootproc</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">HYPERVISOR_ROOT_PROC</p> </td> 
+   <td> <p class="bg">指定根分区中的虚拟处理器的最大数量</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorbaudrate</p> </td> 
+   <td> <p class="bg">波特率bps数</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> BAUDRATE</p> </td> 
+   <td> <p class="bg">如果使用串口虚拟机监控程序调试，可指定要使用的波特率</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorchannel</p> </td> 
+   <td> <p class="bg">0到62之间的通道编号</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> 1394_CHANNEL</p> </td> 
+   <td> <p class="bg">如果使用火线（IEEE 1394）虚拟机监控程序调试，则可指定要使用的通道编号</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisordebugport</p> </td> 
+   <td> <p class="bg">COM端口号</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> PORT_NUMBER</p> </td> 
+   <td> <p class="bg">如果使用串口虚拟机监控程序调试，则可指定要使用的COM端口</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisoruselargevtlb</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">HYPERVISOR_USE_LARGE_<br> VTLB</p> </td> 
+   <td> <p class="bg">允许虚拟机监控程序使用更大数量的虚拟TLB项</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorhostip</p> </td> 
+   <td> <p class="bg">IP地址（二进制格式）</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> NET_HOST_IP</p> </td> 
+   <td> <p class="bg">在虚拟机监控程序网络调试中，指定目标计算机（调试器）的IP地址</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorhostport</p> </td> 
+   <td> <p class="bg">整数</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> NET_HOST_PORT</p> </td> 
+   <td> <p class="bg">指定虚拟机监控程序网络调试所用的网络端口</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorusekey</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> NET_KEY</p> </td> 
+   <td> <p class="bg">指定对通过网线发送的数据包进行加密所用的加密密钥</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisorbusparams</p> </td> 
+   <td> <p class="bg">字符串</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> BUSPARAMS</p> </td> 
+   <td> <p class="bg">指定虚拟机监控程序调试所用的网络适配器的总线、设备和功能编号</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">hypervisordhcp</p> </td> 
+   <td> <p class="bg">布尔值</p> </td> 
+   <td> <p class="bg">HYPERVISOR_DEBUGGER_<br> NET_DHCP</p> </td> 
+   <td> <p class="bg">指定是否允许虚拟机监控程序调试器使用DHCP获得网络接口的IP地址</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">其中，Windows虚拟机监控程序加载器的所有BCD元素代码均以BCDE_OSLOADER_ TYPE开头，为了节省版面，已在表12-5中删除。</p>
+<p class="zw">BCD存储中的每一项都在启动过程中起着关键作用。在每个启动项（每个启动项都是BCD中的一个对象）中，都会列出所有启动选项，它们以注册表子键的形式存储在配置单元中（见图12-5）。这些选项被称为BCD元素。Windows启动管理器可以添加或删除任何启动选项，无论它们位于物理配置单元，还是只位于内存中。这一点很重要，因为下一节“启动菜单”将会提到，并非所有BCD选项都需要存在于物理配置单元中。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx885.png" style="width: 100%" />
+<p class="图题">图12-5　Windows启动管理器的BCD对象及其相关启动选项范例</p>
+<p class="zw">如果启动配置数据的配置单元损坏，或解析启动项时遇到错误，启动管理器会通过恢复BCD配置单元重试相关操作。恢复BCD配置单元通常存储在\EFI\Microsoft\Recovery\BCD中。系统也可配置为跳过常规配置单元，直接使用该存储，为此要使用recoverybcd参数（存储于UEFI启动变量）或使用Bootstat.log文件。</p>
+<p class="zw">系统已经准备好加载安全启动策略，显示启动菜单（如果需要）并运行启动应用程序。固件信任或不信任的启动证书列表均位于db和dbx这两个UEFI已验证变量中。代码完整性启动库会负责读取并解析UEFI变量，但这些变量只能控制是否可以加载特定的启动管理器模块。一旦Windows启动管理器成功运行，就可使用微软提供的证书列表进一步自定义或扩展UEFI提供的安全启动配置。安全启动策略文件（位于\EFI\Microsoft\Boot\ SecureBootPolicy.p7b中）、平台清单策略文件（.pm文件）以及补充策略（.pol文件）都会被解析并与存储在UEFI变量中的策略合并。由于内核代码完整性引擎最终将接管，因此这些附加的策略可以包含与操作系统有关的信息和证书。通过这种方式，一些Windows的安全版本（例如S版本）就可以在无须消耗宝贵的UEFI资源的前提下验证多个证书。借此也可以创建出信任根，因为指定新的自定义证书列表的文件已经使用UEFI允许的签名数据库中包含的数字证书签名了。</p>
+<p class="zw">如果未被启动选项（nointegritycheck或testsigning）或安全启动策略禁用，则启动管理器会对自己的完整性进行自我验证：从硬盘上打开自己的文件，并验证其数字签名。如果安全启动已启用，则会根据安全启动签名策略来验证签名链。</p>
+<p class="zw">启动管理器会初始化启动调试器，并检查是否需要展示OEM位图（通过BGRT的系统ACPI表）。如果需要，则会清空屏幕并展示徽标。如果Windows启用了BCD设置来通知启动管理器恢复休眠（或混合启动），此时的启动过程将大幅简化，将直接运行Windows恢复应用程序（Winresume.efi），并由该应用程序将休眠文件的内容读入内存，同时将控制权转交给内核中的代码，借此从休眠状态恢复。这些代码负责重新启动系统在上次关闭时处于活跃状态的驱动程序。Hiberfil.sys文件只在计算机上次关闭到休眠状态或启用混合启动功能的情况下才有效。这是因为，为了避免反复从同一个状态下恢复，休眠文件会在恢复完成后失效。Windows恢复应用程序BCD对象会通过一个专门的BCD元素（名为resumeobject，详见下文的“休眠和快速启动”一节）与启动管理器描述符链接。</p>
+<p class="zw">启动管理器会通过相关的BCD元素检测是否注册了自定义的OEM启动操作，如果已注册，则会处理这些操作。截至撰写这部分内容，唯一可支持的自定义操作是运行OEM启动序列。这样，OEM厂商就可以注册自定义的恢复序列，并当用户在启动过程中按下特定按键后执行自己的恢复序列。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"fac18aef-e13b-413d-bf2c-e708c0097581"}</p>

@@ -1,0 +1,6 @@
+<h3 class="bt3" id="sigil_toc_id_352">12.1.24　可感知安全模式的用户程序</h3>
+<p class="zw">当SCM用户模式组件（由Services.exe实现）在启动过程中初始化时，SCM会检查HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot\Option\OptionValue的值以确定系统是否正在以安全模式启动。如果是，则SCM会体现出与IopSafebootDriverLoad相同的操作。虽然SCM可以处理HKLM\SYSTEM\ CurrentControlSet\Services下列出的服务，但它只加载由安全模式子键按照名称指定的服务。有关SCM初始化过程的详细介绍，请参阅第10章“Windows服务”一节。</p>
+<p class="zw">当用户登录时，Userinit（%SystemRoot%\System32\Userinit.exe）组件将负责初始化用户环境，这个用户模式组件也需要知道系统是否以安全模式启动。它会检查HKLM\ SYSTEM\CurrentControlSet\Control\SafeBoot\Option\UseAlternateShell值。如果该值已设置，则Userinit将运行HKLM\SYSTEM\CurrentControlSet\Control\ SafeBoot\AlternateShell下指定的程序作为用户的外壳，而不会直接运行Explorer.exe。Windows会在安装过程中将程序名称Cmd.exe写入AlternateShell值，这样Windows命令提示符就可以成为带命令提示符的安全模式下的默认外壳。虽然命令提示符已经成为外壳，但我们依然可以运行Explorer.exe来启动Windows资源管理器，甚至可以直接通过命令提示符运行任何其他GUI程序。</p>
+<p class="zw">应用程序如何确定系统是否以安全模式启动？调用Windows的GetSystemMetrics (SM_CLEANBOOT)函数即可。如果批处理脚本需要在系统以安全模式启动之后执行某些操作，则可以直接查找SAFEBOOT_OPTION环境变量，因为系统只有以安全模式启动后才会定义这个环境变量。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":23,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"100d0e10-9a79-4465-aff2-c1a842839dc4"}</p>

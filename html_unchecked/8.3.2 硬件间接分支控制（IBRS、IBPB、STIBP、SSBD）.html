@@ -1,0 +1,75 @@
+<h3 class="bt3" id="sigil_toc_id_11">8.3.2　硬件间接分支控制（IBRS、IBPB、STIBP、SSBD）</h3>
+<p class="zw">处理器制造商也为不同的侧信道攻击设计了硬件层面的缓解措施。这些缓解措施在设计上能够与软件措施配合生效。有关侧信道攻击的硬件缓解措施主要通过下列间接分支控制机制来实现，具体采用何种机制通常是由CPU特殊模块寄存器（MSR）中的一位决定的。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">间接分支限制推测（Indirect Branch Restricted Speculation，IBRS）：</strong>可在切换至不同安全上下文（用户/内核模式，或VM根/非根）时彻底禁用分支预测器（并刷新分支预测器缓冲区）。如果操作系统在过渡到更高特权的模式后设置了IBRS，那么间接分支预测目标将无法继续被低特权模式下执行的软件所控制。此外，在启用IBRS后，间接分支预测目标将无法被其他逻辑处理器所控制。操作系统通常会将IBRS设置为1，并在返回至较低特权安全上下文之前始终保持该设置。<br> IBRS的实现取决于CPU制造商：一些CPU会在启用IBRS后彻底禁用分支预测器缓冲区（这是一种禁止行为），而其他CPU可能只会刷新预测器的缓冲区（这是一种刷新行为）。在这些CPU中，IBRS缓解措施的工作方式与IBPB的较为类似，因此这些CPU通常只会实现IBRS。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">间接分支预测器屏障（Indirect Branch Predictor Barrier，IBPB）</strong>：在设置为“1”后，会刷新分支预测器的内容，以此防止之前执行过的软件控制同一个逻辑处理器上的间接分支预测目标。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">单线程间接分支预测器（Single Thread Indirect Branch Predictor，STIBP）</strong>：可对同一个物理CPU内核上不同逻辑处理器之间共享的分支预测进行限制。将逻辑处理器的STIBP设置为“1”后，可防止当前正在执行的逻辑处理器的间接分支预测目标被同一个内核中其他逻辑处理器上执行（或曾经执行过）的软件所控制。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">预测存储旁路禁止（Speculative Store Bypass Disable，SSBD）</strong>：可以让处理器不以预测执行的方式加载，除非所有较旧的存储均处于已知状态。这样即可确保加载操作不会因为同一个逻辑处理器上较旧存储所产生的旁路，而以预测的方式使用陈旧的数据值，从而可防范预测性存储旁路攻击（详见上文“其他侧信道攻击”一节）。</p>
+<p class="zw">NT内核会使用一种复杂的算法来确定上述间接分支限制机制的值，而这些值也会在上文有关KVA影子介绍中所提到的三个场景中产生相应的变化，这三个场景分别为上下文切换、进入陷阱以及退出陷阱。在兼容的系统中，系统会在始终启用IBRS的情况下运行内核代码（除非启用了Retpoline）。如果没有可用的IBRS（但IBPB和STIBP均可支持），内核将在启用STIBP的情况下运行，并在每次进入陷阱时（使用IBPB）刷新分支预测器缓冲区（这样，分支预测器就不会被用户模式运行的代码或在其他安全上下文中运行的“同胞”线程所影响）。如果CPU支持SSBD，则SSBD会始终在内核模式中启用。</p>
+<p class="zw">出于性能方面的考虑，用户模式线程在执行时通常并不会启用硬件预测缓解措施，或只启用STIBP（取决于STIBP配对是否启用，详见下一节）。如果需要，则必须通过全局或每个进程的预测执行功能手动启用针对预测性存储旁路攻击的防护。实际上，所有预测缓解措施均可通过全局注册表值HKLM\System\CurrentControlSet\Control\Session Manager\ Memory Management\FeatureSettings加以调整。这是一个32位掩码值，其中的每一位对应一个具体的设置。表8-2总结了不同的功能设置及其含义。</p>
+<p class="表题">表8-2　功能设置及其对应的值</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">名称</p> </th> 
+   <th> <p class="bt">值</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_DISABLE_IBRS_EXCEPT_<br> HVROOT</p> </td> 
+   <td> <p class="bg">0x1</p> </td> 
+   <td> <p class="bg">禁用IBRS，但非嵌套根分区除外（Server SKU的默认设置）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_DISABLE_KVA_SHADOW</p> </td> 
+   <td> <p class="bg">0x2</p> </td> 
+   <td> <p class="bg">强制禁用KVA影子</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_DISABLE_IBRS</p> </td> 
+   <td> <p class="bg">0x4</p> </td> 
+   <td> <p class="bg">忽略计算机配置，直接禁用IBRS</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_SET_SSBD_ALWAYS</p> </td> 
+   <td> <p class="bg">0x8</p> </td> 
+   <td> <p class="bg">始终在内核和用户模式下设置SSBD</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_SET_SSBD_IN_KERNEL</p> </td> 
+   <td> <p class="bg">0x10</p> </td> 
+   <td> <p class="bg">仅在内核模式下设置SSBD（会导致用户模式代码容易遭受SSB攻击）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_USER_STIBP_ALWAYS</p> </td> 
+   <td> <p class="bg">0x20</p> </td> 
+   <td> <p class="bg">忽略&nbsp;STIBP&nbsp;配对，始终为用户线程启用STIBP</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_DISABLE_USER_TO_USER</p> </td> 
+   <td> <p class="bg">0x40</p> </td> 
+   <td> <p class="bg">禁用默认的预测缓解策略（仅限&nbsp;AMD&nbsp;系统），只启用“用户对用户”的缓解措施。设置该标记后，内核模式下运行时将不再使用预测执行控制措施</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_DISABLE_STIBP_PAIRING</p> </td> 
+   <td> <p class="bg">0x80</p> </td> 
+   <td> <p class="bg">始终禁用STIBP配对</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_DISABLE_RETPOLINE</p> </td> 
+   <td> <p class="bg">0x100</p> </td> 
+   <td> <p class="bg">始终禁用Retpoline</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_FORCE_ENABLE_RETPOLINE</p> </td> 
+   <td> <p class="bg">0x200</p> </td> 
+   <td> <p class="bg">无论&nbsp;CPU&nbsp;可支持&nbsp;IBPB&nbsp;或&nbsp;IBRS，均启用Retpoline（为防范Spectre v2，Retpoline至少需要IBPB）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FEATURE_SETTINGS_DISABLE_IMPORT_LINKING</p> </td> 
+   <td> <p class="bg">0x20000</p> </td> 
+   <td> <p class="bg">忽略Retpoline，直接禁用导入优化</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"a7d4b68f-dc3f-4086-9ad4-12581cbcd4be","id":"1b2f4a77-c60b-487b-935c-26316739fbb0"}</p>

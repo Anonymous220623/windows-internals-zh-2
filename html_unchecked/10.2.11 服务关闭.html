@@ -1,0 +1,10 @@
+<h3 class="bt3" id="sigil_toc_id_133">10.2.11　服务关闭</h3>
+<p class="zw">当Winlogon调用Windows的ExitWindowsEx函数时，该函数会向Windows子系统进程Csrss发送一条消息，借此调用Csrss的关闭例程。Csrss会循环遍历活动进程，告知它们系统即将关闭。对于除SCM外的其他每个系统进程，Csrss会等待进程退出，该等待时间的毫秒数由HKCU\Control Panel\Desktop\WaitToKillTimeout定义（默认为5秒），随后会继续处理下一个进程。在遇到SCM进程后，Csrss也会通知它系统即将关闭，但此时的超时值是专门针对SCM而设的。Csrss会使用SCM在自己初始化期间使用RegisterServicesProcess函数向Csrss注册并保存的进程ID来识别SCM。SCM的超时值不同于其他进程，原因在于Csrss知道SCM需要负责与其他需要在关闭前进行清理的服务通信，因此管理员可能只需要调整SCM的超时值。SCM的超时值可以用毫秒数为单位通过HKLM\SYSTEM\CurrentControlSet\Control\WaitToKillServiceTimeout注册表值设置，默认为20秒。</p>
+<p class="zw">SCM的关闭处理程序负责向与SCM注册时请求了关闭通知的所有服务发送关闭通知。SCM的ScShutdownAllServices函数首先会查询HKLM\SYSTEM\CurrentControlSet\ Control\ShutdownTimeout的值（默认为20秒，该值不存在时将使用默认设置）。随后会循环遍历SCM服务数据库，对于每个服务，会取消注册最终的服务触发器，并判断该服务是否希望收到关闭通知，如果是，则会发送关闭命令（SERVICE_CONTROL_SHUTDOWN）。请注意，所有通知会使用线程池工作线程并行发送给服务。对于发出了关闭命令的每个服务，SCM会记录该服务的等待提示（wait hint）值，服务在向SCM注册时可以指定该值。SCM会跟踪自己所收到的最大的等待提示（如果计算而来的等待提示最大值依然小于注册表中ShutdownTimeout指定的Shutdown超时值，那么Shutdown超时值会被作为最大等待提示）。发出关闭消息后，SCM会一直等待，直到自己通知关闭的所有服务均已退出，或最大等待提示所指定的时段已结束。</p>
+<p class="zw">当SCM正忙着通知服务即将关闭并等待服务退出时，Csrss也在等待SCM退出。如果等待提示已过期但还有服务未退出，此时SCM将会退出，Csrss会继续进行关闭过程。如果Csrss的等待已结束但SCM还未退出（WaitToKillServiceTimeout时间到期），Csrss将终止SCM并继续关闭过程。因此无法及时关闭的服务最终将会被终止。这个逻辑使得系统在存在某些因设计缺陷而无法正常关闭的服务情况下，依然能够正常关闭，但同时这也意味着需要5秒以上时间的服务将无法完成正常的关闭操作。</p>
+<p class="zw">此外，因为关闭顺序是不确定的，一个服务可能需要依赖另一个服务才能关闭，但被依赖的服务可能被先关闭了（这称为关闭依赖性），此时该服务将无法向SCM报告，可能也没机会进行清理。</p>
+<p class="zw">为了解决这种问题，Windows实现了预关闭通知（Preshutdown notification）和关闭排序机制，借此可以避免出现上文提到的两种情况。预关闭通知会发送给通过SetServiceStatus API（使用SERVICE_ACCEPT_PRESHUTDOWN接受的控制）请求过该功能的服务，而具体的通知机制与原本的关闭通知相同。预关闭通知会在Wininit退出前发出。SCM通常会等待这种通知被确认。</p>
+<p class="zw">这类通知背后的理念在于，标记出可能需要更长清理时间的服务（如数据库服务器服务），并给这些服务留出更多时间完成自己的工作。SCM会发送一个进度查询请求，并等待10秒让服务对该通知做出响应。如果服务没能及时响应，那么会在关闭过程中被终止；如果响应，那么只要继续回应SCM，就可以一直继续运行。</p>
+<p class="zw">注册了预关闭通知的服务还可以指定自己相较于其他注册了预关闭通知服务的关闭顺序。如果一个服务需要依赖另一个服务才能关闭（如组策略服务需要等待Windows Update服务的完成），即可在HKLM\SYSTEM\ CurrentControlSet\Control\PreshutdownOrder注册表值中指定自己的关闭依赖性。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":10,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"34513e9b-79a1-4332-8c6a-e6bd5d5fee10"}</p>

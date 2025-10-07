@@ -1,0 +1,23 @@
+<h2 class="bt2" id="sigil_toc_id_36"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 8.8　高级本地过程调用</h2>
+<p class="zw">所有现代操作系统都需要一种机制，以便在用户模式下的一个或多个进程之间，或在内核的服务和用户模式下的客户端之间，安全、高效地传输数据。通常情况下，邮件槽、文件、命名管道和套接字等UNIX机制可用于实现可移植性，但在其他情况下，开发者也可以利用操作系统特定的功能，例如Win32图形应用程序中无处不在的窗口消息。此外，Windows还实现了一种名为高级（或异步）本地过程调用（Advanced Local Procedure Call，ALPC）的内部IPC机制，这是一种高速、可扩展、安全的设施，可用于传递任意大小的消息。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　ALPC取代了最初伴随Windows NT第一个内核设计中所采用的古老的IPC机制：LPC。因此，至今某些变量、字段和函数可能依然将其称为“LPC”。不过要注意，为了保证兼容性，目前的LPC是在ALPC基础上模拟而来的，已经从内核中移除（遗留的系统调用依然存在，但会被包装成ALPC调用）。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">尽管ALPC作为内部机制无法供第三方开发者使用，但在Windows的各个部分依然实现了广泛应用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 使用远程过程调用（RPC）的Windows应用程序，作为一种公开的API，当通过ncalrpc传输指定本地RPC时，会间接用到ALPC，这是一种用于在同一系统的进程之间进行通信的RPC形式。ALPC现已成为几乎所有RPC客户端的默认传输，此外，当Windows驱动程序使用内核模式RPC时，也会暗含地使用ALPC作为唯一允许的传输。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 当Windows进程或线程启动时，以及在任何Windows子系统运行期间，都会使用ALPC与子系统进程（CSRSS）通信。所有子系统均会通过ALPC与会话管理器（SMSS）通信。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 当Windows进程引发异常时，内核的异常调度程序会使用ALPC与Windows错误报告（Windows Error Reporting，WER）服务通信。进程也可以自行与WER通信，例如，通过未处理的异常处理程序进行通信（WER详见第10章）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Winlogon会使用ALPC与本地安全认证进程（LSASS）通信。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 安全引用监视器（一种执行体组件，详见本书卷1第7章）会使用ALPC与LSASS进程通信。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 用户模式电源管理器和电源监视器会通过ALPC与内核模式电源管理器通信，例如，当LCD亮度被更改后。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 用户模式驱动程序框架（User-Mode Driver Framework，UMDF）使得用户模式驱动程序能够通过ALPC与内核模式反射器驱动程序进行通信。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> CoreUI所用的全新核心消息（core messaging）机制以及现代UWP UI组件会使用ALPC与Core Messaging Registrar注册，并发送序列化消息对象，这种方式取代了老旧的Win32窗口消息模型。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在启用凭据保护（credential guard）功能后，隔离的LSASS进程会使用ALPC与LSASS通信。类似地，安全内核也会通过ALPC向WER传输Trustlet崩溃转储信息。</p>
+<p class="zw">从这些例子可以看出，ALPC通信涵盖了所有可能的安全边界类型：从非特权应用程序到内核，从VTL 1 Trustlet到VTL 0服务，以及这之间的一切。因此，安全性和性能成了相关设计中的一个关键要求。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"18136782-cc9e-4447-8382-748342e5e95c","id":"e3feacd9-ccbb-4c83-b36b-bb1c5293963c"}</p>

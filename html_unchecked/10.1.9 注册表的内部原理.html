@@ -1,0 +1,167 @@
+<h3 class="bt3" id="sigil_toc_id_115">10.1.9　注册表的内部原理</h3>
+<p class="zw">本节介绍了配置管理器（实现注册表的执行体子系统）用磁盘上的文件组织注册表的方法。下面我们将讨论配置管理器是如何在应用程序和操作系统的其他组件读取和更改注册表键与值的过程中管理注册表的。此外，我们还将讨论配置管理器通过怎样的机制尽可能地确保注册表始终处于可恢复状态（即便在修改注册表的过程中系统已崩溃）。</p>
+<h4 class="bt4 sigil_not_in_toc">配置单元</h4>
+<p class="zw">注册表在磁盘上并不是一个巨大的文件，而是一系列称为配置单元（hive）的离散文件。每个配置单元包含一个注册表树，有一个键作为根，即树的起点。子键及其值位于根的下方。很多人会认为注册表编辑器中显示的每个根键可以看成相应配置单元的根键，但事实并非如此。表10-5列出了注册表配置单元及其在磁盘上对应的文件名称。除了用户配置文件外，所有配置单元的路径名都被编码在配置管理器中。配置管理器加载配置单元（包括系统配置文件）时，会将每个配置单元的路径记录到HKLM\SYSTEM\CurrentControlSet\ Control\Hivelist子键的值中，如果卸载了一个配置单元，则会删除对应的路径。它还会创建根键，将配置单元链接在一起构建出我们熟悉的注册表编辑器所显示的注册表结构。</p>
+<p class="表题">表10-5　与注册表中路径对应的磁盘文件</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">配置单元注册表路径</p> </th> 
+   <th> <p class="bt">配置单元文件路径</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE\BCD00000000</p> </td> 
+   <td> <p class="bg">\EFI\Microsoft\Boot</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE\COMPONENTS</p> </td> 
+   <td> <p class="bg">%SystemRoot%\System32\Config\Components</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE\SYSTEM</p> </td> 
+   <td> <p class="bg">%SystemRoot%\System32\Config\System</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE\SAM</p> </td> 
+   <td> <p class="bg">%SystemRoot%\System32\Config\Sam</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE\SECURITY</p> </td> 
+   <td> <p class="bg">%SystemRoot%\System32\Config\Security</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE\SOFTWARE</p> </td> 
+   <td> <p class="bg">%SystemRoot%\System32\Config\Software</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE\HARDWARE</p> </td> 
+   <td> <p class="bg">易失性配置单元</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">\HKEY_LOCAL_MACHINE\WindowsAppLockerCache</p> </td> 
+   <td> <p class="bg">%SystemRoot%\System32\AppLocker\AppCache.dat</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE\ELAM</p> </td> 
+   <td> <p class="bg">%SystemRoot%\System32\Config\Elam</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_USERS\&lt;本地服务账户的SID&gt;</p> </td> 
+   <td> <p class="bg">%SystemRoot%\ServiceProfiles\LocalService\Ntuser.dat</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_USERS\&lt;网络服务账户的SID&gt;</p> </td> 
+   <td> <p class="bg">%SystemRoot%\ServiceProfiles\NetworkService\NtUser.dat</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_USERS\&lt;用户名的SID&gt;</p> </td> 
+   <td> <p class="bg">\Users\&lt;用户名&gt;\Ntuser.dat</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_USERS\&lt;用户名的SID&gt;_Classes</p> </td> 
+   <td> <p class="bg">\Users\&lt;用户名&gt;\AppData\Local\Microsoft\Windows\<br> Usrclass.dat</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_USERS\.DEFAULT</p> </td> 
+   <td> <p class="bg">%SystemRoot%\System32\Config\Default</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">虚拟化的HKEY_LOCAL_MACHINE\SOFTWARE</p> </td> 
+   <td> <p class="bg">不同路径，Centennial应用通常为\ProgramData\Packages\<br> &lt;包全名&gt;\&lt;用户Sid&gt;\SystemAppData\Helium\Cache\&lt;随机名&gt;.dat</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">虚拟化的HKEY_CURRENT_USER</p> </td> 
+   <td> <p class="bg">不同路径，Centennial应用通常为\ProgramData\Packages\<br> &lt;包全名&gt;\&lt;用户Sid&gt;\SystemAppData\Helium\User.dat</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">虚拟化的HKEY_LOCAL_MACHINE\SOFTWARE\<br> Classes</p> </td> 
+   <td> <p class="bg">不同路径，Centennial应用通常为\ProgramData\Packages\<br> &lt;包全名&gt;\&lt;用户Sid&gt;\SystemAppData\Helium\UserClasses.<br> dat</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">大家可能注意到，表10-5中列出的一些配置单元是易失的，没有相关的文件。系统完全在内存中创建并管理这些配置单元，因此这些配置单元是临时性的。系统会在自己每次启动时创建易失性配置单元。例如HKLM\HARDWARE配置单元就是易失的，其中存储了与物理设备有关的信息以及为设备分配的资源。系统每次启动时都会检测硬件并分配资源，因此不将这些信息存储到磁盘上也是一种合理的做法。另外还请注意，表10-5中的最后三项是虚拟化的配置单元。从Windows 10周年更新开始，NT内核已经支持虚拟化注册表（Virtualized Registry，VReg），这是为了对Helium容器中运行的Centennial打包应用程序提供支持。每当用户运行Centennial应用程序（例如现代版的Skype）时，系统都会挂载所需的包配置文件。Centennial应用程序和现代应用程序模型的详细信息请参阅第8章。</p>
+<p class="zwtsh">实验：手动加载和卸载配置单元</p>
+<p class="zwts1">Regedit可以加载我们通过注册表编辑器的“文件”菜单访问的配置单元。这种功能在排错时会非常有用，我们可以借此查看或编辑无法启动的系统或备份介质中的配置单元。在这个实验中，我们将使用Regedit加载Windows安装程序在系统安装过程中创建的HKLM\SYSTEM配置单元。</p>
+<p class="zwts1">1）仅&nbsp;HKLM&nbsp;或&nbsp;HKU&nbsp;下的配置单元可以这样加载，因此请打开&nbsp;Regedit，选择HKLM，随后从注册表编辑器的“<strong style="color:#0092dd">文件</strong>”菜单中选择“<strong style="color:#0092dd">加载配置单元</strong>”。</p>
+<p class="zwts1">2）在加载配置单元对话框中打开%SystemRoot%\System32\Config\RegBack目录，选择“<strong style="color:#0092dd">系统</strong>”并打开。一些较新的系统可能在RegBack文件夹中未存储任何文件，在这种情况下，可以尝试着打开Config文件夹下的ELAM配置单元来进行后续实验。被询问时，输入Test作为要加载到的键的名称。</p>
+<p class="zwts1">3）打开新建的HKLM\Test键，并浏览该配置单元的内容。</p>
+<p class="zwts1">4）打开&nbsp;HKLM\SYSTEM\CurrentControlSet\Control\Hivelist并找到\Registry\Machine\ Test这个项，这证明了配置管理器是如何在Hivelistkey中列出已加载的配置单元的。</p>
+<p class="zwts1">5）选择HKLM\Test并从注册表编辑器的“<strong style="color:#0092dd">文件</strong>”菜单中选择“<strong style="color:#0092dd">卸载配置单元</strong>”，将该配置单元卸载。</p>
+<h4 class="bt4 sigil_not_in_toc">配置单元的大小限制</h4>
+<p class="zw">在一些情况下，配置单元的大小是有限的。例如，Windows会对HKLM\SYSTEM配置单元的大小进行一些限制。这是因为，如果未启用虚拟内存分页，Winload会在启动过程即将开始时将整个HKLM\SYSTEM配置单元读入物理内存。Winload还会将Ntoskrnl和启动设备驱动程序载入物理内存，因此必须限制分配给HKLM\SYSTEM的物理内存数量（有关Winload在系统启动过程中所起作用的详细信息请参阅第12章）。在32位系统中，Winload允许的配置单元最大为400&nbsp;MB，或系统中物理内存总量的一半，以较小者为准。64位系统中的大小下限为2&nbsp;GB。</p>
+<h4 class="bt4 sigil_not_in_toc">启动过程和Registry进程</h4>
+<p class="zw">在Windows 8.1之前，NT内核使用分页池来存储每个已加载配置单元文件的内容。在系统关机前，大部分已载入系统的配置单元都会留在内存中（例如SOFTWARE配置单元，它由会话管理器在系统启动的阶段1完成后加载，有时候大小可能达到数百MB）。如果在一定时间内未被访问，分页池内存可能会被内存管理器的平衡集管理器换出（详见卷1第5章）。这意味着配置文件中未使用的部分无法长时间保留在工作集中。已提交的虚拟内存由页面文件支持，并且需要增加系统提交量，从而减少可用于其他目的的虚拟内存总量。</p>
+<p class="zw">为了解决这个问题，Windows 10的2018年4月更新（RS4）引入了对节支持的注册表（section-backed registry）。在NT内核初始化的阶段1，配置管理器启动例程会初始化注册表的多个组件：缓存、工作线程、事务、回调支持等。随后它会创建Key对象类型，并且在加载所需配置单元前还会创建Registry进程。Registry进程是一种完全受保护（受到与SYSTEM进程相同程度的保护：WinSystem级别）的最小化进程，配置管理器用它来执行打开的注册表配置单元上的大部分I/O操作。在初始化时，配置管理器会将预加载的配置单元映射至Registry进程，不过这些预加载的配置单元（SYSTEM和ELAM）会继续留在非分页内存中（使用内核地址进行映射）。在启动过程的后续阶段，会话管理器会调用NtInitializeRegistry系统调用来加载SOFTWARE配置单元。</p>
+<p class="zw">这将创建一个由SOFTWARE配置单元文件支持的节对象：配置管理器会将该文件分为2&nbsp;MB大小的块，并在Registry进程的用户模式地址空间中为每个块创建一个保留映射（使用NtMapViewOfSection原生API。保留映射可通过有效的VAD进行跟踪，但并不分配实际页面。详见卷1第5章）。每个2&nbsp;MB的视图都受到只读保护。当配置管理器需要从配置单元读取某些数据时，会访问该视图的页面并产生一个访问障碍，这会导致内存管理器将共享页面带入内存。这时，系统工作集的计费会增加，但提交计费不会增加（页面由配置单元文件本身支持，而非由页面文件支持）。</p>
+<p class="zw">在初始化时，配置管理器会将Registry进程的工作集限制设置为64&nbsp;MB。这意味着在内存压力高的情况下，可以保证注册表使用的工作集大小不会超过64&nbsp;MB。每当应用程序或系统使用API访问注册表时，配置管理器都会附加至Registry进程地址空间，执行所需工作，随后返回结果。配置管理器并不总是需要切换地址空间：当应用程序想要访问的注册表键已经位于缓存中（存在Key控制块）时，配置管理器会跳过附加进程，直接返回缓存的数据。Registry进程主要用于针对底层配置单元文件执行I/O操作。</p>
+<p class="zw">当系统写入或修改配置单元中存储的注册表键和值时，需要执行“写入时复制”操作（首先将2&nbsp;MB视图的内存保护改为PAGE_WRITECOPY）。对标记为“写入时复制”的内存进行写操作，这会创建新的私有页面并增加系统的提交计费。在请求进行注册表更新后，系统会立即将新项写入配置单元的日志，但对实际页面所属的主要配置单元文件执行的写入操作会被延迟进行。与每个常规页面一样，配置文件的“脏”页面可以换出到磁盘上。这些页面会在配置文件卸载时写入主配置单元文件中，或由Reconciler写入：这是配置管理器的一个延迟写入线程，默认每小时运行一次（该时间可通过HKLM\SYSTEM\ CurrentControlSet\Control\Session Manager\Configuration Manager\RegistryLazyReconcileInterval注册表值进行修改）。</p>
+<p class="zw">重组和增量日志的详情请参阅“增量日志”一节。</p>
+<h4 class="bt4 sigil_not_in_toc">注册表符号链接</h4>
+<p class="zw">一种名为注册表符号链接的特殊类型键使得配置管理器可以将键链接在一起来组织注册表。符号链接这种键可以将配置管理器重定向到另一个键。HKLM\SAM就是一个符号链接键，可指向SAM配置单元根下的某个键。要创建符号链接，可为RegCreateKey或RegCreateKeyEx指定REG_CREATE_LINK参数。在内部，配置管理器会创建一个名为SymbolicLinkValue的REG_LINK值，其中包含了到目标键的路径。由于该值是REG_LINK而非REG_SZ，因此在注册表编辑器中是不可见的，不过会包含在磁盘上的注册表配置单元文件中。</p>
+<p class="zwtsh">实验：查看配置单元的句柄</p>
+<p class="zwts1">配置管理器会使用内核句柄表（详见第8章）来打开配置单元，这样即可从任意进程上下文访问配置单元了。相比使用驱动程序或执行体组件从System进程访问必须从用户进程保护的句柄，使用内核句柄表是一种高效的替代方式。我们可以用管理员身份启动Process Explorer来查看配置单元句柄，它们会显示为已在System进程中打开。选中System进程，随后从View菜单的Lower Pane View菜单项中选择Handles，按照句柄类型排序，并滚动显示的内容，直到看到配置单元文件，如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx869.png" style="width: 100%" />
+<h4 class="bt4 sigil_not_in_toc">配置单元的结构</h4>
+<p class="zw">配置管理器在逻辑上将配置单元划分为名为“块”的分配单元，具体方式与文件系统将磁盘划分为簇的方式类似。按照定义，注册表块的大小为4096字节（4&nbsp;KB）。当新数据扩展到配置单元时，配置单元总是会以块为单位逐渐增大。配置单元的第一个块也称为基块。</p>
+<p class="zw">基块包含有关该配置单元的全局信息：一个将文件识别为配置单元所需的签名（regf）、两个更新序列号、一个代表配置单元最后一次执行写操作时间的时间戳、与Winload执行注册表修复或恢复操作有关的信息、配置单元格式版本号、校验值以及配置单元文件内部文件名（如\Device\HarddiskVolume1\WINDOWS\SYSTEM32\CONFIG\SAM）。下文介绍向配置单元中写入数据的方法时，还将进一步介绍这两个更新序列号和时间戳的重要性。</p>
+<p class="zw">配置单元格式版本号决定了配置单元中的数据格式。配置管理器使用的配置单元格式为1.5版，该版本支持大数值（超过1&nbsp;MB的值）和改进的搜索功能（不再需要缓存名称的前四个字符，可以使用完整名称的哈希值来减少碰撞）。此外，为支持容器，配置管理器还增加了对差异化配置单元（differencing hive）的支持。差异化配置单元使用的配置单元格式为1.6版。</p>
+<p class="zw">Windows会将配置单元中存储的注册表数据组织到一种名为单元格（cell）的容器中。单元格可以包含一个键、一个值、一个安全描述符、一个子键列表或一个键值列表。单元格数据开头处的一个4字节的字符标记描述了作为签名的数据类型。表10-6详细介绍了每个单元格的数据类型。单元格的头部是一种字段，以“1”的补集（complement）指定了单元格的大小（在CM_结构中不存在）。当一个单元格联结（join）到配置单元，而配置单元必须扩展才能包含该单元格时，系统会创建一种名为Bin的分配单位。</p>
+<p class="表题">表10-6　单元格的数据类型</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">数据类型</p> </th> 
+   <th> <p class="bt">结构类型</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">键单元格</p> </td> 
+   <td> <p class="bg">CM_KEY_NODE</p> </td> 
+   <td> <p class="bg">包含注册表键的单元格，也称键节点。键单元格包含签名（kn代表键，kl代表链接节点）、键最后一次更新的时间戳、键的父键单元格索引、用于标识键的子键的“子键列表单元格索引”、键的安全描述符单元格索引、指定键的类名称的字符串键单元格索引，以及键本身的名称（如CurrentControlSet）。这种单元格还包含了缓存的信息，如键下的子键数量、最大键的大小、值名称、值数据，以及该键下子键的类名称</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">值单元格</p> </td> 
+   <td> <p class="bg">CM_KEY_VALUE</p> </td> 
+   <td> <p class="bg">这种单元格包含与键的值有关的信息。该单元格包含签名（kv）、值的类型（如REG_ DWORD或REG_BINARY）以及值的名称（如Boot-Execute）。值单元格还包含“包含值数据”的单元格索引</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">大值单元格</p> </td> 
+   <td> <p class="bg">CM_BIG_DATA</p> </td> 
+   <td> <p class="bg">代表注册表值大于16&nbsp;KB的单元格。对于此类单元格，其内容是一种单元格索引数组，每个索引都指向一个16&nbsp;KB的单元格，其中包含注册表值的一个块</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">子键列表单元格</p> </td> 
+   <td> <p class="bg">CM_KEY_INDEX</p> </td> 
+   <td> <p class="bg">由键单元格的单元格索引列表组成的单元格，这些键都是同一个父键的子键</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">值列表单元格</p> </td> 
+   <td> <p class="bg">CM_KEY_INDEX</p> </td> 
+   <td> <p class="bg">由值单元格的单元格索引列表组成的单元格，这些值都是同一个父键的值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">安全描述符单元格</p> </td> 
+   <td> <p class="bg">CM_KEY_SECURITY</p> </td> 
+   <td> <p class="bg">包含安全描述符的单元格。安全描述符单元格头部包含签名（ks）和一个引用计数，记录了共享该安全描述符的键节点数量。多个键单元格可以共享同一个安全描述符单元格</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">Bin是新单元格的大小，会取整到下一个块或页的边界（以较高者为准）。系统认为，在单元格末端和Bin末端之间的任何空间都是可用空间，可以分配给其他单元格。Bin也有头部，其中包含了签名、hbin，以及一个记录Bin的配置单元文件偏移量和Bin大小的字段。</p>
+<p class="zw">通过用Bin代替单元格来跟踪注册表的活动部分，Windows可最大限度地减少一些管理工作。例如，系统分配和解除分配Bin的频率就远低于针对单元格执行的此类操作，这样配置管理器可以更高效地管理内存。当配置管理器将一个注册表配置单元读入内存时，会读取整个配置单元（包括空的Bin），但随后配置管理器可以选择丢弃空Bin。当系统在配置单元中添加或删除单元格时，配置单元可以包含散布在活跃Bin中的空Bin。这种情况与系统在磁盘上创建和删除文件后产生的磁盘碎片较为类似。当一个Bin成为空Bin后，配置管理器会将连续的空Bin连接在一起，尽可能形成一个足够大的连续空Bin。配置管理器还会将连续的已删除单元格连接在一起形成一个更大的可用单元格（配置管理器只有在配置单元末端的Bin空闲后才会收缩配置单元。我们可以使用Windows的RegSaveKey和RegReplaceKey函数备份并还原注册表，借此压缩注册表，Windows备份工具也用到了这些函数。此外，系统会在配置单元初始化时使用下文介绍的重组算法压缩Bin）。</p>
+<p class="zw">用于创建配置单元结构的链接也称单元格索引。单元格索引等于一个单元格在配置文件中的偏移量减去基块大小后获得的值。因此单元格索引类似于从一个单元格到另一个单元格的指针，配置管理器会将其理解为相对于配置单元起始位置的相对位置。例如，如表&nbsp;10-6&nbsp;所示，描述键的单元格中包含了一个指定其父键单元格索引的字段，子键的单元格索引指定了描述从属于特定子键的子键单元格，子键列表单元格包含的单元格索引列表引用了子键的键单元格。因此，举例来说，如果希望定位子键A的键单元格，其父键为键B，必须首先使用B键单元格中的子键列表单元格索引来定位包含B键的子键列表单元格，随后使用子键列表单元格中的单元格索引列表来定位B键的每个子键单元格。对于每个子键单元格，我们可以检查键单元格中存储的子键名称是否与自己希望找到的键（本例中为子键A）相匹配。</p>
+<p class="zw">单元格、Bin、块之间的差异可能会让人困惑，那么我们通过一个简单的注册表配置单元布局来更好地了解它们之间的差异吧。图&nbsp;10-3&nbsp;所示的注册表配置单元的内部结构包含一个基块和两个Bin。第一个Bin是空的，第二个Bin包含多个单元格。从逻辑上来说，该配置单元只包含两个键：根键Root和Root的一个子键Sub Key。Root有两个值，即Val 1和Val 2。子键列表单元格可用于定位根键的子键，而值列表单元格可以定位根键的值。第二个Bin中的可用空间是空单元格。图10-3并未展示这两个键的安全单元格，但它在配置单元中是实际存在的。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx9501.png" style="width: 100%" />
+<p class="图题">图10-3　注册表配置单元的内部结构</p>
+<p class="zw">为了优化值和子键的搜索工作，配置管理器会按照字母表顺序对子键列表单元格进行排序。随后配置管理器即可执行二叉搜索（binary search），查找子键列表中的特定子键。配置管理器会检查列表中间位置的子键，如果所查找的子键名称按字母表顺序位于子键列表中间位置之前，那么配置管理器就会知道目标子键应该在子键列表的前半部分，否则就在子键列表的后半部分。这种拆分过程会持续进行，直到配置管理器最终找到目标子键或没有任何收获。不过值列表单元格并未排序，因此新值总是会被加入列表的末尾。</p>
+<h4 class="bt4 sigil_not_in_toc">单元格映射</h4>
+<p class="zw">如果配置单元永不增大，配置管理器就可以完全在内存中的配置单元里执行所有注册表管理工作，就像处理普通文件那样。只要提供一个单元格索引，配置管理器就可以将单元格索引（也就是配置单元文件的偏移量）与内存中配置单元映像的基址相加，得到任何一个单元格在内存中的位置。在系统启动的早期阶段，Winload就是通过这样的方式处理SYSTEM配置单元的：Winload将整个SYSTEM配置单元以只读配置单元的形式读入内存，并将内存中的配置单元映像基址与单元格索引相加，确定不同单元格的位置。然而，随着存入新的键和值，配置单元的大小会增长，这意味着系统必须分配新的保留视图并扩展配置单元文件，这样才能存储新增加的键和值所对应的新Bin。在内存中保存注册表数据的这种保留视图未必是连续的。</p>
+<p class="zw">为了解决在不连续内存地址空间中引用内存中配置单元文件数据的问题，配置管理器采取了类似于Windows内存管理器将虚拟地址空间映射至物理内存地址的策略。虽然单元格索引只是配置单元文件的偏移量，但配置管理器采用了一种如图10-4所示的两级方案，借此通过Registry进程中的映射视图来表示配置单元。该方案使用单元格索引（即配置单元文件偏移量）作为输入，可输出单元格索引所在块在内存中的地址，以及单元格所在块在内存中的地址。一个Bin可以包含一个或多个块，而配置单元是在Bin中增大的，所以Windows总是用一个连续的内存区域表示Bin。因此，一个Bin中的所有块都会在同一个2&nbsp;MB的配置单元映射视图中。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx957.png" style="width: 100%" />
+<p class="图题">图10-4　单元格索引的结构</p>
+<p class="zw">为了实现这种映射，配置管理器在逻辑上将一个单元格索引划分为多个字段，具体方法与内存管理器将一个虚拟地址划分为多个字段的方式类似。Windows将单元格索引的第一个字段理解为指向配置单元的单元格映射目录索引。单元格映射目录中包含1024项，每个项都指向一个包含512个映射项的单元格映射表。单元格映射表中的每个项都由单元格索引中的第二个字段指定，而这第二个项可用于定位单元格的Bin和块的内存地址。</p>
+<p class="zw">在这个转换过程的最后一步，配置管理器会将单元格索引的最后一个字段理解为已确定块的偏移量，这样即可精准定位内存中的单元格。当初始化配置单元时，配置管理器会动态创建映射表，为配置单元中的每个块指定一个映射项，并根据配置单元的大小变化向单元格目录中添加或删除表。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":8,"parentId":"5a53b69b-1f5b-45b1-989a-6fe8c9cf2a82","id":"f2b3e9d5-74e6-410e-bce4-b93435380e49"}</p>

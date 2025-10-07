@@ -1,0 +1,13 @@
+<h3 class="bt3" id="sigil_toc_id_219">11.9.11　文件系统操作</h3>
+<p class="zw">应用程序和系统能以两种方式访问文件：通过文件I/O函数（如ReadFile和WriteFile）直接访问，以及通过读/写代表已映射文件节的一部分地址空间进行间接访问（映射文件的详情请参阅卷1第5章）。图11-22是一个简化的示意图，展示了这些文件系统操作涉及的组件以及它们之间的交互方式。如图11-22所示，FSD可通过多个路径调用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 从执行显式文件I/O的用户或系统线程调用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 从内存管理器的已修改和已映射页写入器调用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 从缓存管理器的惰性写入器间接调用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 从缓存管理器的预读取线程间接调用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 从内存管理器的页面错误处理程序调用。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1333.png" style="width: 100%" />
+<p class="图题">图11-22　文件系统I/O涉及的组件</p>
+<p class="zw">下文将分别介绍上述每种情况，以及FSD应对每种情况所采取的操作，从中也可以看到FSD对内存管理器和缓存管理器的依赖程度。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":10,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"03bd7f5e-7c87-4c9d-9932-d5550d2664ca"}</p>

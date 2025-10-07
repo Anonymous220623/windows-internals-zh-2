@@ -1,0 +1,218 @@
+<h3 class="bt3" id="sigil_toc_id_163">10.7.1　用户应用程序崩溃</h3>
+<p class="zw">正如卷&nbsp;1&nbsp;第&nbsp;3&nbsp;章所述，Windows&nbsp;中所有用户模式线程都是由&nbsp;Ntdll&nbsp;中的RtlUserThreadStart函数启动的。该函数只需在一个结构化异常处理程序下调用真正的线程启动例程（结构化异常处理详见第8章）即可。为真正的启动例程提供保护的处理程序在内部称为未处理异常处理程序（Unhandled Exception Handler），因为它是可以管理用户模式线程中所发生异常的最后一道机制（如果线程本身还没有处理）。如果该处理程序被执行，通常会使用&nbsp;NtTerminateProcess API&nbsp;来终止进程。未处理异常过滤器（RtlpThreadExceptionFilter）将决定是否执行该处理程序。值得注意的是，未处理异常过滤器和处理程序只会在非寻常状况下执行，通常应该由应用程序通过自己内部的异常处理程序来管理自己的异常。</p>
+<p class="zw">当Win32进程启动时，Windows加载器会映射所需的导入库。Kernelbase初始化例程会为进程安装自己的未处理异常过滤器（即UnhandledExceptionFilter例程）。当进程的线程中发生致命的未处理异常后，会调用该过滤器来判断如何处理异常。Kernelbase未处理异常过滤器会构建上下文信息（如计算机寄存器和堆栈的当前值、出现致命错误的进程ID以及线程ID）并开始处理异常。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果进程连接了调试器，则该过滤器会让异常发生（为此会返回CONTINUE_ SEARCH），这样调试器才可以中断并看到异常。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果进程是Trustlet，则该过滤器会停止所有处理工作，并调用内核以启动Secure Fault Reporting（WerFaultSecure.exe）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 过滤器可调用CRT未处理异常例程（如果存在），如果后者不知道如何处理该异常，则会调用内部WerpReportFault函数，借此连接到WER服务。</p>
+<p class="zw">在打开ALPC连接前，WerpReportFault应唤醒WER服务并准备一个可继承的共享内存节，该内存节中存储了之前获得的所有上下文信息。WER服务是一种直接触发启动的服务，只有当WER_SERVICE_START WNF状态被更新，或事件被写入虚拟WER激活ETW提供程序（名为Microsoft-Windows-Feedback-Service-Triggerprovider）后，该服务才会被SCM启动。WerpReportFault会更新相关的WNF状态并等待\KernelObjects\ SystemErrorPortReady事件，该事件收到WER服务发出的信号就意味着已经准备好接收新连接了。连接建立后，Ntdll会连接到WER服务的\WindowsErrorReportingServicePort ALPC端口，发送WERSVC_REPORT_CRASH消息，并无限期地等待回复。</p>
+<p class="zw">该消息会触发WER服务开始分析崩溃程序的状态，并执行生成崩溃报告所需的操作。在大部分情况下，这就意味着要启动WerFault.exe程序。对于用户模式的崩溃，会使用崩溃进程的凭据将Windows Fault Reporting进程调用两次。第一次用于获取崩溃进程的“快照”，快照功能最早出现在Windows 8.1中，目的是更快速地为UWP应用程序（当时的UWP应用程序还是一种单实例应用程序）生成崩溃报告。这样，用户就可以重新启动崩溃的UWP应用程序，而无须等待报告生成完毕（UWP和现代应用程序栈的详细信息请参阅第8章）。</p>
+<h4 class="bt4 sigil_not_in_toc">快照创建</h4>
+<p class="zw">WerFault会映射包含了崩溃数据的共享内存节，并打开发生错误的进程和线程。在使用命令行参数-pss调用的情况下（用于请求进程快照），它会调用Ntdll导出的PssNtCaptureSnapshot函数。该函数会使用原生API查询与崩溃进程有关的多种信息（如基本信息、作业信息、进程时间、安全缓解、进程文件名、共享的用户数据节）。此外，该函数还可以查询与文件支持的内存节有关的信息，并能对进程的整个用户模式地址空间进行映射。随后它会将获得的全部数据保存到表示快照的PSS_SNAPSHOT数据结构中。最后，它会使用NtCreateProcessEx API（并提供特殊的标记组合）将崩溃进程的完整VA空间在另一个虚拟进程（克隆的进程）中创建完全相同的副本。这样，原进程就可以终止了，报告错误所需的后续操作可以在这个克隆的进程上执行。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　WER不会对受保护进程和Trustlet执行快照创建操作。此时报告是通过从原始出错进程中获取数据创建的，该过程中出错进程会被暂停，报告完成后才能恢复。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">崩溃报告的生成</h4>
+<p class="zw">创建快照后，执行控制将返回给WER服务，该服务会初始化生成崩溃报告所需的环境。这主要通过两种方式完成。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果崩溃的是常规的非受保护进程，WER服务会直接调用从Windows用户模式崩溃报告（Faultrep.dll）导出的WerpInitiateCrashReporting例程。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果崩溃的是受保护进程并且需要另一个代理进程，那么会在SYSTEM账户（而非出错进程对应的凭据）下生成这个代理进程。该代理进程会执行一些验证，随后调用与常规进程崩溃后相同的例程。</p>
+<p class="zw">在通过WER服务调用WerpInitiateCrashReporting例程时，该例程会准备好执行错误报告进程所需的环境。该例程会使用从WER库导出的API来初始化计算机存储（默认配置下位于C:\ProgramData\ Microsoft\Windows\WER目录），并从Windows注册表加载所有WER设置。WER实际上包含了很多可定制选项，用户可通过组策略或修改注册表的方式进行配置。至此，WER会模仿运行了出错应用程序的用户，并使用命令行开关-u启动相应的Fault Reporting进程，这表示着WerFault（或WerFaultSecure）将处理用户崩溃并生成新的报告。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　如果崩溃的是使用低完整性级别或使用AppContainer令牌运行的现代应用程序进程，WER将使用User Manager服务生成一个新的低IL令牌，借此代表启动了出错应用程序的用户。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">表10-19列出了WER的注册表配置选项，以及这些选项的用途与可用值。这些注册表值均存储在HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting子键（针对计算机的配置）以及HKEY_CURRENT_USER下相对应的路径中（针对用户配置）。有些值也可能出现在\Software\Policies\Microsoft\Windows\Windows Error Reporting键下。</p>
+<p class="表题">表10-19　WER注册表设置</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">设置</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+   <th> <p class="bt">值</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ConfigureArchive</p> </td> 
+   <td> <p class="bg">存档数据的内容</p> </td> 
+   <td> <p class="bg">1，参数；2，所有数据</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Consent\DefaultConsent</p> </td> 
+   <td> <p class="bg">哪些类型的数据需要用户同意</p> </td> 
+   <td> <p class="bg">1，任意数据；2，仅参数；3，参数和安全数据；4，所有数据</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Consent\DefaultOverrideBehavior</p> </td> 
+   <td> <p class="bg">DefaultConsent设置能否覆盖WER插件的同意值</p> </td> 
+   <td> <p class="bg">1，允许覆盖</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Consent\PluginName</p> </td> 
+   <td> <p class="bg">特定WER插件的同意值</p> </td> 
+   <td> <p class="bg">与DefaultConsent相同</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CorporateWERDirectory</p> </td> 
+   <td> <p class="bg">企业WER存储目录</p> </td> 
+   <td> <p class="bg">包含路径的字符串</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CorporateWERPortNumber</p> </td> 
+   <td> <p class="bg">企业WER存储的端口号</p> </td> 
+   <td> <p class="bg">端口号</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CorporateWERServer</p> </td> 
+   <td> <p class="bg">要使用的企业WER存储名称</p> </td> 
+   <td> <p class="bg">包含名称的字符串</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CorporateWERUseAuthentication</p> </td> 
+   <td> <p class="bg">为企业WER存储使用Windows集成身份验证</p> </td> 
+   <td> <p class="bg">1，启用内置身份验证</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CorporateWERUseSSL</p> </td> 
+   <td> <p class="bg">为企业WER存储使用安全套接字层（SSL）</p> </td> 
+   <td> <p class="bg">1，启用SSL</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DebugApplications</p> </td> 
+   <td> <p class="bg">需要用户选择“调试”和“继续”的应用程序列表</p> </td> 
+   <td> <p class="bg">1，需要用户进行选择</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DisableArchive</p> </td> 
+   <td> <p class="bg">是否启用存档</p> </td> 
+   <td> <p class="bg">1，禁用存档</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Disabled</p> </td> 
+   <td> <p class="bg">是否禁用WER</p> </td> 
+   <td> <p class="bg">1，禁用WER</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DisableQueue</p> </td> 
+   <td> <p class="bg">决定是否将报告加入队列</p> </td> 
+   <td> <p class="bg">1，禁用队列</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DontShowUI</p> </td> 
+   <td> <p class="bg">禁用或启用WER UI</p> </td> 
+   <td> <p class="bg">1，禁用UI</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DontSendAdditionalData</p> </td> 
+   <td> <p class="bg">防止发送额外的崩溃数据</p> </td> 
+   <td> <p class="bg">1，不发送</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ExcludedApplications\AppName</p> </td> 
+   <td> <p class="bg">从WER排除的应用程序列表</p> </td> 
+   <td> <p class="bg">包含应用程序列表的字符串</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ForceQueue</p> </td> 
+   <td> <p class="bg">是否将报告发送到用户队列</p> </td> 
+   <td> <p class="bg">1，将报告发送到队列</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LocalDumps\DumpFolder</p> </td> 
+   <td> <p class="bg">转储文件的存储路径</p> </td> 
+   <td> <p class="bg">包含路径的字符串</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LocalDumps\DumpCount</p> </td> 
+   <td> <p class="bg">路径中转储文件数量最大值</p> </td> 
+   <td> <p class="bg">数值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LocalDumps\DumpType</p> </td> 
+   <td> <p class="bg">崩溃时生成的转储类型</p> </td> 
+   <td> <p class="bg">0，自定义转储；1，小型转储；2，完整转储</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LocalDumps\CustomDumpFlags</p> </td> 
+   <td> <p class="bg">自定义转储的自定义选项</p> </td> 
+   <td> <p class="bg">MINIDUMP_TYPE中定义的值（详见第12章）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LoggingDisabled</p> </td> 
+   <td> <p class="bg">启用或禁用日志记录</p> </td> 
+   <td> <p class="bg">1，禁用日志记录</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">MaxArchiveCount</p> </td> 
+   <td> <p class="bg">存档最大体积（文件数）</p> </td> 
+   <td> <p class="bg">1～5000的值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">MaxQueueCount</p> </td> 
+   <td> <p class="bg">队列最大体积</p> </td> 
+   <td> <p class="bg">1～500的值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">QueuePesterInterval</p> </td> 
+   <td> <p class="bg">两次请求用户检查解决方案请求的间隔天数</p> </td> 
+   <td> <p class="bg">天数</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">使用-u开关启动的Windows错误报告进程可以开始生成报告：该进程会再次映射包含崩溃数据的共享内存段，识别异常记录和描述符，并获取之前创建的快照。如果快照不存在，则WerFault进程将直接对出错进程执行操作，并将出错进程暂停。WerFault首先会确定故障进程的类型（服务、原生、标准、Shell进程）。如果出错进程（通过SetErrorMode API）要求系统不报告任何硬错误，则整个进程都将被忽略，并且不会创建任何报告。否则WER会通过存储在AeDebug子键（受保护进程则使用AeDebugProtected子键）中的设置检查是否启用了默认的后台调试器，该子键位于HKLM\SOFTWARE\Microsoft\Windows NT\ CurrentVersion\ 根注册表键下。表10-20列出了这些键的可能值。</p>
+<p class="表题">表10-20　AeDebug和AeDebugProtected根键的有效注册表值</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">值名称</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+   <th> <p class="bt">数据</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Debugger</p> </td> 
+   <td> <p class="bg">指定应用程序崩溃后要启动的调试器可执行文件</p> </td> 
+   <td> <p class="bg">调试器可执行文件的完整路径以及最后的命令行参数。WER可自动添加-p开关，并指向崩溃进程的进程ID</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ProtectedDebugger</p> </td> 
+   <td> <p class="bg">与Debugger相同，仅适用于受保护进程</p> </td> 
+   <td> <p class="bg">调试器可执行文件的完整路径。无法用于AeDebug键</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Auto</p> </td> 
+   <td> <p class="bg">指定自动启动类型</p> </td> 
+   <td> <p class="bg">1，任何情况下均启用调试器，完全无须用户同意；0，其他情况</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LaunchNonProtected</p> </td> 
+   <td> <p class="bg">指定是否以非受保护模式启动调试器。该设置仅适用于AeDebugProtected键</p> </td> 
+   <td> <p class="bg">1，以标准进程的形式启动调试器</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">如果调试器启动类型被设置为Auto，则WER会启动调试器并等待调试器事件收到信号，随后才会继续创建报告。报告的创建过程由用户模式崩溃报告DLL（Faultrep.dll）中实现的内部函数GenerateCrashReport启动。该DLL会配置所有的WER插件，并使用从WER.dll导出的WerReportCreate API初始化报告（请注意，在这一阶段，报告仅存在于内存中）。GenerateCrashReport例程计算报告ID并为报告签名，同时向报告中添加后续的诊断数据（如进程时间和启动参数，或应用程序定义的数据）。随后它会检查WER配置以确定要创建哪种类型的进程转储（默认情况下将创建小型转储）。随后它会调用导出的WerReportAddDump API，借此对出错进程的转储进行初始化（该转储将被添加到最终报告中）。请注意，如果之前已经创建了快照，则会通过快照创建转储。</p>
+<p class="zw">从WER.dll导出的WerReportSubmit API是一个核心函数，它负责为出错进程创建转储，创建要包含报告中的所有文件，显示UI（如果DontShowUI注册表键被配置为要显示的话），随后将报告发送给在线崩溃服务器。报告通常包含以下内容。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 崩溃进程的小型转储文件（通常名为memory.hdmp）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 人工易读的文本报告，其中包含异常信息，计算出的崩溃签名，操作系统信息，报告相关所有文件的列表，以及崩溃进程所加载全部模块的列表（该文件通常名为report.wer）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个CSV（逗号分隔值）文件，其中包含本崩溃发生时所有活跃进程的列表以及一些基本信息（例如线程数量、私有工作集大小、硬错误数量等）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个文本文件，其中包含全局内存状态信息。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个文本文件，其中包含应用程序兼容性信息。</p>
+<p>Fault Reporting进程会通过ALPC与WER服务通信，并发送命令让该服务生成要包含在报告中的大部分信息。在所有文件均已生成后，如果配置无误，Windows Fault Reporting进程会向用户显示一个对话框（见图10-39），通知用户目标进程发生了关键错误（该功能在Windows 10中默认被禁用）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3719.png" style="width: 100%" />
+<p class="图题">图10-39 Windows错误报告对话框</p>
+<p class="zw">在系统未连接互联网的环境，或当管理员希望控制要将哪些错误报告提交给微软的情况下，也可将错误报告的发送位置指定为内部文件服务器。System Center Desktop Error Monitoring（包含在Microsoft Desktop Optimization Pack中）可以了解Windows错误报告所创建的目录结构，并为管理员提供选项，以便选择性地创建错误报告并将其提交给微软。</p>
+<p class="zw">如上文所述，WER服务使用ALPC端口与崩溃的进程通信。该机制使用了WER服务通过NtSetInformationProcess（使用DbgkRegisterErrorPort）注册的系统级的错误端口。因此所有Windows进程都有一个错误端口，而该端口实际上是WER服务注册的ALPC端口对象。内核与Ntdll中的未处理异常过滤器使用该端口向WER服务发送消息，随后WER服务即可分析崩溃的进程。这意味着即便在线程状态损坏这种严重情况下，WER依然能够接收通知并启动WerFault.exe，借此将关键错误的详细信息记录到Windows事件日志（或向用户展示一个用户界面），而无须在崩溃的线程内部执行这些工作。这就解决了进程“无声死亡”造成的所有问题：用户可以收到通知，可以进行调试，服务管理员可以看到崩溃事件。</p>
+<p class="zwtsh">实验：启用WER用户界面</p>
+<p class="zwts1">从首发版Windows 10开始，系统默认禁用了应用程序崩溃后 WER 显示的用户界面。这主要是因为系统引入了重启动管理器（Restart Manager，属于应用程序恢复和重启动技术的一部分）。该技术可以让应用程序注册一个重启动或恢复回调，当应用程序崩溃、不响应，或因为安装了更新而需要重启动时，即可调用该回调。因此在遇到未处理的异常后，未注册任何此类恢复回调的传统应用程序会直接终止，并不会向用户展示任何信息（但依然会将错误正确记录到系统日志中）。如本节所述，WER依然支持用户界面，只需在注册表中保存设置的WER键中添加一个值即可启用。在这个实验中，我们将使用全局系统键重新启用WER的用户界面。</p>
+<p class="zwts1">请将本书随附资源中附带的BuggedApp可执行文件复制到计算机上并运行。按下一个按键后，该应用程序将生成一个关键的未处理异常，WER会拦截并报告该错误。默认配置下，这个过程不会显示任何错误信息。进程会被终止，系统日志中会记录一条</p>
+<p class="zwts1">错误事件，报告的生成和发送过程完全无须用户介入。随后请打开注册表编辑器（在搜索框中输入regedit）并打开HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting键。如果DontShowUI值不存在，请右击根键，选择“<strong style="color:#0092dd">新建，DWORD（32位）</strong>值”，随后将其设置为0。</p>
+<p class="zwts1">随后重新启动BuggedApp并按下键盘上的任意一个键，WER将显示类似图10-39所示的用户界面，随后终止崩溃的应用程序。我们可以在为AeDebug 键添加调试器后重复该实验。使用-I开关运行Windbg即可自动执行注册，详见上文“查看COM托管的任务”实验。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"e82c68f3-ce07-4590-87fa-97745b952b95","id":"6261c3e4-73ab-4c5b-a454-2c3d8866aab4"}</p>

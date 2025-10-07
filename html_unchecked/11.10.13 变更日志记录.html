@@ -1,0 +1,6 @@
+<h3 class="bt3" id="sigil_toc_id_242">11.10.13　变更日志记录</h3>
+<p class="zw">很多类型的应用程序需要监控卷中文件和目录的变化。例如，自动备份程序可能会执行一个初始的完整备份，随后根据文件改动执行增量备份。应用程序监视卷中的变化情况最显而易见的一种做法就是扫描整个卷，记录所有文件和目录的状态，并在后续扫描中检测两次扫描之间产生的差异。但这种方法会严重拖累系统性能，如果计算机中包含成千上万个文件，则情况将更为严重。</p>
+<p class="zw">作为一种替代方案，应用程序可以使用Windows的FindFirstChangeNotification或ReadDirectoryChangesW函数注册目录通知。应用程序只需以输入参数的方式指定自己要监视的目录名称，只要目录的内容发生变化，函数就会返回结果。虽然这种方式比全卷扫描更高效，但要求应用程序随时处于运行状态。使用这些函数同样要求应用程序扫描目录，因为FindFirstChangeNotification只能告知应用程序目录中发生了变更，但无法告知具体发生了什么变更。应用程序可以向ReadDirectoryChangesW传递一个缓冲区，这样文件系统驱动程序就可以负责将变更记录填入其中。然而，如果缓冲区溢出，应用程序就必须准备退而求其次地对整个目录进行扫描。</p>
+<p class="zw">为了克服上述两种方式的不足，NTFS还提供了第三种方法：应用程序可以使用DeviceIoControl函数的FSCTL_CREATE_USN_JOURNAL（USN是指更新序列号）文件系统控制代码来配置NTFS变更日志（Change Journal）设施。这样，NTFS便会将有关文件和目录变更的信息记录到一个名为变更日志的内部文件中。变更日志通常足够大，几乎可以保证应用程序总是有机会处理变更，而不会错过任何信息。应用程序可以使用FSCTL_QUERY_USN_JOURNAL文件系统控制代码从变更日志中读取记录，并可指定在有可用新记录的情况下，DeviceIoControl函数始终不允许完成。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":12,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"92e3eedb-b2ff-4d52-b570-7447dbfa69b5"}</p>

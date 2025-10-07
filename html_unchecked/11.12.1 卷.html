@@ -1,0 +1,17 @@
+<h3 class="bt3" id="sigil_toc_id_252">11.12.1　卷</h3>
+<p class="zw">NTFS的结构以卷（volume）开始。卷对应磁盘上的一个逻辑分区，是在我们将部分或全部磁盘格式化为NTFS的过程中创建的。我们也可以使用存储空间功能创建涵盖多个物理磁盘的RAID虚拟磁盘，为此可以使用控制面板中的“管理存储空间”管理单元，或使用Windows PowerShell中的存储空间相关命令（如New-StoragePool命令，可新建存储池。存储空间功能的完整&nbsp;PowerShell&nbsp;命令列表可访问：https://docs.microsoft.com/ powershell/module/storagespaces/）。</p>
+<p class="zw">一个磁盘上可以包含一个或多个卷。NTFS对每个卷的处理都独立于其他卷。图11-31展示了一个总容量为2&nbsp;TB的磁盘包含三种不同磁盘配置的范例。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1817.png" style="width: 100%" />
+<p class="图题">图11-31　磁盘配置范例</p>
+<p class="zw">卷是由一系列文件以及磁盘分区中剩余的未分配空间组成的。在所有FAT文件系统中，卷也包含了专门格式化并供文件系统使用的区域。不过NTFS卷或ReFS卷会将所有文件系统数据（如位图和目录，甚至系统自举程序）存储为普通文件。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　在Windows 10和Window Server 2019中，NTFS卷的磁盘格式为3.1版，该版本自Windows XP和Windows Server 2003时就在使用。卷的版本号存储在$Volume元数据文件中。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"b706abc6-27b7-4b51-a1b0-ce4dd0160f30"}</p>

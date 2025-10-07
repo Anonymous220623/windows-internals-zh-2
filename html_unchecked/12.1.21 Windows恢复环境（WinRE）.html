@@ -1,0 +1,21 @@
+<h3 class="bt3" id="sigil_toc_id_349">12.1.21　Windows恢复环境（WinRE）</h3>
+<p class="zw">Windows恢复环境提供了可修复大部分常见启动问题的工具和自动修复技术。其中主要包含以下六个工具。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">系统还原：</strong>如果Windows无法启动，可借此将系统还原为之前的状态，支持在安全模式下使用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">系统镜像恢复器：</strong>在之前版本的Windows中也叫“Complete PC还原”或自动系统恢复（Automated System Recovery，ASR），可利用完整备份还原Windows，该功能不使用系统还原点，因为其中可能不包含所有损坏的文件或丢失的数据。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">启动修复：</strong>这个自动化工具可以检测常见的Windows启动问题并自动尝试修复。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">计算机重置：</strong>这个工具可以删除不属于标准Windows安装的所有应用程序和驱动程序，将所有设置还原为默认值，将Windows恢复为刚安装完成时的状态。用户可以选择保留所有的个人数据文件或将其全部清除，后一种情况中的Windows将自动进行全新重装。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">命令提示符：</strong>如果需要在手动介入的情况下进行排错或修复问题（例如从其他驱动器复制文件或修改BCD），则可以使用命令提示符来访问完整的Windows外壳，并可以启动几乎任何Windows程序（只要程序的依赖性能被满足）。而早期版本Windows中的恢复控制台只支持一组有限的专用命令。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Windows<strong style="color:#0092dd">内存诊断工具：</strong>可通过内存诊断测试检查出错的RAM。出错的RAM可能是造成内核与应用程序随机崩溃以及系统不稳定问题的主要原因。</p>
+<p class="zw">使用Windows安装光盘或启动盘启动系统时，Windows安装程序可用于安装Windows或修复现有的安装。如果选择修复现有的安装，则系统会显示一个类似于现代启动菜单（见图12-15）的界面，其中提供了多种选项。</p>
+<p class="zw">用户可以选择从另一个驱动器启动，使用不同的操作系统（前提是已在系统的BCD存储中正确注册），或选择使用某种恢复工具。上述所有恢复工具（内存诊断工具除外）均位于“故障排查”选项下。</p>
+<p class="zw">对于全新系统的安装过程，Windows安装程序还会在恢复分区上安装WinRE。在使用开始菜单中的相关按钮重启计算机时，按下Shift键的同时点击“重启动”按钮即可访问WinRE。如果系统使用了传统启动菜单，则可在启动管理器执行过程中按下F8键以访问高级启动选项。如果看到“修复计算机”选项，这意味着在计算机本地硬盘中存在WinRE的副本。此外，如果系统因为文件损坏或因Winload无法理解的其他原因而无法启动，则会指示启动管理器在下一次重启的过程中自动启动WinRE。此时将不再显示如图12-15所示的对话框，恢复环境会自动启动如图12-16所示的启动修复工具。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1392.png" style="width: 100%" />
+<p class="图题">图12-15　Windows恢复环境启动界面</p>
+<p class="zw">在扫描和修复流程结束后，工具可以自动尝试修复发现的所有问题，包括从安装介质替换系统文件。如果启动修复工具无法自动修复错误，即用户可以尝试其他方法，此时将再次显示系统恢复选项对话框。</p>
+<p class="zw">Windows内存诊断工具可以从运行中的系统启动，也可以在WinRE中通过命令提示符运行mdsched.exe来启动。该工具会询问用户是否要重启计算机以便运行测试。如果系统使用传统启动菜单，则可以使用Tab键在工具菜单中导航并执行内存诊断工具。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1474.png" style="width: 100%" />
+<p class="图题">图12-16 启动恢复工具</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":20,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"46408de4-551e-4052-a2de-158767ec91e4"}</p>

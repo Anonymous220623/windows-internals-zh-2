@@ -1,0 +1,16 @@
+<h3 class="bt3" id="sigil_toc_id_245">11.10.16　加密</h3>
+<p class="zw">企业用户通常会在计算机上存储敏感信息。虽然存储在公司服务器上的数据通常会使用适当的网络安全设置和物理访问控制机制加以妥善保护，但笔记本电脑中存储的数据在笔记本电脑丢失或被盗后往往会面临风险。此时无法通过NTFS文件权限获得所需的保护，因为只要用非Windows平台的NTFS文件读取软件，就可以忽略这些安全设置而完整访问NTFS卷中的文件。此外，如果使用另一个Windows系统以管理员账户访问这些文件，NTFS文件权限也将失去作用。卷1第6章曾经提到，管理员账户具备“获取所有权”和“备份”特权，这两项特权使得管理员只需覆盖对象的安全设置，即可访问任何可保护对象。</p>
+<p class="zw">NTFS包含了一项名为加密文件系统（Encrypting File System，EFS）的设施，用户可以借此加密敏感数据。EFS的操作与文件压缩的类似，对应用程序完全透明，这意味着当使用获得授权的用户账户运行的应用程序需要读取数据时，文件数据可以自动解密，在获得授权的应用程序更改数据后，数据也可以自动加密。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　NTFS不允许加密位于系统卷根目录或\Windows目录中的文件，因为这里的很多文件是系统启动过程必需的，而启动阶段EFS尚未激活。如果希望加密这些文件，BitLocker是一种更适合的技术，它可以支持全卷加密。下文将会提到，BitLocker可以与NTFS配合实现文件加密。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">用户模式下的EFS依赖于Windows提供的加密服务，因此，它既包含与NTFS紧密集成的内核模式组件，也包含负责与本地安全机构子系统（LSASS）和加密DLL通信的用户模式DLL。</p>
+<p class="zw">被加密的文件只能通过账户EFS私钥/公钥对中的私钥来访问，私钥则会使用账户的密码锁定。对于丢失或被盗的笔记本电脑中的EFS加密文件，如果无法得知具备授权账户的密码，则将无法通过任何手段查看（除非暴力破解攻击）。</p>
+<p class="zw">应用程序可使用Windows的EncryptFile和DecryptFile API函数来加密与解密文件，并使用FileEncryptionStatus检索与文件或目录EFS有关的属性，例如，文件或目录是否被加密。被加密的文件或目录会在属性中设置FILE_ATTRIBUTE_ENCRYPTED标记，因此，应用程序也可以通过GetFileAttributes判断文件或目录的加密状态。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":15,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"4771e0cd-ddb0-4514-97fc-ec531c5acf2b"}</p>

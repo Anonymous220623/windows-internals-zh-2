@@ -1,0 +1,14 @@
+<h3 class="bt3" id="sigil_toc_id_260">11.12.9　数据压缩和稀疏文件</h3>
+<p class="zw">NTFS支持针对每个文件、每个目录或每个卷，使用LZ77算法的变体（LZNT1）进行压缩（NTFS压缩只适用于用户数据，不适用于文件系统元数据）。在Windows 8.1和后续版本中，还可以使用新的算法套件来压缩文件，该套件包含LZX（最紧凑）和XPRESS（分别使用4&nbsp;KB、8&nbsp;KB或16&nbsp;KB的块大小，速度各异）。此类压缩可以通过命令使用，例如，外壳命令compact（以及File Provder API），它利用了Windows Overlay Filter（WOF）文件系统过滤器驱动程序（Wof.sys）来操作NTFS备用数据流和稀疏文件，但严格来说并非NTFS驱动程序的一部分。WOF的介绍已超出了本书范围，详见https://devblogs.microsoft. com/oldnewthing/20190618-00/?p=102597。</p>
+<p class="zw">我们可以使用Windows的GetVolumeInformation函数查看一个卷是否被压缩。要查看一个文件实际压缩后的大小，可使用Windows的GetCompressedFileSize函数。最后，要查看或更改文件/目录的压缩设置，可使用Windows的DeviceIoControl函数（查看FSCTL_GET_COMPRESSION和FSCTL_SET_COMPRESSION这两个文件系统控制代码）。另外需要注意，虽然设置文件的压缩状态即可立即压缩（或解压缩）该文件，但设置目录或卷的压缩状态无法立即发起压缩和解压缩的操作。该操作实际上是在为该目录或卷中以后新创建的文件和子目录设置默认压缩状态（不过如果是在资源管理器中使用目录的属性对话框来压缩该目录，则整个目录树中的内容将被立即压缩）。</p>
+<p class="zw">下文将通过一个稀疏数据的压缩用例来介绍NTFS压缩。随后还将讨论传统文件和稀疏文件的压缩。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　DAX卷或EFS加密文件不支持NTFS压缩。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":8,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"5a0755a4-b0d1-41bf-b505-84feb40d85db"}</p>

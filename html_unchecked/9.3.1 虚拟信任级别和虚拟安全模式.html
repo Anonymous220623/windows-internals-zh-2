@@ -1,0 +1,24 @@
+<h3 class="bt3" id="sigil_toc_id_88">9.3.1　虚拟信任级别和虚拟安全模式</h3>
+<p class="zw">如上一节所述，虚拟机监控程序会使用SLAT将每个分区维持在自己的内存空间中。分区中运行的操作系统可以通过标准方式（借助页表将客户机虚拟地址转换为客户机物理地址）来访问内存。在这一过程内部，硬件会将所有分区GPA转换为真正的SPA并执行实际的内存访问。这最后一个转换层由虚拟机监控程序维护，并且会为每个分区使用一个单独的SLAT表。通过类似方式，虚拟机监控程序也可以使用SLAT在一个分区中创建多个安全域。微软正是基于这个功能设计了安全内核，并使其成为虚拟安全模式（Virtual Secure Mode，VSM）的基础。</p>
+<p class="zw">传统上，操作系统只有一个物理地址空间，在Ring 0级别（即内核模式）运行的软件可以访问任何物理内存地址。因此，如果运行在这种管理者模式下的任何软件（内核、驱动程序等）被攻陷，整个系统也将被攻陷。虚拟安全模式可以利用虚拟机监控程序为系统软件提供一种全新的信任边界。在VSM的帮助下，安全边界（由虚拟机监控程序通过SLAT描述）可以放置在一个更合适的位置，并对管理者模式下资源的访问加以限制。因此，在使用VSM后，即使管理者模式下的代码被攻陷，整个系统也不会被波及。</p>
+<p class="zw">VSM通过虚拟信任级别（Virtual Trust Level，VTL）的概念提供了这样的边界。究其核心，VTL实际上是对物理内存提供的一系列访问保护措施。每个VTL可以具备不同的访问保护措施，借此VTL即可用于实现内存隔离。VTL的内存访问保护可配置为限制特定VTL所能访问的物理内存。在使用VSM的情况下，虚拟处理器将始终在特定VTL下运行，只能访问通过虚拟机监控程序SLAT标记为可访问的物理内存。举例来说，如果某个处理器运行在VTL 0下，那么只能访问与VTL 0相关的内存访问保护所控制的内存。这种对内存访问的限制发生在客户机物理内存转换的层面上，因此，无法被分区中以管理者模式运行的代码更改。</p>
+<p class="zw">VTL可以形成层次结构。层级越高，特权越多，并且高层级可调整低层级的内存访问保护。因此，运行在VTL 1的软件可以调整VTL 0的内存访问保护，限制VTL 0所能访问的内存。这使得VTL 1中的软件可以向VTL 0隐藏（隔离）内存。这是一个很重要的概念，同时也是VSM的实现基础。目前，虚拟机监控程序只支持两个VTL：代表常规操作系统执行环境，用户可与之交互的VTL 0；代表安全模式，负责运行安全内核与隔离用户模式（IUM）的VTL 1。由于VTL 0中运行了标准操作系统和应用程序，因此通常也会被称为“常规模式”。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　VSM架构最初的设计最多可支持16个VTL。但截至撰写这部分内容，虚拟机监控程序只支持2个。未来微软有可能添加一个或多个新VTL。例如，Azure中运行的最新版Windows Server支持的机密虚拟机<sup>[2]</sup>功能，其宿主机兼容层（Host Compatibility Layer，HCL）就运行在VTL 2中。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="footnote">[2]机密虚拟机是一种特殊用途的Azure虚拟机，相比普通的Azure虚拟机，它可提供更强大的安全边界和隔离能力，同时还可提供更多安全功能，适合对安全性和机密性要求更高的用户。详细信息可参阅Azure官网。——译者注</p>
+<p class="zw">每个VTL都具备下列相关特征。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">内存访问保护</strong>。如上文所述，每个VTL都有一组客户机物理内存访问保护措施，用于决定软件如何访问内存。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">虚拟处理器状态</strong>。虚拟机监控程序中的每个虚拟处理器都与每个VTL共享某些寄存器，但也有一些寄存器是每个VTL私有的。VTL的私有虚拟处理器状态无法被更低级别VTL下运行的软件所访问。这样即可在VTL之间对处理器的状态实现隔离。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">中断子系统</strong>。每个VTL都有一个唯一的中断子系统（由虚拟机监控程序综合中断控制器负责管理）。VTL的中断子系统无法被更低级别VTL下运行的软件所访问。这样即可在特定VTL下安全地管理中断，不会造成低VTL生成非预期中断或屏蔽中断的风险。</p>
+<p class="zw">图9-30展示了虚拟机监控程序为虚拟安全模式（VSM）提供的内存保护架构方案。虚拟机监控程序会通过不同的VMCS数据结构（详见上一节）代表虚拟处理器的每个VTL，其中还包括一个特定的SLAT表。这样，运行在某个特定VTL下的软件就只能访问分配给自己所在级别的物理内存页。这里的重点在于：SLAT保护会应用于物理页面，而非虚拟页面，虚拟页面是由标准页表负责保护的。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2079.png" style="width: 100%" />
+<p class="图题">图9-30　虚拟机监控程序为VSM提供的内存保护架构方案</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"8d678365-710a-474d-8760-6f5e8321ff41","id":"515bae9d-cb09-4991-a812-0b30d2e50322"}</p>

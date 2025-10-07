@@ -1,0 +1,60 @@
+<h3 class="bt3" id="sigil_toc_id_199">11.8.3　回写缓存和惰性写入</h3>
+<p class="zw">缓存管理器通过惰性（延迟）写入实现了一种回写缓存。这意味着写入文件的数据首先会被存储在内存中的缓存页面内，然后才会写入磁盘。因此，写操作允许在短时间内进行积累，随后一次性刷新到磁盘，从而减少磁盘I/O的操作总量。</p>
+<p class="zw">缓存管理器必须明确调用内存管理器来刷新缓存页面，因为如果不这样做，内存管理器将只在对物理内存的需求超出供应量的情况下才会将内存中的内容写入磁盘。这对易失性数据来说是合适的，然而，缓存的文件数据往往代表非易失性的磁盘数据。如果一个进程修改了缓存的数据，用户当然希望这些内容能尽快反映到磁盘中。</p>
+<p class="zw">此外，缓存管理器有能力否决内存管理器的映射写入器线程。由于已修改列表（详见卷1第5章）不是按照逻辑块地址（LBA）顺序排序的，所以缓存管理器会试图将页面聚集在一起，以便向磁盘发出更大的顺序I/O，但该操作并不总能成功，实际上会导致重复寻找。为了消除这种影响，缓存管理器可以积极地否决映射写入器线程，并以虚拟字节偏移量（VBO）顺序进行写出，而这更贴近于磁盘上的LBA顺序。由于缓存管理器负责这些写入操作，因此，它也可以应用自己的调度和流量调节算法，以便尽可能地使用预读取而非后写入，从而降低对系统的影响。</p>
+<p class="zw">多长时间刷新一次缓存，这是一个重要的决策。如果缓存被刷新得太频繁，系统的性能就会因为不必要的I/O而下降。如果缓存刷新频率太低，那么当系统出现故障时，用户可能面临丢失已修改文件数据的风险（这种丢失对用户来说非常难以接受，因为用户已经要求应用程序保存文件数据的改动了），并且可能面临物理内存不足的情况（因为大量已修改页面会占用物理内存）。</p>
+<p class="zw">为了平衡这些问题，缓存管理器的惰性写入器可以扫描系统工作线程所执行的函数，该扫描操作每秒钟会进行一次。惰性写入器的扫描具有不同的作用，如下。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 检查（属于当前分区的）平均可用页和脏页的数量，并酌情更新脏页阈值的上限和下限。阈值本身也会被更新，主要是基于上一个周期所写入的脏页的总数进行更新（详见下一段）。如果没有需要写入的脏页，则惰性写入器将会休眠。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 通过CcCalculatePagesToWrite内部例程计算写入磁盘的脏页的数量。如果脏页的数量超过256个（1&nbsp;MB数据），则缓存管理器会将总脏页数的1/8放入队列等待刷新到磁盘。如果脏页的产生速率大于惰性写入器确定需要写入的速率，则惰性写入器将会计算并写入额外数量的脏页，以匹配脏页的产生速率。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在每个共享缓存映射（存储在属于当前分区的链表中）之间进行循环，并使用内部CcShouldLazyWriteCacheMap例程确定共享缓存映射描述的当前文件是否需要刷新到磁盘。文件不应刷新到磁盘的原因有很多，例如I/O可能已经被另一个线程初始化，文件可能是一个临时文件，或更简单的情况：缓存映射中可能不包含脏页。当该例程确定文件应当刷新时，延迟写入器会扫描检查是否有足够的可用页面以供写入，如果有，则向缓存管理器系统工作线程发出一个工作项。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　惰性写入器扫描在确定被某个共享缓存映射，并且需要写入的脏页数量时会考虑一些例外情况（并不总是写入文件的所有脏页）：如果目标文件是元数据流并且包含超过256&nbsp;KB的脏页，则缓存管理器将只写入总页面的1/8。如果脏页的总数超过延迟写入器扫描可以刷新的页面总数，也会采取一些额外的操作。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">这些I/O操作实际是由来自系统级的关键工作线程池的延迟写入器系统工作线程执行的。惰性写入器可以得知内存管理器的映射页面写入器何时准备好执行刷新。在这种情况下，它会将自己的回写操作延迟到同一个数据流中，以避免向同一个文件同时进行两次刷新操作。</p>
+<table width="99%"> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　缓存管理器为文件系统驱动程序提供了一种方法，借此可跟踪什么时候有多少数据被写入文件。当惰性写入器将脏页刷新到磁盘时，缓存管理器会通知文件系统，指示文件系统更新该文件有效数据长度的视图（缓存管理器和文件系统分别在内存中跟踪文件的有效数据长度）。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：查看缓存管理器的工作</p>
+<p class="zwts1">在这个实验中，我们将使用Process Monitor查看文件系统底层活动，包括使用</p>
+<p class="zwts1">Windows资源管理器将一个大文件（本例中使用了一个DVD镜像）从一个目录复制到另一个目录时的缓存管理器预读取和后写入操作。</p>
+<p class="zwts1">首先配置Process Monitor过滤器以包含源和目标文件路径、Explorer.exe和System进程，以及ReadFile和WriteFile操作。本例要将C:\Users\Andrea\Documents\Windows_ 10_RS3.iso文件复制到C:\ISOs\Windows_10_RS3.iso，因此，可按照下图所示配置过滤器。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx861.png" style="width: 100%" />
+<p class="zwts1">复制文件后，应该可以看到类似下图所示的Process Monitor跟踪结果。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx876.png" style="width: 100%" />
+<p class="zwts1">前几项对应了复制引擎执行的初始I/O操作以及缓存管理器执行的第一个操作。我们应该可以看到以下这几个情况。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> 第一项代表Explore执行的初始1&nbsp;MB已缓存读取。该读取的大小取决于根据文件大小使用一个内部矩阵计算而来的结果，实际大小可能介于128&nbsp;KB到1&nbsp;MB之间。因为该文件很大，因此复制引擎选择了1&nbsp;MB。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> 上述1&nbsp;MB读取之后是另一个1&nbsp;MB的未缓存读取。未缓存读取通常代表着由于页面错误或缓存管理器访问而产生的活动。为了仔细观察这些事件的堆栈跟踪记录，我们可以双击任一项并打开Stack选项卡，随后可以发现，确实是由NTFS驱动程序的读取例程调用了缓存管理器的CcCopyRead例程，进而导致内存管理器通过页面错误将源数据复制到物理内存。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx883.png" style="width: 100%" />
+<p class="zwts1">在这个1&nbsp;MB的页面错误I/O之后，缓存管理器的预读取机制开始读取文件，其中也包括System进程随后在1&nbsp;MB偏移量处进行的未缓存1&nbsp;MB读取。考虑到文件大小和Explorer的读取I/O大小，缓存管理器选择1&nbsp;MB作为最佳预读取大小。下图展示了一个预读取操作的堆栈跟踪结果，从中可以确认缓存管理器的一个工作线程正在执行预读取。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx891.png" style="width: 100%" />
+<p class="zwts1">随后，Explorer的1&nbsp;MB读取并没有产生页面错误，因为预读取线程始终领先于Explorer，通过1&nbsp;MB的未缓存读取操作预先获取了文件数据。然而每隔一段时间，预读取线程将无法及时获得足够的数据，此时汇总后的页面会发生页面错误，进而出现同步分页I/O。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx898.png" style="width: 100%" />
+<p class="zwts1">查看这些项的堆栈跟踪会发现，此时调用的并非MmPrefetchForCacheManager，而是MmAccessFault/MiIssueHardFault例程。</p>
+<p class="zwts1">一旦开始读取，Explorer就会开始向目标文件写入。这些写入操作均为连续的1&nbsp;MB缓存写入。在读取大约124&nbsp;MB数据后，System进程进行了第一次WriteFile操作，如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx906.png" style="width: 100%" />
+<p class="zwts1">这个写入操作的堆栈跟踪结果如下图所示。从图中可以发现，该写入操作实际是由内存管理器的映射页面写入器线程负责的。这是因为在最初几MB的数据中，缓存管理器还没有开始执行后写入操作，因此，内存管理器的映射页面写入器开始刷新已修改的目标文件数据（有关映射页面写入器的详情请参阅第10章）。</p>
+<p class="zwts1">为了更清楚地了解缓存管理器的操作，可以将Explorer从Process Monitor的过滤器中删除，这样即可只显示System进程的操作，如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx913.png" style="width: 100%" />
+<p class="zwts1">通过如图所示的内容，可以更清晰地看到缓存管理器的1&nbsp;MB后写入操作（客户端版本Windows的最大写入大小为1&nbsp;MB，服务器版本为32&nbsp;MB，该实验在客户端版本中执行）。下图展示了其中一个后写入操作的堆栈跟踪结果，从中可以确认后写入操作是由缓存管理器工作线程实现的。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx921.png" style="width: 100%" />
+<p class="zwts1">作为一个额外的实验，大家也可以尝试着通过远程复制（从一个Windows系统复制到另一个）重复该实验，并且可以尝试复制不同大小的文件，这样就会发现接收端和发送端的复制引擎和缓存管理器产生的不同行为。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"12f97583-be18-467a-a595-eb74d0d9db22","id":"4fcb0cb1-bce4-46d3-a8a8-af908d11310d"}</p>

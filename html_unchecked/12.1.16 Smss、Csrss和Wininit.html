@@ -1,0 +1,38 @@
+<h3 class="bt3" id="sigil_toc_id_344">12.1.16　Smss、Csrss和Wininit</h3>
+<p class="zw">Smss与其他用户模式进程类似，但有两点不同。首先，Windows认为Smss是操作系统中可信的部分；其次，Smss是一个原生应用程序。由于是受信任的操作系统组件，所以Smss会以轻量级保护进程（Protected Process Light，PPL，详见本书卷1第3章）的方式运行，可以执行其他进程几乎无法执行的工作，如创建安全令牌。由于是原生应用程序，所以Smss并未使用Windows API，它只使用了核心执行体API，这些API被统称为Windows原生API（通常由Ntdll暴露）。Smss并不使用Win32 API，因为在Smss启动时，Windows子系统尚未开始执行。实际上，Smss首要任务之一就是启动Windows子系统。</p>
+<p class="zw">Smss的初始化过程详见本书卷1第2章“会话管理器”一节，这节内容介绍了Smss初始化过程的所有细节。当主Smss进程创建子Smss进程时，会以参数形式传递两个节对象的句柄。这两个节对象代表了用在多个Smss和Csrss实例之间交换数据所用的共享缓冲区（一个用在父子Smss进程之间通信，一个用在客户端子系统进程之间通信）。主Smss使用RtlCreateUserProcess例程生成子进程，指定一个标记来指示进程管理器新建会话。这种情况下，PspAllocateProcess内核函数将调用内存管理器为新会话创建地址空间。</p>
+<p class="zw">初始化过程结束时，子Smss启动的可执行文件的名称存储在共享节中。如第2章所述，对于会话0，要启动的可执行文件通常为Wininit.exe；对于任何其他交互式会话，要启动的是Winlogon.exe。这里有一个重要概念需要注意：在新会话0的Smss启动Wininit之前，它首先会通过ALPC端口SmApiPort连接到主Smss并加载和初始化所有子系统。</p>
+<p class="zw">会话管理器将获得Load Driver特权，并要求内核将Win32k驱动程序（使用NtSetSystemInformation原生API）加载并映射到新会话的地址空间。随后它会启动客户端-服务器的子系统进程（Csrss.exe），并在命令行中指定下列信息：根Windows对象的目录名称（\Windows）、共享节对象的句柄、子系统名称（Windows）以及子系统的DLL。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Basesrv.dll，子系统进程的服务器端。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Sxssrv.dll，并行子系统支持扩展模块。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Winsrv.dll，多用户子系统支持模块。</p>
+<p class="zw">客户端-服务器子系统进程将执行一些初始化工作：启用一些进程缓解选项，从其令牌中移除不需要的特权，启动自己的ETW提供程序，并初始化CSR_PROCESS数据结构的链表以跟踪系统中将要启动的所有Win32进程。随后它会解析自己的命令行，获取共享节的句柄，并创建两个ALPC端口。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> CSR API<strong style="color:#0092dd">命令端口</strong>（\Sessions\&lt;ID&gt;\Windows\ApiPort）：每个Win32进程都会使用该ALPC端口与Csrss子系统通信（Kernelbase.dll会在自己的初始化例程中连接到该端口）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">子系统会话管理器API端口</strong>（\Sessions\&lt;ID&gt;\Windows\SbApiPort）：会话管理器用它向Csrss发送命令。</p>
+<p class="zw">Csrss会创建两个线程，以此调度ALPC端口所收到的命令。最后，它会通过另一个ALPC端口（\SmApiPort）连接到会话管理器，这个端口是之前在Smss初始化过程中创建的（第2章所描述初始化过程中的步骤6）。在连接过程中，Csrss进程会发送自己刚创建的会话管理器API端口的名称。从此刻开始，新的交互式会话就可以启动了。因此，主Csrss线程最终退出。</p>
+<p class="zw">启动子系统进程后，子Smss会运行自己的初始进程（Wininit或Winlogon）并退出。只有Smss的主实例会保持活跃状态。Smss的主线程会在Csrss的进程句柄上永久等待，而其他ALPC线程会等待创建新会话或子系统的消息。如果Wininit或Csrss意外终止，那么内核将会让系统崩溃，因为这些都是关键进程。如果Winlogon意外终止，那么与其关联的会话会被注销。</p>
+<p class="zwtsh">挂起的文件重命名操作</p>
+<p class="zwts1">可执行映像和DLL在使用的时候需要映射到内存中，这使得Windows启动完成后将无法更新核心系统文件（除非使用热修补技术，但这种技术仅适用于微软提供的操作系统补丁）。Windows的MoveFileEx API包含一个选项，可以指定将文件的移动操作推迟到系统下次启动时进行。如果Service Pack和热修复程序必须更新使用中的内存映射文件，则可将需要替换的文件安装到系统中的一个临时位置内，随后使用MoveFileEx API让它们替换使用中的文件。如果使用该选项，则MoveFileEx会将相关命令记录到HKLM\</p>
+<p class="zwts1">SYSTEM\CurrentControlSet\ Control\Session Manager下的PendingFileRenameOperations和PendingFileRenameOperations2注册表值中。这些注册表值的类型为MULTI_SZ，其中的每个操作都会指定一组文件名：第一个文件名是源位置，第二个文件名是目标位置。删除操作则会使用空字符串作为目标位置。我们可以使用Windows Sysinternals（https://docs. microsoft.com/sysinternals/）提供的Pendmoves工具查看已注册的延迟更名和删除命令。</p>
+<p class="zw">Wininit将按照卷1第2章“Windows初始化过程”一节介绍的过程执行自己的启动步骤，如创建初始窗口站和桌面对象。Wininit还会设置用户环境，启动Shutdown RPC服务器和WSI接口（详见下文“关机”一节），并创建服务控制管理器（SCM）进程（Services.exe），该进程会加载所有被标记为需要自启动的服务和设备驱动程序。通过共享的Svchost进程运行的本地会话管理器（Lsm.dll）服务也是在这时启动的。然后Wininit会检查系统之前是否崩溃，如果是，它会处理崩溃转储并启动Windows错误报告进程（werfault.exe）进行后续处理。最后，Wininit会启动本地安全验证子系统服务（%SystemRoot%\ System32\Lsass.exe），如果凭据保护已启用，还会启动Isolated LSA Trustlet（Lsaiso.exe）并永久等待系统关闭请求。</p>
+<p class="zw">会话1和后续会话则会运行Winlogon。Wininit创建了非交互式会话0的窗口站，而Winlogon创建了默认的交互式会话窗口站（名为WinSta0）和两个桌面，即Winlogon安全桌面及默认的用户桌面。然后Winlogon会使用NtQuerySystemInformation API查询系统启动信息（只对第一个交互式登录会话执行该操作）。如果启动配置包含易失性操作系统选择菜单标记，则它会启动GDI系统（进而产生一个UMDF宿主进程fontdrvhost.exe）并运行现代启动菜单应用程序（Bootim.exe）。易失性操作系统选择菜单标记是在启动过程的早期阶段由Bootmgr设置的（前提是检测到多重启动环境），详见上文“启动菜单”一节。</p>
+<p class="zw">Bootim是一个负责绘制现代启动菜单的GUI应用程序。新的现代启动机制使用了Win32子系统（图形驱动程序和GDI+调用），这是为了支持用更高分辨率显示启动选项以及其他高级选项。这种方式甚至支持触控屏，因此，用户可以通过触控来选择要启动哪个操作系统。Winlogon会运行新增的Bootim进程并等待它终止。在用户做出选择后，Bootim将会退出。Winlogon可以检查退出代码，因此能够检测到用户是选择了一个操作系统，还是选择了某个启动工具，或是直接请求系统关闭。如果用户选择了不同于当前操作系统的其他操作系统，Bootim将会在主系统引导存储（有关BCD存储的详细信息请参阅上文“Windows启动管理器”一节）中添加bootsequence这个一次性BCD选项。当Winlogon使用NtShutdownSystem API重启计算机后，Windows启动管理器可识别出新的启动序列（随后删除之前设置的BCD选项）。Winlogon会将前一个启动项标记为“良好”，随后重启动系统。</p>
+<p class="zwtsh">实验：操作现代启动菜单</p>
+<p class="zwts1">在Csrss启动后，由Winlogon生成的现代启动菜单应用程序实际上是一种经典的Win32 GUI应用程序。本实验将证明这一点。用配置为多重启动的系统执行该实验可以获得更好的效果，否则无法在现代启动菜单中看到多个启动项。</p>
+<p class="zwts1">打开一个非特权模式的命令提示符窗口（在开始菜单搜索框中输入cmd），使用cd /d C:\Windows\System32命令（其中C是启动卷的盘符）进入启动卷的\Windows\ System32路径。随后输入Bootim.exe并按下<strong style="color:#0092dd">回车键</strong>。然后可以看到一个类似现代启动菜单的界面，其中只显示了关闭计算机的选项。这是因为Bootim进程此时是使用非管理员特权的标准令牌（由用户账户控制生成）启动的。实际上，该进程并不能访问系统启动配置数据。按下Ctrl+Alt+Del组合键启动任务管理器并终止BootIm进程，或者直接选择“<strong style="color:#0092dd">关闭计算机</strong>”。实际的关机过程是由调用方进程（在原始启动序列中该进程是Winlogon）而非BootIm启动的。</p>
+<p class="zwts1">随后使用管理员特权打开命令提示符窗口。为此请右击其图标或搜索结果中的“<strong style="color:#0092dd">命令提示符</strong>”，并选择“<strong style="color:#0092dd">以管理员身份运行</strong>”。在新的命令提示符窗口中启动BootIm可执行文件，这一次即可看到真正的现代启动菜单，其中包含了所有启动选项和工具，类似下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1203.png" style="width: 100%" />
+<p class="zw">其他情况下，Winlogon都会等待LSASS进程和LSM服务的初始化。随后会产生一个新的DWM进程实例（桌面窗口管理器，用于绘制现代图形界面的组件），并将系统中已注册凭据提供程序（默认情况下，微软凭据提供程序支持基于密码、PIN码以及生物特征的登录）加载到一个名为LogonUI（%SystemRoot%\System32\Logonui.exe）的子进程中，该进程负责显示登录界面（有关Wininit、Winlogon和LSASS的启动序列的详细信息，请参阅卷1第7章）。</p>
+<p class="zw">启动LogonUI进程后，Winlogon会启动其内部的有限状态机。借此可以管理不同登录类型所产生的所有可能的状态，例如标准交互式登录、终端服务器、快速用户切换、Hiberboot。在标准的交互式登录类型中，Winlogon会显示一个欢迎界面并等待来自凭据提供程序的交互式登录通知（如果需要，还会配置SAS序列）。在用户提供了自己的凭据（密码、PIN码或生物特征验证信息）后，Winlogon会创建登录会话LUID，并使用在LSASS（有关该进程的详细信息可参阅卷1第7章）中注册的身份验证程序包验证该登录操作。即便身份验证失败，此时的Winlogon也会将当前的启动过程标记为“良好”。如果身份验证成功，对于客户端版本的Windows，Winlogon将验证“连续登录”场景，这种情况下每次只能产生一个会话；如果还存在其他的活跃会话，则会询问用户希望如何处理。随后它会从正在登录的用户配置文件中加载注册表配置单元并将其映射至HKCU，此外还会将所需的ACL添加到新会话的窗口站和桌面，并创建用户的环境变量，随后将这些变量存储到HKCU\Environment中。</p>
+<p class="zw">随后Winlogon会等待Sihost进程，并运行HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon\Userinit（可通过逗号分隔多个可执行文件）指定的一个或多个可执行文件来启动外壳。上述值默认会指向\Windows\System32\Userinit.exe。新建的Userinit进程运行在Winsta0\Default桌面上。Userinit.exe将执行下列操作。</p>
+<p class="zw">1）创建仅在每个会话内有效的Explorer Session键HKCU\Software\Microsoft\Windows\ CurrentVersion\Explorer\SessionInfo\。</p>
+<p class="zw">2）处理HKCU\Software\Policies\Microsoft\Windows\System\Scripts中指定的用户脚本以及HKLM\SOFTWARE\Policies\Microsoft\Windows\System\Scripts中指定的计算机登录脚本（计算机脚本是在用户脚本之后运行的，因此可以覆盖用户脚本中的设置）。</p>
+<p class="zw">3）运行HKCU\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\Shell中指定的以逗号分隔的一个或多个外壳。如果该值不存在，则Userinit.exe将运行HKLM\SOFTWARE\ Microsoft\Windows NT\CurrentVersion\Winlogon\Shell指定的一个或多个外壳，默认为Explorer.exe。</p>
+<p class="zw">4）如果组策略指定了用户配置文件配额，将启动%SystemRoot%\System32\Proquota. exe为当前用户应用配额。</p>
+<p class="zw">最后Winlogon会通知已注册的网络提供程序，告知用户已登录，并启动mpnotify.exe进程。微软的网络提供程序<sub>&nbsp;</sub>——<sub>&nbsp;</sub>多提供程序路由器（Multiple Provider Router，%SystemRoot%\ System32\Mpr.dll）将还原用户存储在HKCU\Network and HKCU\Printers下的持久映射驱动器和映射的打印机。图12-11展示了登录后在Process Monitor中看到的进程树（使用其启动功能）。请注意，Smss进程变暗了（意味着已经退出），这代表了初始化每个会话所生成的副本。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1210.png" style="width: 100%" />
+<p class="图题">图12-11　登录过程中涉及的进程</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":15,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"e7d48395-615a-4698-ac37-2acd5da113b2"}</p>

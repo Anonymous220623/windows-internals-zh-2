@@ -1,0 +1,43 @@
+<h3 class="bt3" id="sigil_toc_id_83">9.2.3　虚拟机的诞生</h3>
+<p class="zw">虚拟机的启动过程主要由VMMS和VMWP进程管理。当虚拟机（在内部由GUID标识）启动请求（通过PowerShell或Hyper-V管理器GUI应用程序）被传递给VMMS服务后，VMMS服务开始启动过程，从“数据存储”存储库中读取虚拟机的配置，这些配置包括虚拟机的GUID以及组成虚拟硬件的所有虚拟设备（VDEV）列表。随后该服务会验证包含了虚拟机虚拟磁盘的VHD（或VHDX）文件路径是否具备正确的访问控制列表（ACL，下文将详细介绍）。如果虚拟机配置所指定的ACL有误，VMMS服务（使用SYSTEM账户运行）会重写一个与新的VMWP进程实例兼容的新ACL。VMMS会使用COM服务与主机计算服务通信，以生成新的VMWP进程实例。</p>
+<p class="zw">主机计算服务通过查询位于&nbsp;Windows&nbsp;注册表（HKCU\CLSID\{f33463e0-7d59-11d9- 9916-0008744f51f3}键）中的COM注册数据获得虚拟机工作进程的路径，随后会使用一个明确定义的访问令牌新建进程，该访问令牌是以虚拟机的SID为所有者创建的。实际上，Windows安全模型的NT权威（NT Authority）定义了一个众所周知的子权威值（83），借此识别虚拟机（有关系统安全组件的详细信息请参阅卷1第7章）。主机计算服务会等待VMWP进程完成初始化（这样所暴露的COM接口即可准备就绪）。随后执行会返回至VMMS服务，该服务最终可以向VMWP进程请求启动虚拟机（通过暴露出的IVirtualMachine COM接口）。</p>
+<p class="zw">如图9-24所示，虚拟机工作进程会为虚拟机执行“冷启动”状态转换。在虚拟机工作进程中，整个虚拟机是通过“虚拟主板”公开的服务进行管理的。对于第一代虚拟机，该虚拟主板模拟了Intel i440BX主板；对于第二代虚拟机，则模拟了一种专有的主板。虚拟主板管理并维持了虚拟设备列表，并负责为每个虚拟设备执行状态转换。正如下一节即将介绍的，每个虚拟设备都会作为DLL中的COM对象（公开IVirtualDevice接口）来实现。虚拟主板会从虚拟机的配置中枚举每个虚拟设备，并加载代表每个设备的相关COM对象。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1402.png" style="width: 100%" />
+<p class="图题">图9-24　虚拟机工作进程及其执行虚拟机“冷启动”的接口</p>
+<p class="zw">虚拟机工作进程通过预留每个虚拟设备所需的资源来开始启动过程。然后它会通过VID驱动程序从根分区分配物理内存，借此构建虚拟机客户机物理地址空间（虚拟RAM）。这个阶段已经可以给虚拟主板上电，并按顺序给每个VDEV上电。每个设备的上电过程是不同的，例如合成设备通常会与自己的虚拟化服务提供程序（Virtualization Service Provider，VSP）通信以进行初始化配置。</p>
+<p class="zw">虚拟BIOS（在Vmchipset.dll库中实现）是一个值得深入讨论的虚拟设备。它的上电方法允许虚拟机包含可在启动自举（Bootstrap）虚拟处理器时执行的初始固件。BIOS VDEV会从支持自己的库所包含的资源部分为虚拟机提取正确的固件（第一代虚拟机使用传统的BIOS，其他虚拟机使用UEFI），构建固件中的易失性配置部分（如ACPI和SRAT表），随后使用VID驱动程序提供的服务将其注入适当的客户机物理内存中。VID驱动程序则可以将VID内存块描述的内存范围映射到用户模式内存中，供虚拟机工作进程访问（内部将该过程称为“内存孔隙创建”）。</p>
+<p class="zw">当所有虚拟设备已成功上电后，虚拟机工作进程将会向VID驱动程序发送一个适当的IOCTL，借此启动虚拟机的自举虚拟处理器，进而启动虚拟处理器及其消息泵（message pump，用于在VID驱动程序和虚拟机工作进程之间交换消息）。</p>
+<p class="zwtsh">实验：理解虚拟机工作进程以及虚拟磁盘文件的安全性</p>
+<p class="zwts1">上一节讨论了当虚拟机启动请求被（通过WMI）传递给VMMS进程后，主机计算服务（Vmcompute.exe）是如何启动虚拟机工作进程的。在与主机计算服务通信前，VMMS会为新的工作进程实例生成一个安全令牌。</p>
+<p class="zwts1">为向虚拟机提供正确的支持，Windows安全模型增加了三种新实体（Windows安全模型详见卷1第7章）。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> 一个“虚拟机”安全组，使用S-1-5-83-0作为安全标识符。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> 一个根据虚拟机的唯一标识符（GUID）生成的虚拟机安全标识符（SID）。虚拟机SID将会是为虚拟机工作进程所生成的安全令牌的所有者。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> 一种虚拟机工作进程安全能力，可用于让AppContainer中运行的应用程序访问虚拟机工作进程所需的Hyper-V服务。</p>
+<p class="zwts1">在这个实验中，我们将通过Hyper-V管理器，在一个只有当前用户和Administrators组的用户可以访问的位置新建一个虚拟机，随后我们将检查虚拟机文件和虚拟机工作进程的安全性会产生怎样的变化。</p>
+<p class="zwts1">首先以管理员身份打开命令提示符，并使用下列命令创建一个文件夹（本例为C:\TestVm）：</p>
+<pre class="代码无行号"><code>md c:\TestVm</code></pre>
+<p class="zwts1">随后需要剥离所有继承的ACE（访问控制项，详见卷1第7章），并为Administrators组和当前登录的用户添加完整访问的ACE。上述操作可通过如下命令实现（请将C:\TestVm替换为实际的目录路径，而&lt;UserName&gt;是当前登录用户的用户名）：</p>
+<pre class="代码无行号"><code>icacls c:\TestVm /inheritance:r 
+icacls c:\TestVm /grant Administrators:(CI)(OI)F 
+icacls c:\TestVm /grant &lt;<em><span class="1">UserName</span></em>&gt;:(CI)(OI)F </code></pre>
+<p class="zwts1">若要验证该文件夹具备正确的ACL，请打开资源管理器（可使用Win+E组合键），右键点击该文件夹并选择“<strong style="color:#0092dd">属性</strong>”，随后打开“<strong style="color:#0092dd">安全性</strong>”选项卡。此时应看到类似下图所示的界面。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1409.png" style="width: 100%" />
+<p class="zwts1">打开Hyper-V管理器并新建一个虚拟机（及对应的磁盘文件），将其存储在新创建的文件夹中（完整操作过程可参阅https://docs.microsoft.com/virtualization/hyper-v-on- windows/quick-start/create-virtual-machine）。对于这个实验，我们不需要为虚拟机安装操作系统。新建虚拟机向导运行完毕后，即可启动虚拟机（本例中为VM1）。</p>
+<p class="zwts1">以管理员身份打开Process Explorer并找到vmwp.exe进程。右键点击该进程，选择<strong>“</strong><strong style="color:#0092dd">属性</strong>”。毫无意外，我们可以看到其父进程为vmcompute.exe（主机计算服务）。打开<strong>“</strong><strong style="color:#0092dd">安全性</strong>”选项卡可以看到，虚拟机的SID已被设置为该进程的所有者，并且该令牌属于Virtual Machines这个组。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1417.png" style="width: 100%" />
+<p class="zwts1">该SID的构成方式可反映出虚拟机GUID。在本例中，虚拟机的GUID为{F156B42C- 4AE6-4291-8AD6-EDFE0960A1CE}（我们也可以使用PowerShell来验证这一点，详细方法请参阅“操作根调度器”实验）。GUID是一个16字节的序列，被组织成一个32位（4字节）整数、两个16位（2字节）整数，以及最后的8字节。上述例子中的GUID是按照如下方式组织的。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> 0xF156B42C是最开头的32位整数，用十进制表示则为4048991276。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> 0x4AE6和0x4291是随后的两个16位整数，结合在一起组成了一个32位值，值的内容为0x42914AE6，即十进制的1116818150（注意：系统是小端序的，重要性不大的字节位于较低的地址上）。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> 最后的字节序列为0x8A、0xD6、0xED、0xFE、0x09、0x60、0xA1以及0xCE（人工易读的GUID中的第三部分：8AD6，这是一个字节序列，而非一个16位的值），这些字节会合并为两个32位值：0xFEEDD68A和0xCEA16009，也就是十进制的4276999818和3466682377。</p>
+<p class="zwts1">如果将计算出的所有十进制数字与NT权威发出的常规SID标识符（S-1-5）以及虚拟机基准RID（83）结合在一起，应该就能获得与Process Explorer中所示相同的SID（本例中为S-1-5-83-4048991276-1116818150-4276999818-3466682377）。</p>
+<p class="zwts1">正如在Process Explorer中看到的，VMWP进程的安全令牌不包含Administrators组，并且也不是代表当前登录的用户创建而来的。那么虚拟机工作进程又为何可以访问虚拟磁盘以及虚拟机配置文件？</p>
+<p class="zwts1">答案就藏在VMMS进程中，在创建虚拟机时，该进程会扫描虚拟机路径上的每个组件，并修改所需文件夹和文件的DACL。尤其是虚拟机根文件夹（根文件夹名称与虚拟机名称相同，因此应该可以在所创建的目录下找到一个与虚拟机同名的子文件夹）的正确访问，这要归功于所添加的虚拟机安全组ACE。虚拟磁盘文件的正常访问则要归功于为虚拟机SID提供的允许访问ACE。</p>
+<p class="zwts1">我们可以使用资源管理器验证这一点：打开虚拟机的虚拟磁盘文件夹（名为Virtual Hard Disks，位于虚拟机根文件夹中），右击VHDX（或VHD文件）并选择“<strong style="color:#0092dd">属性</strong>”，随后打开“<strong style="color:#0092dd">安全性</strong>”选项卡。除了最初设置的ACE，我们应该可以看到两个新增的ACE（一个是虚拟机ACE，另一个是适用于AppContainer的VmWorker进程能力）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1424.png" style="width: 100%" />
+<p class="zwts1">如果停止虚拟机并尝试从文件中删除虚拟机ACE，随后该虚拟机就无法再启动了。要将虚拟磁盘还原为正确的ACL，请运行这个PowerShell脚本：https://gallery.technet. microsoft.com/Hyper-V-Restore-ACL-e64dee58。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"27c847dd-3f08-4fa4-ad0f-10c10f9d2714","id":"4036710e-71fc-4606-9cb0-839b766e1f9f"}</p>

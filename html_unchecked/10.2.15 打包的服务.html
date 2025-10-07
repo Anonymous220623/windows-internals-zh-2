@@ -1,0 +1,5 @@
+<h3 class="bt3" id="sigil_toc_id_137">10.2.15　打包的服务</h3>
+<p class="zw">正如上文“服务登录”一节所述，从Windows 10创作者更新（RS1）开始，服务控制管理器就已支持打包的服务（packaged service）。打包的服务可通过服务类型中设置的SERVICE_PKG_SERVICE (512)标记进行区分。在设计上，打包的服务主要是为了支持标准Win32桌面应用程序（可能会配合相关服务一起运行）转换而来的全新现代应用程序模型。桌面应用程序转换器可将Win32应用程序转换为Centennial应用，通过一个轻量级容器（内部称为Helium）运行。有关现代应用程序模型的更多信息请参阅第8章的“打包的应用程序”一节。</p>
+<p class="zw">在启动打包的服务时，SCM会从注册表读取程序包信息，随后和标准的Centennial应用程序一样，会调用AppInfo服务。后者会验证程序包信息是否存在于状态存储库中，并验证应用程序所有程序包文件的完整性。接着AppInfo服务会使用正确的安全特性为新服务的托管进程令牌添加戳记。接着使用CreateProcessAsUser API（以及Package Full Name特性）以暂停状态启动进程并创建Helium容器，由这个容器像处理常规Centennial应用程序那样为打包的服务应用注册表重定向和虚拟文件系统（VFS）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":14,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"4a98cb3b-8c44-426d-a762-f182ecbd7131"}</p>

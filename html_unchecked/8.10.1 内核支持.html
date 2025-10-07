@@ -1,0 +1,59 @@
+<h3 class="bt3" id="sigil_toc_id_55">8.10.1　内核支持</h3>
+<p class="zw">内核通过上文提到的调试对象为用户模式的调试提供了支持。调试对象提供了一系列系统调用，其中大部分可直接映射至Windows调试API，而这些API通常可先通过DbgUi层访问。调试对象本身的构造极为简单，包含一系列用于决定状态的标记、一个向任何等待方通知调试器事件已存在的事件、一个由等待处理的调试事件组成的双链表，以及一个用于锁定对象的快速互斥。内核只需要这些信息即可成功地接收并发送调试器事件，而每个被调试进程都在自己的执行体进程结构中包含一个指向该调试对象的调试端口号。</p>
+<p class="zw">一旦进程获得相关的调试端口，表8-32所列出的事件即可导致调试事件被插入事件列表中。</p>
+<p class="表题">表8-32　内核模式调试事件</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">事件标识符</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+   <th> <p class="bt">触发者</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgKmExceptionApi</p> </td> 
+   <td> <p class="bg">出现了一个异常</p> </td> 
+   <td> <p class="bg">用户模式异常发生期间的KiDispatchException</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgKmCreateThreadApi</p> </td> 
+   <td> <p class="bg">新线程已创建</p> </td> 
+   <td> <p class="bg">用户模式线程的启动</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgKmCreateProcessApi</p> </td> 
+   <td> <p class="bg">新进程已创建</p> </td> 
+   <td> <p class="bg">如果EPROCESS中尚未设置CreateReported标记，则启动第一个并且处于用户模式的线程</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgKmExitThreadApi</p> </td> 
+   <td> <p class="bg">一个线程已退出</p> </td> 
+   <td> <p class="bg">如果ETHREAD中已经设置了ThreadInserted标记，则是用户模式线程的终止</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgKmExitProcessApi</p> </td> 
+   <td> <p class="bg">一个进程已退出</p> </td> 
+   <td> <p class="bg">如果ETHREAD中已经设置了ThreadInserted标记，则是进程中最后一个用户模式线程的终止</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgKmLoadDllApi</p> </td> 
+   <td> <p class="bg">一个DLL已加载</p> </td> 
+   <td> <p class="bg">如果TEB中尚未设置SuppressDebugMsg标记，且当节是映像文件（也可以是EXE文件）时，则是NtMapViewOfSection</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgKmUnloadDllApi</p> </td> 
+   <td> <p class="bg">一个DLL已卸载</p> </td> 
+   <td> <p class="bg">如果TEB中尚未设置SuppressDebugMsg标记，且当节是映像文件（也可以是EXE文件）时，则是NtUnmapViewOfSection</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgKmErrorReportApi</p> </td> 
+   <td> <p class="bg">一个用户模式异常必须转发给WER</p> </td> 
+   <td> <p class="bg">如果&nbsp;DbgKmExceptionApi&nbsp;消息返回了&nbsp;DBG_EXCEPTION_NOT_ HANDLED，这种特殊情况的消息将通过ALPC发送，而不使用调试对象，这样WER即可接管异常的处理工作</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">除了表8-32中提到的原因，在调试器对象首次与进程建立关联后，除了上述常规情况外，还可能触发几种特殊情况。在连接调试器后，第一个Create process和Create thread消息将以手动方式发送，首先针对进程本身及其主线程发送；然后为进程中所有的其他线程发送Create thread消息；最后为被调试的可执行文件发送Load DLL事件，可从Ntdll.dll开始发送，再为被调试进程当前加载的每个DLL发送。类似地，如果调试器已经连接，但创建了克隆的进程（分叉），那么还会为克隆进程中的第一个线程发送相同的事件（因为克隆的地址空间中不仅包含Ntdll.dll，也包含其他已加载的DLL）。</p>
+<p class="zw">此外，还可以为线程设置一个特殊标记，该标记名为Hide from debugger（对调试器隐藏），可在线程创建时设置或动态地设置。开启该标记后，会导致TEB中的HideFromDebugger标记被设置，随后即使连接了调试端口，当前线程执行的所有操作也不会引发调试器消息。</p>
+<p class="zw">一旦调试器对象与进程相关联，该进程就会进入深度冻结状态，这同样适用于UWP应用程序。需要注意的是，这会让所有线程暂停运行，并阻止创建任何新的远程线程。在这一点上，调试器的责任是开始请求将调试事件发送过来。调试器通常会针对调试对象执行等待，借此请求将调试事件发送回用户模式。这样即可让该调用在调试事件列表中循环进行。随着每个请求从列表中移除，其内容会从内部DBGK结构转换为下一层可以理解的原生结构。这种结构也不同于Win32结构，因此还需要进行另一层转换。即使所有挂起的调试信息被调试器处理完毕后，内核也不会自动恢复进程的运行。此时需要由调试器负责调用ContinueDebugEvent函数以恢复执行。</p>
+<p class="zw">除了对某些多线程问题进行复杂处理外，该框架的基本模型其实非常简单：生成方+使用方，其中生成方会通过内核中的代码生成表8-32中所列出的调试事件，而使用方则是等待这些事件并在收到事件后加以确认的调试器。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"558e2097-f40f-4c13-ae16-2a36e72d6cab","id":"43bfe605-efb4-481d-a1d7-92ed4b2802a3"}</p>

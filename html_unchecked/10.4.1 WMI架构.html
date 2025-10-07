@@ -1,0 +1,11 @@
+<h3 class="bt3" id="sigil_toc_id_144">10.4.1　WMI架构</h3>
+<p class="zw">如图10-27所示，WMI包含四个主要组件：管理应用程序、WMI基础架构、提供程序及托管对象。管理应用程序是指那些可以访问、显示或处理与托管对象有关数据的Windows应用程序。管理应用程序的例子有很多，利用WMI而非性能API来获取性能信息的性能工具就是一种简单的管理应用程序；能够自动盘点企业中每台计算机软硬件配置的企业管理工具，则是一种比较复杂的管理应用程序。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2423.png" style="width: 100%" />
+<p class="图题">图10-27　WMI架构</p>
+<p class="zw">开发者在管理应用程序时，通常需要收集并管理特定对象所产生的数据。这种对象可能是某一个组件，如网络适配器设备；也可能是一系列组件，如一整台计算机（计算机对象可能包含了网络适配器对象）。为此需要通过编写提供程序定义并导出管理应用程序所关注的对象的具体呈现。例如，网络适配器供应商可能希望在Windows包含的网络适配器WMI类中添加与特定适配器有关的属性，借此按照管理应用程序的指示查询并设置适配器的状态和行为。某些情况下（例如对设备驱动程序来说），微软提供了一个有着自己API的提供程序，借此帮助开发者以最小的开发工作量让自己管理的对象能更充分地利用系统实现的提供程序。</p>
+<p class="zw">WMI基础架构的核心是通用信息模型（Common Information Model，CIM）对象管理器（CIMOM），它充当了管理应用程序和提供程序之间的“黏合剂”（CIM的详细介绍请参阅本章下文）。该基础架构本身也是一种对象类存储，很多情况下，还可作为持久性对象属性的存储管理器。WMI通过一种保存在磁盘上，名为CIMOM对象存储库的数据库实现了存储（即存储库）。作为这种基础架构的一部分，WMI可支持多种API，借此让管理应用程序访问对象数据，并让提供程序提供数据和类定义。</p>
+<p class="zw">Windows程序和脚本（如Windows PowerShell）使用WMI COM API作为最主要的管理API，这样就可以与WMI直接交互。COM API基础上还衍生出其他API，甚至包括一个适用于Microsoft Access数据库应用程序的开放数据库连接（Open Database Connectivity，ODBC）适配器。数据库开发者可以使用WMI ODBC适配器在自己的数据库中嵌入可引用的对象数据。随后，开发者即可使用包含WMI数据的数据库查询轻松创建报告。WMI ActiveX控件还支持另一层API，Web开发者可通过ActiveX控件构建基于Web的WMI数据接口。WMI脚本API则是另一种管理API，可用于基于脚本的应用程序（如Visual Basic Scripting Edition）中。微软的所有编程语言技术均支持WMI脚本。</p>
+<p class="zw">WMI COM接口适用于管理应用程序，它们构成了提供程序的主要API。然而，与COM客户端形式的管理应用程序不同，提供程序是一种COM或分布式COM（DCOM）服务器（也就是说，提供程序实现了可与WMI交互的COM对象）。WMI提供程序可行的实施方案包括载入WMI管理器进程的DLL、独立的Windows应用程序，或Windows服务。微软提供了一系列系统自带的提供程序，借此呈现一些众所周知来源的数据，例如性能API、注册表、事件管理器、活动目录、SNMP以及现代设备驱动程序。开发者可通过WMI SDK开发第三方WMI提供程序。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"ec163a78-fcab-4693-8b52-1929b927085a","id":"a7b0d72c-3ca2-4934-88bf-8baafc422652"}</p>

@@ -1,0 +1,37 @@
+<h3 class="bt3" id="sigil_toc_id_287">11.13.11　联机磁盘检查和快速修复</h3>
+<p class="zw">在一些罕见的情况下，磁盘损坏不受NTFS驱动程序（通过自治愈、日志文件服务等机制）的管理，需要系统运行Windows磁盘检查工具并让卷脱机。造成磁盘损坏的原因有很多：硬盘的存储介质出错以及瞬时内存错误等，文件系统的元数据可能会因此而损坏。对于装有多个TB级容量硬盘的大型文件服务器，完整运行磁盘检查工具可能需要数天的时间。在这种环境中，让卷长时间脱机往往是不可接受的。</p>
+<p class="zw">在Windows 8之前，NTFS实现了一种更简单的健康模型，其中文件系统卷或者是健康的，或者是不健康的（通过存储在$VOLUME_INFORMATION属性中的脏位来识别）。在该模型中，只要需要，就会将卷脱机，直到修复损坏的文件系统，随后将卷重新恢复到健康状态为止。脱机时间与卷中存储的文件数量成正比。为了减少或避免因文件系统损坏而导致的停机，Windows 8重新设计了NTFS的健康模型和磁盘检查机制。</p>
+<p class="zw">新模型引入了新的组件，这些组件相互配合提供了联机磁盘检查工具，可大幅缩短文件系统严重损坏所造成的停机时间。NTFS驱动程序可以在常规的系统I/O过程中识别出多种类型的损坏。如果检测到损坏，则NTFS会试图进行自治愈（参见上一节）。如果不成功，则NTFS驱动程序会在\$Extend\$RmMetadata\$Repair文件的$Verify流中写入一个新的损坏记录。</p>
+<p class="zw">这种损坏记录是一种通用数据结构，NTFS可借此描述内存中和磁盘上的元数据损坏。损坏记录由一个固定大小的头部来表示，其中包含版本信息、标记、通过GUID代表的唯一记录类型、可变大小的损坏类型描述，以及可选的上下文。</p>
+<p class="zw">损坏记录项正确添加后，NTFS会通过自己的事件提供程序（名为Microsoft-Windows- Ntfs-UBPM）发出一条ETW事件。该ETW事件由服务控制管理器使用，借此启动Spot Verifier服务（有关触发启动服务的详情请参阅第10章）。</p>
+<p class="zw">Spot Verifier服务（实现于Svsvc.dll库中）会验证发出的损坏信号是否是误报（一些损坏是内存问题导致的间歇性损坏，可能并非磁盘真的损坏了）。Spot Verifier进行验证的同时会删除$Verify&nbsp;流中的项。如果项所描述的损坏并非误报，则&nbsp;Spot Verifier&nbsp;会触发卷$VOLUME_INFORMATION属性中的主动扫描位（Proactive Scan Bit，P-bit），进而触发对文件系统的联机扫描。联机扫描由主动式扫描程序（Proactive Scanner）执行，是作为一种维护任务由Windows任务计划程序在适当的时候运行的（该任务位于Microsoft\ Windows\Chkdsk下，如图11-66所示）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/1166.png" style="width: 100%" />
+<p class="图题">图11-66　主动式扫描维护任务</p>
+<p class="zw">主动式扫描程序实现于Untfs.dll库中，会被Windows磁盘检查工具（Chkdsk.exe）导入。当主动式扫描程序运行时，它会通过卷影复制服务为目标卷创建快照，并针对影子卷完整运行磁盘检查工具。影子卷是只读的，磁盘检查代码可以识别出这一点，因此不会直接修复找到的错误，而是会尝试使用NTFS的自治愈功能自动修复错误。如果修复失败，则它会向文件系统驱动程序发送FSCTL_CORRUPTION_HANDLING代码，进而在元数据文件\$Extend\$RmMetadata\$Repair的$Corrupt流中创建一个项，并设置该卷的脏位。</p>
+<p class="zw">与之前版本的Windows相比，脏位的含义略有不同。NTFS根命名空间的$VOLUME_ INFORMATION属性依然包含脏位，也包含P位，借此可要求进行主动式扫描；此外还包含F位，可用于对出现严重损坏的卷执行完整的磁盘检查。如果P位或F位被启用，或$Corrupt流包含一条或多条损坏记录，那么文件系统驱动程序会将该脏位设置为1。</p>
+<p class="zw">如果损坏依然未能解决，那么在卷已脱机的情况下，已经无法通过其他方法来修复了（但未必需要立即卸载该卷）。Spot Fixer是一个新增组件，被磁盘检查工具和Autocheck工具所共享。Spot Fixer可以使用由主动式扫描程序插入$Corrupt流的记录。启动时，Autocheck原生应用程序检测到卷是脏的，但此时并不进行完整的磁盘检查，而是只修复$Corrupt流中的损坏项，这个操作只需要几秒。图11-67展示了上文介绍过的NTFS各组件实现的不同修复方法。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/1167.png" style="width: 100%" />
+<p class="图题">图11-67　多种组件为NTFS卷的联机磁盘检查和快速故障修复提供的不同方案</p>
+<p class="zw">主动式扫描可通过chkdsk /scan命令手工启动。通过类似的方式，我们也可以使用命令行参数/spotfix让磁盘检查工具执行Spot Fixer。</p>
+<p class="zwtsh">实验：测试联机磁盘检查</p>
+<p class="zwts1">我们可以通过一个简单的实验来测试联机磁盘检查。假设要针对D:卷执行联机磁盘检查，可以先从D盘播放一个较大的视频流。同时以管理员身份打开命令提示符窗口，并通过下列命令启动联机磁盘检查：</p>
+<pre class="代码无行号"><code>C:\&gt;chkdsk d: /scan 
+The type of the file system is NTFS. 
+Volume label is DATA. 
+　
+Stage 1: Examining basic file system structure ... 
+  4041984 file records processed. 
+File verification completed. 
+  3778 large file records processed. 
+  0 bad file records processed. 
+　
+Stage 2: Examining file name linkage ... 
+Progress: 3454102 of 4056090 done; Stage: 85%; Total: 51%; ETA: 0:00:43 .. </code></pre>
+<p class="zwts1">随后会发现，视频流不会停止，依然可以流畅播放。如果联机磁盘检查发现了故障并且无法在卷挂载的情况下修复，它会在系统文件$Repair的$Corrupt流中插入记录。为修复错误，需要卸载卷，但修复过程的速度非常快。在这种情况下，只需重启动计算机或</p>
+<p class="zwts1">通过命令行手动执行Spot Fixer即可：</p>
+<pre class="代码无行号"><code>C:\&gt;chkdsk d: /spotfix </code></pre>
+<p class="zwts1">如果选择执行Spot Fixer，此时视频流的播放会被中断，因为卷需要卸载。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":10,"parentId":"244f39ce-6f59-4168-9f84-d031b04d0916","id":"e1c6b45c-a79a-44f8-a126-da62534fdfd3"}</p>

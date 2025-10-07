@@ -1,0 +1,46 @@
+<h1 class="bt1">前  言</h1>
+<p class="zw">《深入解析Windows操作系统》（第7版）（卷2）主要面向希望了解Microsoft Windows 10（截至并包括2021年5月更新，即21H1）与Windows Server（从Server 2016直至Server 2022）操作系统核心组件，包括Windows 11X及Xbox操作系统共用的众多内部组件工作原理的高级计算机专业人员（开发者、安全研究人员和系统管理员）。</p>
+<p class="zw">首先，借助这些知识，开发者在针对特定Windows平台构建应用程序时可以更好地理解各种设计抉择背后的原理，并通过更好的决策打造更强大、可扩展性和安全性更高的软件。读者还可借此增强针对系统核心组件遇到的复杂问题进行调试的技能，同时了解能在其他方面令自己获益的各类工具。</p>
+<p class="zw">其次，这些信息也能让系统管理员获益匪浅，因为了解操作系统的底层工作原理有助于更好地理解系统的预期性能和行为，当遇到问题后，这些知识有助于简化排错工作，并能围绕表面现象更好地解决各种关键问题。</p>
+<p class="zw">最后，安全研究人员可以更好地发现应用程序和操作系统中的异常行为、滥用以及其他非预期行为，同时更好地理解现代化Windows操作系统针对这些情况提供的缓解措施和安全功能。取证专家可以借此了解应该使用哪些数据结构和机制找出篡改的迹象，以及Windows本身如何检测这些行为。</p>
+<p class="zw">通过阅读本书，读者将能更好地理解Windows的工作原理及其背后的原因。</p>
+<h2 class="bt2 sigil_not_in_toc">本书历史版本</h2>
+<p class="zw">本书是第7版，第1版名为<em>Inside Windows NT</em>（Microsoft Press，1992），由海伦·卡斯特（在Windows NT 3.1首发前）撰写。<em>Inside Windows NT</em>是市面上有关Windows NT的第一本书，针对系统架构和设计提供了很多重要见解。<em>Inside Windows NT</em>（第2版）（Microsoft Press，1998）由大卫·所罗门执笔，通过涵盖有关Windows NT 4.0的内容对第1版图书进行更新，同时技术深度也进一步增加。</p>
+<p class="zw"><em>Inside Windows 2000</em>（第3版）（Microsoft Press，2000）由大卫·所罗门和马克·鲁辛诺维奇联手撰写。其中增加了很多新话题，例如启动和关机、服务内部原理、注册表内部原理、文件系统驱动程序以及网络，还介绍了Windows 2000在内核方面的变化，如Windows驱动程序模型（WDM）、即插即用、电源管理、Windows管理规范（WMI）、加密、作业对象以及终端服务。<em>Windows Internals</em>（第4版）（Microsoft Press，2004）包含了有关Windows XP和Windows Server 2003的更新内容，并增加了有助于IT专业人员运用已掌握的Windows内部原理知识来解决问题的内容，如Windows SysInternals重要工具的使用，以及崩溃转储分析。</p>
+<p class="zw"><em>Windows Internals</em>（第5版）（Microsoft Press，2009）更新了与Windows Vista和Windows Server 2008有关的内容。当时马克·鲁辛诺维奇已成为微软全职员工（现在他是Azure的CTO），他在编写该版的过程中邀请了一位新合作者亚历克斯·伊奥尼斯库。新增内容包括映像加载器、用户模式调试设施、高级本地过程调用（Advanced Local Procedure Call，ALPC）及Hyper-V。随后出版的<em>Windows Internals</em>（第6版）（Microsoft Press，2012）经历了彻底更新，包含与Windows 7和Windows Server 2008 R2内核变化有关的大量内容，同时通过新增的动手实验介绍了相关工具的变化。</p>
+<h2 class="bt2 sigil_not_in_toc">第7版的变化</h2>
+<p class="zw">由于书稿篇幅已超出现代印刷出版的限制，本书第6版首次拆分成两卷，这使得作者能够更快速地将部分内容首先出版（卷1于2012年3月出版，卷2于2012年9月出版）。然而，当时的分卷完全基于页数，不同章节的整体安排顺序与之前的版本完全相同。</p>
+<p class="zw">自第6版发布后，微软开始了操作系统的“统一”，并首先为Windows 8和Windows Phone 8使用了统一的内核，最终通过Windows 8.1、Windows RT和Windows Phone 8.1引入了现代化应用程序环境。这一愿望在Windows 10上终于实现了——Windows 10已经可以运行在台式机、笔记本电脑、手机、服务器、Xbox One游戏机、HoloLens以及各种物联网（IoT）设备上。操作系统的“统一”得以顺利实现，是时候更新本书内容了，新版终于全面涵盖了近五年来的所有变化。</p>
+<p class="zw">在本书的第7版（Microsoft Press，2017）中，帕维尔·约西沃维奇首次参与到本书的撰写工作中，他接替了大卫·所罗门作为“微软局内人”的角色，并负责本书的整体管理。而亚历克斯·伊奥尼斯库也像马克那样将主要精力转向CrowdStrike（现已成为端点工程部门的副总裁）。因此帕维尔决定重构本书章节，以便让上下两卷能够更合理地整合书稿内容，而不至于让读者必须等待卷2出版后才能理解卷1中所涉及的概念。这也使得卷1的内容完全能够独立成章，并向读者介绍了有关Windows 10系统架构、进程管理、线程调度、内存管理、I/O处理，以及用户、数据和平台安全性等诸多关键概念。卷1涵盖了Windows 10（截至并包含版本1703，即2017年5月的更新）以及Windows Server 2016的新内容。</p>
+<h2 class="bt2 sigil_not_in_toc">卷2的变化</h2>
+<p class="zw">随着亚历克斯·伊奥尼斯库和马克·鲁辛诺维奇的时间被全职工作所占据，而帕维尔也开始参与其他项目，本书第7版的卷2多年来一直在寻找新的作者。安德里亚·阿列维最终挺身而出，继续创作并完成了该系列的后续内容，对此其他合作者表示万分感谢。与之前的合作者类似，安德里亚也能全面访问微软的源代码，同时他还是Windows操作系统内核团队的专职开发者，这在本书历史上还是头一次。在亚历克斯的建议和指导下，安德里亚顺利完成了撰写工作，并将自己的愿景融入这一系列图书中。</p>
+<p class="zw">在意识到有关网络和崩溃转储分析等话题的章节已不再被当今读者所关注后，安德里亚围绕Hyper-V增加了一些激动人心的新内容。无论是Azure或客户端操作系统，如今Hyper-V已成为Windows平台战略的关键部分。该章节详细介绍了完全重写的引导过程和ReFS、DAX等全新存储技术，讨论了系统和管理机制的扩展更新，并通过全面更新的动手实验内容帮助读者更好地运用新的调试器技术和相关工具。</p>
+<p class="zw">卷1和卷2较长的出版间隔时间使得本书能够实现彻底更新，本书涵盖了Windows 10最新的公开发布版本，即版本2104（2021年5月更新/21H1），以及Windows Server 2019和2022。借此，读者就不会因为漫长的间隔而只能获得“落后”的信息。由于Windows 11以完全相同的操作系统内核为基础构建，读者同样能为这个新发布的系统版本做好充分准备。</p>
+<h2 class="bt2 sigil_not_in_toc">动手实验</h2>
+<p class="zw">即使无法访问Windows源代码，我们依然可以通过内核调试器、Sysinternals工具以及专为本书开发的其他工具一窥Windows的内部工作原理。如果可以通过某个工具查看或呈现Windows的某些内部行为，那么本书会在正文的“实验”环节中列出可供读者通过这些工具自行尝试的步骤。本书包含了大量此类实验，希望读者在阅读的同时能够自行尝试。切实了解Windows的内部工作原理有助于读者深刻理解本书的内容。</p>
+<h2 class="bt2 sigil_not_in_toc">本书未涵盖的主题</h2>
+<p class="zw">Windows是一个庞大的、复杂的操作系统。本书并不能涵盖与Windows内部原理有关的所有内容，而主要侧重于最基本的系统组件。例如，本书并未介绍COM+这一Windows分布式面向对象的编程基础架构，也并未介绍Microsoft .NET Framework这种托管代码应用程序的基础框架。这是一本介绍“内部原理”的书，而非面向普通用户、程序员或系统管理员的书，因此，本书并不会介绍如何使用、编程或配置Windows。</p>
+<h2 class="bt2 sigil_not_in_toc">注意事项</h2>
+<p class="zw">本书介绍了Windows操作系统很多未公开的内部架构和操作行为（如内核结构和函数），因此在不同的版本之间这些内容可能有所变化。此处的“可能有所变化”并不是指本书中描述的细节肯定会在不同的版本中出现变化，而是指读者应做好可能有变化的心理准备。任何使用这些未公开接口或操作系统内部知识的软件，都可能无法在Windows后续版本中正常运行。更糟的是，在内核模式下运行的软件（如设备驱动程序）以及使用了这些未公开接口的软件在以后的新版Windows中运行可能会导致系统崩溃，甚至可能导致这些软件的用户数据丢失。</p>
+<p class="zw">简而言之，在为终端用户系统开发任何类型的软件，或出于研究和学习之外的其他目的时，绝不应该使用本书提到的任何Windows内部功能、注册表键、行为、API或其他未公开的细节。对于任何具体话题，建议始终优先以微软软件开发网络（MSDN）提供的正式文档为准。</p>
+<h2 class="bt2 sigil_not_in_toc">阅读本书的前提</h2>
+<p class="zw">本书假设读者对Windows具备高级使用经验，并对CPU寄存器、内存、进程以及线程等操作系统和硬件概念有基本了解。如果读者对函数、指针以及类似的C语言构造有所了解，那么可以更好地理解本书的某些内容。</p>
+<h2 class="bt2 sigil_not_in_toc">本书内容</h2>
+<p class="zw">本书分为两卷（与第6版一样），读者目前阅读的是第7版的卷2。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 第8章“系统机制”，介绍了操作系统为设备驱动程序和应用程序提供关键服务所需的重要内部机制，如ALPC、对象管理器、同步例程。此外还介绍了运行Windows的硬件架构细节，包括陷阱处理、分段、侧信道漏洞以及解决这些问题的缓解措施。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 第9章“虚拟化技术”，介绍了Windows操作系统如何通过现代处理器提供的虚拟化技术让用户在同一个系统中创建并使用多个虚拟机。Windows还广泛使用虚拟化技术以提供更高的安全性，因此本章还全面讨论了安全内核与隔离用户模式。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 第10章“管理、诊断和跟踪”，详细介绍了操作系统为进行管理、配置和诊断所实现的底层机制细节，尤其是Windows注册表、Windows服务、WMI和任务计划，以及诸如Windows事件跟踪（ETW）和DTrace等诊断服务。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 第11章“缓存和文件系统”，介绍了最重要的“存储”组件（即缓存管理器和文件系统驱动程序）如何通过交互为Windows提供以高效、故障安全（fault-safe）的方式处理文件、目录和磁盘设备的能力。本章还介绍了Windows所支持的文件系统，尤其是NTFS和ReFS。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 第12章“启动和关机”，介绍了系统启动和关机过程中的完整操作流程，以及引导过程中涉及的操作系统组件。本章还分析了由UEFI带来的新技术，如安全启动、测量启动以及安全运行。</p>
+<h2 class="bt2 sigil_not_in_toc">关于本书的随附资源</h2>
+<p class="zw">你可以通过以下网址下载本书的配套学习资源：MicrosoftPressStore.com/ WindowsInternals7ePart2/downloads。</p>
+<h2 class="bt2 sigil_not_in_toc">致谢</h2>
+<p class="zw">本书包含复杂的技术细节以及相关推理，这些往往很难从“局外人”的角度来描述和理解。纵观其出版历史，本书的价值之一在于，始终能向局外人提供逆向工程的视角，同时能得到微软内部承包商或员工的帮助，填补空白，并提供微软内部积累的知识和Windows操作系统背后丰富的开发与发展历史。在卷2的写作过程中，作者要感谢安德里亚·阿列维的加入，作为主要作者，他帮助并推动了本书大部分内容的撰写和更新工作。</p>
+<p class="zw">除了安德里亚，本书的成功也要感谢微软公司Windows开发团队的关键成员、微软公司的其他专家，以及同事、朋友和不同领域专家的审阅、反馈和支持，否则本书将无法实现目前这样的技术深度和准确性。</p>
+<p class="zw">尤其是全新撰写的第9章“虚拟化技术”，正是在Alexander Grest和Jon Lange的帮助下才能如此完善且详细。他们都是相关领域内世界知名的专家，值得在此特别感谢，尤其是他们还花了多天时间帮助安德里亚理解晦涩的虚拟机监控程序和安全内核中大部分功能的内部细节。</p>
+<p class="zw">亚历克斯希望特别感谢Arun Kishan、Mehmet Iyigun、David Weston以及Andy Luhrs对本书的持续宣传和推荐，同时亚历克斯以“局内人”身份获得的人脉和信息也让本书的准确性和完整性再上新高。</p>
+<p class="zw">此外，我们还想感谢下列人员为本书提供的技术审阅和反馈，以及给予我们的其他帮助和支持：Saar Amar、Craig Barkhouse、Michelle Bergeron、Joe Bialek、Kevin Broas、Omar Carey、Neal Christiansen、Chris Fernald、Stephen Finnigan、Elia Florio、James Forshaw、Andrew Harper、Ben Hillis、Howard Kapustein、Saruhan Karademir、Chris Kleynhans、John Lambert、Attilio Mainetti、Bill Messmer、Matt Miller、Jake Oshins、Simon Pope、Jordan Rabet、Loren Robinson、Arup Roy、Yarden Shafir、Andrey Shedel、Jason Shirk、Axel Souchet、Atul Talesara、Satoshi Tanda、Pedro Teixeira、Gabrielle Viala、Nate Warfield、Matthew Woolman和Adam Zabrocki。</p>
+<p class="zw">我们还想感谢Hex-Rays（http://www.hex-rays.com）的Ilfak Guilfanov为亚历克斯·伊奥尼斯库提供了IDA Pro Advanced和Hex-Rays软件许可，包括最新版本的终生使用许可，这款宝贵的工具帮助我们加快了对Windows内核进行逆向工程的速度。Hex-Rays团队针对反编译器功能的持续支持和版本更新让亚历克斯能够在没有源代码的情况下顺利完成本书的编写。</p>
+<p class="zw">最后，我们还想感谢Microsoft Press（Pearson）的员工，本书的顺利出版离不开他们的帮助。从2018年签署出版合同到两年半后最终成书，Loretta Yates、Charvi Arora以及相关支持人员的无限耐心都值得特别感谢。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":6,"parentId":"root","id":"f7255e5a-4c0c-4d5c-b060-859be633664d"}</p>

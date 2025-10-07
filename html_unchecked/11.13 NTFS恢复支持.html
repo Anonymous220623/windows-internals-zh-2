@@ -1,0 +1,6 @@
+<h2 class="bt2" id="sigil_toc_id_276"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 11.13　NTFS恢复支持</h2>
+<p class="zw">NTFS恢复支持保证了在发生断电或系统故障的情况下，不会让任何文件系统操作（事务）处于未完成的状态，并且无须运行磁盘的修复工具亦可保持磁盘卷结构的完整。NTFS Chkdsk工具可用于修复因I/O错误（如磁盘坏扇区、电气异常或磁盘故障）或软件Bug导致的灾难性磁盘损坏。但在NTFS恢复功能的支持下，已经很少需要使用Chkdsk了。</p>
+<p class="zw">如上文“可恢复性”一节所述，NTFS借助事务处理方案来实现可恢复性。这种策略保证，即使非常大的磁盘，也可以用非常快的速度（在几秒内）实现全磁盘恢复。NTFS的恢复过程仅限文件系统数据，这确保了用户不会因为文件系统错误而丢失整个卷，除非应用程序采取特定操作（例如将缓存文件刷新到磁盘），NTFS的恢复支持无法保证用户数据在崩溃后可以完整更新，这项工作是由事务型NTFS（TxF）负责的。</p>
+<p class="zw">下文详细介绍了NTFS用于记录文件系统数据结构改动的事务日志方案，并将介绍NTFS如何在系统故障后恢复卷。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":12,"parentId":"12042f06-13bb-4487-b2cc-12b9114bd68f","id":"244f39ce-6f59-4168-9f84-d031b04d0916"}</p>

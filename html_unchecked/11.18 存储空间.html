@@ -1,0 +1,11 @@
+<h2 class="bt2" id="sigil_toc_id_324"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 11.18　存储空间</h2>
+<p class="zw">存储空间（storage spaces）技术取代了动态磁盘功能，可以为物理存储硬件提供虚拟化能力。该技术最初是为大型存储服务器设计的，但也包含在客户端版本的Windows 10中。存储空间允许用户混合使用不同的底层存储介质来创建虚拟磁盘，这些介质在性能方面有着不同的特征。</p>
+<p class="zw">截至撰写这部分内容，存储空间可支持这些类型的存储设备：非易失性高速缓存（NVMe）、闪存盘、持久性内存（PM）、SATA和SAS接口的固态硬盘（SSD），以及传统机械硬盘（HDD）。通常NVMe速度最快，HDD速度最慢。存储空间共有如下四个设计目标。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">性能</strong>：存储空间实现了对内置服务器端缓存的支持，可实现存储性能最大化，并支持分层磁盘和RAID 0配置。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">可靠性</strong>：除了跨区卷（RAID 0），当数据分布在不同的物理磁盘或同一个集群的不同节点时，存储空间还支持镜像卷（RAID 1和10）以及校验卷（RAID 5、6、50、60）配置。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">灵活性</strong>：存储空间可供系统创建能在集群不同节点间自动移动的虚拟磁盘，并能根据空间使用情况自动缩容或扩容。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">可用性</strong>：存储空间卷内置容错能力。这意味着如果设备或包含在集群中的一台服务器发生故障，存储空间依然可将I/O流量重定向至其他节点，该过程（在某种程度上）完全无须用户介入。存储空间不会产生单点故障。</p>
+<p class="zw">存储空间直通（storage spaces direct）是存储空间技术演变后的产物。存储空间直通是为大型数据中心设计的，其中可能包含大量服务器，分别配备了不同的高速和慢速磁盘，借此创建为存储池。原本的技术不支持未连接JBOD磁盘阵列的服务器集群，因此新技术的名称中增加了“直通”这个词。所有服务器都通过快速以太网连接（例如10&nbsp;GbE或40GbE）。而远程磁盘之所以能够对系统呈现为本地磁盘，这是通过两个驱动程序实现的：集群微型端口驱动程序（Clusport.sys）以及集群块过滤器驱动程序（Clusbflt.sys），这些内容已超出了本书的范围。所有存储物理单元（本地和远程磁盘）均添加到存储池中，存储池作为管理、汇聚和隔离的主要单位，在它之上可创建虚拟磁盘。</p>
+<p class="zw">整个存储集群由存储空间使用一个名为Blueprint（蓝图）的XML文件在内部进行映射。该文件由存储空间的GUI自动生成，使用不同存储实体组成的树描述了整个集群：机架（Rack）、底盘（Chassis）、计算机（Machine）、JBOD（Just a Bunch of Disks）以及磁盘（Disk）。这些实体构成整个集群的每一层。服务器（计算机）可以连接至不同的JBOD或直接连接各种磁盘。在这种情况下，JBOD可以用一个实体抽象并代表。通过类似的方式，多台计算机可以位于同一个底盘上，而多个底盘又组成一个服务器机架。最终，集群可能会包含多个服务器机架。通过用Blueprint来代表，存储空间能够与各种磁盘集群配合使用，并在磁盘、JBOD或计算机故障后，将I/O流量重定向至正确的替代实体。存储空间直通最多可以承受两个同级别实体的故障。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":17,"parentId":"12042f06-13bb-4487-b2cc-12b9114bd68f","id":"3af1ebcc-631c-4579-97a1-9d5f48a875c1"}</p>

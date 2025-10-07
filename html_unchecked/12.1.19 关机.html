@@ -1,0 +1,23 @@
+<h3 class="bt3" id="sigil_toc_id_347">12.1.19　关机</h3>
+<p class="zw">系统关机过程涉及不同的组件。Wininit在执行完所有初始化任务后，就会永久等待系统关机。</p>
+<p class="zw">在有人登录的情况下，如果有进程调用Windows的ExitWindowsEx函数以发起关机过程，则系统会向该会话的Csrss发送一条消息，告知系统即将关机。Csrss反过来会模拟调用方，向Winlogon发送一条RPC消息，告知对方执行系统关机。Winlogon会检查系统是否处于混合启动（有关混合启动的详细信息，请参阅下文“休眠和快速启动”一节）的过渡阶段中，随后模拟当前已登录用户（该用户可能具备或不具备与发起系统关机操作的用户相同的安全上下文），要求LogonUI将屏幕画面变暗（该行为可通过注册表值HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\FadePeriodConfiguration进行配置），并使用特殊的内部标记调用ExitWindowsEx。同样，这个调用会向该会话中的Csrss进程发送一条要求将系统关闭的消息。</p>
+<p class="zw">这一次，Csrss看到的请求来自Winlogon，随后会按照关机级别逆序循环检查交互式用户（依然不是发出关机请求的用户）登录会话中的所有进程。进程可以调用SetProcessShutdownParameters来指定自己的关机级别，系统可以借此了解该进程相对于其他进程的退出顺序。有效的关机级别范围介于0到1023之间，默认值为640。举例来说，Explorer会将自己的关机级别设置为2，任务管理器会设置为1。对于每个拥有顶层窗口的活动进程，Csrss会向进程中拥有Windows消息循环的每个线程发送WM_ QUERYENDSESSION消息。如果线程返回了TRUE，则系统可以继续关机。随后Csrss会向请求退出的线程发送WM_ENDSESSION这个Windows消息。Csrss会等待该线程退出，等待时间则由HKCU\Control Panel\Desktop\HungAppTimeout值决定（默认为5000毫秒）。</p>
+<p class="zw">如果线程没有在超时前退出，则Csrss会将屏幕暗淡显示，并展示图12-14所示的应用程序挂起界面（我们可以禁用该界面，为此需要将HKCU\Control Panel\ Desktop\AutoEndTasks注册表值的数值设置为1）。该界面会告知我们目前哪个程序在运行，并在可能的情况下显示程序状态信息。Windows会告知哪个程序没有及时关闭，并会让用户选择是要终止该进程，还是要取消关机的过程（该界面永远不会超时，意味着关机请求会在这种状态下无限期等待）。此外，第三方应用程序还可以在这里显示自己的状态信息，例如虚拟化产品可以显示正在运行的活跃虚拟机的数量（为此需要用到ShutdownBlockReasonCreate API）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1362.png" style="width: 100%" />
+<p class="图题">图12-14 应用程序挂起界面</p>
+<p class="zwtsh">实验：查看HungAppTimeout的效果</p>
+<p class="zwts1">要查看HungAppTimeout注册表值的效果，可启动记事本，输入一些文字后注销。在HungAppTimeout注册表值指定的时间到期后，Csrss.exe会显示一个提示信息，询问我们是否要终止记事本进程，而该进程并未退出，因为它在等待我们决定是否保存输入的文字内容。如果选择取消，Csrss.exe将终止关机操作。</p>
+<p class="zwts1">如果再次尝试关机（记事本的查询对话框依然打开的情况下），则记事本会显示自己的消息对话框，告知我们无法正确关机。不过该对话框只起到向用户告知相关信息的作用，Csrss.exe依然会认为记事本“挂起”，并显示用于终止不响应进程的界面。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1369.png" style="width: 100%" />
+<p class="zw">如果线程在超时之前退出，Csrss会继续向拥有窗口的进程中的其他线程发送WM_ QUERYENDSESSION/WM_ENDSESSION消息对。一旦进程中拥有窗口的所有线程均已退出，Csrss就终止该进程，并继续处理交互式会话中的下一个进程。</p>
+<p class="zw">如果Csrss发现控制台应用程序，则会发送CTRL_LOGOFF_EVENT事件以调用控制台控制处理程序（只有服务进程会在关机时收到CTRL_SHUTDOWN_EVENT事件）。如果处理程序返回了FALSE，则Csrss会终止进程。如果处理程序返回了TRUE，或在HKCU\ Control Panel\Desktop\WaitToKillTimeout定义的时间（默认为5000毫秒）内未响应，则Csrss会显示如图12-14所示的程序挂起界面。</p>
+<p class="zw">随后，Winlogon状态机会调用ExitWindowsEx，以便让Csrss终止交互式用户会话中的COM进程。</p>
+<p class="zw">至此，交互式用户会话中的所有进程已被终止。Wininit随后会调用ExitWindowsEx，不过这次会在系统进程的上下文中执行。这会导致Wininit向会话0（即运行该服务的会话）中的Csrss发送一条消息。随后，Csrss会检查隶属于系统上下文的所有进程，执行并发送WM_QUERYENDSESSION/WM_ENDSESSION消息给GUI线程（与之前的过程一样）。不过此时发送的不是CTRL_LOGOFF_EVENT，而是向已经注册了控制处理应用程序的控制台程序发送CTRL_SHUTDOWN_EVENT。请注意，SCM也是一种注册了控制处理程序的控制台程序。当它收到关机请求后，会向所有注册了关机通知的服务发送服务关闭的控制消息。有关服务关闭的详细信息（例如Csrss为SCM使用的关闭超时），请参阅第10章的“Windows服务”一节。</p>
+<p class="zw">尽管Csrss执行了与终止用户进程时相同的超时操作，但这一过程中并不显示任何对话框，也不会终止任何进程（系统进程超时对应的注册表值取自默认用户配置文件）。这些超时只是为了让系统进程在系统关机前有机会清理并退出。因此，当系统关闭时，很多系统进程（如Smss、Wininit、Services和LSASS）实际上依然还在运行。</p>
+<p class="zw">一旦Csrss完成了向系统进程通知系统即将关闭的工作，Wininit就会被唤醒，等待60秒让所有会话销毁，随后如果需要，还会调用系统的还原功能（此时系统中没有活动的用户进程，因此系统的还原功能可以还原之前正被使用的所有文件）。为了完成关闭过程，Wininit会关闭LogonUi并调用执行体子系统函数NtShutdownSystem。该函数可调用PoSetSystemPowerState函数以协调驱动程序以及执行体子系统剩余组件（即插即用管理器、电源管理器、执行体、I/O管理器、配置管理器以及内存管理器）的关闭过程。</p>
+<p class="zw">例如，PoSetSystemPowerState会调用I/O管理器，向所有请求了关闭通知的设备驱动程序发送关闭I/O的数据包。该操作使得设备驱动程序有机会在Windows退出前执行设备可能需要进行的特殊处理任务。随后会换入工作线程的栈，配置管理器会将对注册表数据进行的改动刷新到磁盘，内存管理器则会将包含文件数据的所有已修改页面写入对应的文件中。如果启用了在系统关闭时清空页面文件的选项，内存管理器还将在此时清空页面文件。I/O管理器会被再次调用，以通知文件系统驱动程序系统正在关闭。系统关闭过程止于电源管理器。电源管理器所要执行的操作取决于用户到底是选择了关机、重启动，还是计算机遭遇了断电。</p>
+<p class="zw">现代应用都依赖Windows关机接口（Windows Shutdown Interface，WSI）来正确地关闭系统。WSI API依然使用RPC实现进程之间的通信，并且支持宽限期。借助宽限期这种机制，在关机过程实际开始之前，用户将能收到系统即将关闭的通知，甚至系统需要安装更新时也会用到这种机制。Advapi32可以使用WSI与Wininit通信。Wininit会排队等待一个计时器，该计时器会在宽限期结束时触发，并调用Winlogon来初始化关机请求。Winlogon将调用ExitWindowsEx，后续过程与上文介绍的过程完全相同。所有UWP应用程序（甚至全新的开始菜单）都会使用ShutdownUX模块来关闭系统。ShutdownUX负责管理UWP应用程序的电源状态转换，并链接到Advapi32.dll。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":18,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"4cfad353-8161-4840-9608-363cef4cd359"}</p>

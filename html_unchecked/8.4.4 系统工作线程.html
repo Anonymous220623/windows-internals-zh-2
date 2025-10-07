@@ -1,0 +1,99 @@
+<h3 class="bt3" id="sigil_toc_id_18">8.4.4　系统工作线程</h3>
+<p class="zw">在系统初始化过程中，Windows会在System进程中创建多个名为系统工作线程（system worker thread）的线程，这些线程的存在只是为了代表其他线程执行某些工作。很多情况下，运行于DPC/Dispatch级别的线程在执行函数时将只能在更低的IRQL级别下执行。例如DPC例程，就可以在DPC/Dispatch这个IRQL级别下通过任意线程上下文执行（因为DPC的执行可以抢占系统中的任意线程），该例程可能需要访问分页池，或等待使用调度程序对象将其与应用程序线程的执行保持同步。由于DPC例程无法降低IRQL，因此必须将此类处理工作传递给能在低于DPC/Dispatch的IRQL级别下执行的线程。</p>
+<p class="zw">一些设备驱动程序和执行体组件会创建自己专用的线程，以便在被动级别上执行此类处理工作，然而，大部分情况下则会直接使用系统工作线程，这样可以避免系统中有额外线程时产生的非必要调度以及内存开销。执行体组件可调用执行体函数ExQueueWorkItem或IoQueueWorkItem来请求系统工作线程的服务。设备驱动程序只能使用后者（因为后者可将工作项（work item）关联给Device对象，进而实现更强的可追责能力，并能支持工作项处于活跃状态时驱动程序进行卸载操作这样的场景）。这些函数会将工作项放入线程工作所需的队列调度程序对象中（队列调度程序对象的详细信息请参阅卷1第6章“I/O完成端口”一节）。</p>
+<p class="zw">IoQueueWorkItemEx、IoSizeofWorkItem、IoInitializeWorkItem以及IoUninitializeWorkItem这些API的行为也较为相似，但它们会与驱动程序的Driver对象或自己的某一个Device对象创建关联。</p>
+<p class="zw">工作项包含一个指向例程的指针以及一个参数，线程在处理工作项时可将这些内容传递给例程。需要以被动级别执行的设备驱动程序或执行体组件可实现该例程。举例来说，必须等待调度程序对象的DPC例程可以初始化一个工作项，该工作项指向驱动程序中等待调度程序对象的例程。在某些阶段中，系统工作线程会从自己的队列中移除工作项并执行驱动程序的例程。当驱动程序的例程执行完毕后，系统工作线程会检查是否还有更多的工作项等待处理。如果没有更多等待处理的工作项，系统工作线程会被阻塞，直到新的工作项放入队列。在系统工作线程处理自己的工作项时，DPC例程可能已经执行完毕，但也可能尚未执行完毕。</p>
+<p class="zw">系统工作线程可分为多种类型：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 常规工作线程（normal worker thread），在优先级8级别下执行，其他方面的行为与延迟的工作线程类似。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 后台工作线程（background worker thread），在优先级7级别下执行，会继承与常规工作线程相同的行为。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 延迟的工作线程（delayed worker thread），在优先级12级别下执行，主要处理对时间要求不敏感的工作项。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 关键工作线程（critical worker thread），在优先级13级别下执行，主要用于处理对时间要求敏感的工作项。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 超关键工作线程（super-critical worker thread），在优先级14级别下执行，其他方面与关键工作线程类似。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 极关键工作线程（hyper-critical worker thread），在优先级15级别下执行，其他方面与关键工作线程类似。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 实时工作线程（real-time worker thread），在优先级18级别下执行，是唯一能在实时调度范围（详见卷1第4章）下运行的工作线程，这意味着此类工作线程不会受制于优先级提升或常规的时间切片。</p>
+<p class="zw">由于所有这些工作队列的命名方式开始让人感到混淆，较新版本的Windows引入了自定义优先级工作线程，建议所有驱动程序开发者使用这种新的工作线程，因为它可以让驱动程序传入自己的优先级级别。</p>
+<p class="zw">系统引导的早期阶段会调用一个特殊的内核函数ExpLegacyWorkerInitialization，该函数可以为延迟的工作队列线程和关键工作队列线程设置初始数值，具体数值则通过可选的注册表参数进行配置。大家可能在本书之前的版本中看到过相关的细节介绍，不过需要注意，这些变量的存在只是为了兼容外部编排工具，现代的Windows 10系统和后续版本系统的内核从未真正使用过它们。这是因为较新的内核实现了一种名为Priority queue（KPRIQUEUE）的全新内核调度程序对象，将其与数量完全动态的内核工作线程结合在一起，并进一步将原本的单一工作线程队列拆分为每个NUMA节点的工作线程。</p>
+<p class="zw">在Windows 10和后续版本中，内核会根据需要动态创建额外的工作线程，默认的数量上限为4096个（可参阅ExpMaximumKernelWorkerThreads），但可通过修改注册表设置将上限增大至最多16384个线程，或减少至最少32个。我们可以在注册表HKLM\SYSTEM\ CurrentControlSet\Control\Session Manager\Executive键下通过MaximumKernelWorkerThreads值修改该设置。</p>
+<p class="zw">我们在卷1第5章曾经介绍过，每个分区对象都包含一个执行体分区，该分区也是与执行体（主要是系统工作线程逻辑）有关的分区对象的一部分。其中包含的一个数据结构可用于跟踪分区中每个NUMA节点的工作队列管理器（队列管理器由死锁检测计时器、工作队列项收割器及指向实际执行管理工作的线程句柄组成）。此外，其中还包含一个指针数组，这些指针指向了8个可能的工作队列（EX_WORK_QUEUE）中的每一个。这些队列会关联一个单独的索引，并跟踪最小线程（可保证的）和最大线程的数量，以及截至目前已处理的工作项数量。</p>
+<p class="zw">每个系统都包含两个默认工作队列：ExPool队列和IoPool队列。前者主要被用到了ExQueueWorkItem API的驱动程序和系统组件所使用，后者主要适用于IoAllocateWorkItem类型的API。最后，最多还可以为内部系统定义额外的6个队列，这些队列主要被内部（不可导出）的ExQueueWorkItemToPrivatePool API使用，使用了0～5的池标识符（因此对应的队列索引为2～7）。目前，仅内存管理器的存储管理器（详见卷1第5章）用到了这些功能。</p>
+<p class="zw">执行体会尽可能尝试着将关键工作线程的数量与系统执行过程中不断变化的工作负载保持匹配。当工作项处理完毕或被加入队列后，会通过检查来判断是否需要新的工作线程。如果需要，则会发送一个事件信号，唤醒相关NUMA节点和分区的ExpWorkQueueManagerThread。当遇到下列任一情况时，还会额外创建一个工作线程：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 队列中线程数量少于最小线程数量。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 尚未达到最大线程数量，所有工作线程都在忙碌，但队列中依然有等待处理的工作项，或上一次尝试将工作项加入队列的操作企图失败了。</p>
+<p class="zw">此外，对于每个工作队列管理器（即每个分区上的每个NUMA节点），ExpWorkQueueManagerThread会以每秒一次的频率确定是否已经发生了死锁。这个死锁的具体定义是：最后一个时间间隔内，排队的工作项数量增加，但所处理工作项的匹配数未增加。如果发生这种情况，系统将忽略任何线程数量的最大值限制，额外创建一个工作线程，以便尽可能地清除潜在的死锁。随后这项检测工作会被禁用，直到系统认为有必要再次进行检测（例如达到线程数量最大值时）。由于处理器拓扑可能因为热添加动态处理器而产生变化，因此这个额外创建的线程还负责更新处理器的相关性和数据结构，以便能继续跟踪新添加的处理器。</p>
+<p class="zw">最后，每当经历了工作线程的超时值分钟数两倍的时间后（默认超时值10分钟，因此也就是每20分钟一次），该线程还会检查自己是否需要摧毁任何系统工作线程。我们可以通过WorkerThreadTimeoutInSeconds这个注册表值将默认超时值改为2～120分钟。这个过程也称收割（reaping），它保证了系统工作线程数量不会失控。如果系统工作线程等待了很长时间（具体时间由工作线程超时值定义），并且没有依然在等待处理的工作项，那么该线程就会被收割（这意味着当前线程数量会以一种及时的方式进行清理）。</p>
+<p class="zwtsh">实验：列出系统工作线程</p>
+<p class="zwts1">不幸的是，由于系统工作线程每分区改组（reshuffling）功能的存在（已经不再像以前那样按NUMA节点进行，自然也就不再具备全局特性），内核调试器的!exqueue命令已经无法列出按照类型进行分类的系统工作线程列表，这样做将会直接出错。</p>
+<p class="zwts1">由于EPARTITION、EX_PARTITION以及EX_WORK_QUEUE数据结构均已包含在公开的符号中，因此可以使用调试器数据模型查看队列及其管理器。例如，我们可以这样查看主（默认）系统分区NUMA节点0工作线程管理器：</p>
+<pre class="代码无行号"><code>lkd&gt; dx ((nt!_EX_PARTITION*)(*(nt!_EPARTITION**)&amp;nt!PspSystemPartition)-&gt;ExPartition)-&gt;
+    WorkQueueManagers[0] 
+((nt!_EX_PARTITION*)(*(nt!_EPARTITION**)&amp;nt!PspSystemPartition)-&gt;ExPartition)-&gt;
+    WorkQueueManagers[0]     : 0xffffa483edea99d0 [Type: _EX_WORK_QUEUE_MANAGER *]
+    [+0x000] Partition       : 0xffffa483ede51090 [Type: _EX_PARTITION *] 
+    [+0x008] Node            : 0xfffff80467f24440 [Type: _ENODE *] 
+    [+0x010] Event           [Type: _KEVENT] 
+    [+0x028] DeadlockTimer   [Type: _KTIMER] 
+    [+0x068] ReaperEvent     [Type: _KEVENT] 
+    [+0x080] ReaperTimer     [Type: _KTIMER2] 
+    [+0x108] ThreadHandle    : 0xffffffff80000008 [Type: void *] 
+    [+0x110] ExitThread      : 0x0 [Type: unsigned long] 
+    [+0x114] ThreadSeed      : 0x1 [Type: unsigned short] </code></pre>
+<p class="zwts1">或者这样查看NUMA节点0的ExPool，目前其中包含15个线程，并已处理了将近400万个工作项！</p>
+<pre class="代码无行号"><code>lkd&gt; dx ((nt!_EX_PARTITION*)(*(nt!_EPARTITION**)&amp;nt!PspSystemPartition)-&gt;ExPartition)-&gt;
+    WorkQueues[0][0],d 
+((nt!_EX_PARTITION*)(*(nt!_EPARTITION**)&amp;nt!PspSystemPartition)-&gt;ExPartition)-&gt;
+    WorkQueues[0][0],d       : 0xffffa483ede4dc70 [Type: _EX_WORK_QUEUE *] 
+    [+0x000] WorkPriQueue    [Type: _KPRIQUEUE] 
+    [+0x2b0] Partition       : 0xffffa483ede51090 [Type: _EX_PARTITION *] 
+    [+0x2b8] Node            : 0xfffff80467f24440 [Type: _ENODE *] 
+    [+0x2c0] WorkItemsProcessed : 3942949 [Type: unsigned long] 
+    [+0x2c4] WorkItemsProcessedLastPass : 3931167 [Type: unsigned long] 
+    [+0x2c8] ThreadCount      : 15 [Type: long] 
+    [+0x2cc (30: 0)] MinThreads       : 0 [Type: long] 
+    [+0x2cc (31:31)] TryFailed        : 0 [Type: unsigned long] 
+    [+0x2d0] MaxThreads       : 4096 [Type: long] 
+    [+0x2d4] QueueIndex       : ExPoolUntrusted (0) [Type: _EXQUEUEINDEX] 
+    [+0x2d8] AllThreadsExitedEvent : 0x0 [Type: _KEVENT *] </code></pre>
+<p class="zwts1">随后即可通过WorkPriQueue的ThreadList字段枚举该队列关联的所有工作线程：</p>
+<pre class="代码无行号"><code>lkd&gt; dx -r0 @$queue = ((nt!_EX_PARTITION*)(*(nt!_EPARTITION**)&amp;nt!PspSystemPartition)-&gt;
+    ExPartition)-&gt;WorkQueues[0][0] 
+@$queue = ((nt!_EX_PARTITION*)(*(nt!_EPARTITION**)&amp;nt!PspSystemPartition)-&gt;ExPartition)-&gt;
+    WorkQueues[0][0]            : 0xffffa483ede4dc70 [Type: _EX_WORK_QUEUE *] 
+　
+lkd&gt; dx Debugger.Utility.Collections.FromListEntry(@$queue-&gt;WorkPriQueue.ThreadListHead,
+    "nt!_KTHREAD", "QueueListEntry") 
+Debugger.Utility.Collections.FromListEntry(@$queue-&gt;WorkPriQueue.ThreadListHead,
+    "nt!_KTHREAD", "QueueListEntry") 
+    [0x0]            [Type: _KTHREAD] 
+    [0x1]            [Type: _KTHREAD] 
+    [0x2]            [Type: _KTHREAD] 
+    [0x3]            [Type: _KTHREAD] 
+    [0x4]            [Type: _KTHREAD] 
+    [0x5]            [Type: _KTHREAD] 
+    [0x6]            [Type: _KTHREAD] 
+    [0x7]            [Type: _KTHREAD] 
+    [0x8]            [Type: _KTHREAD] 
+    [0x9]            [Type: _KTHREAD] 
+    [0xa]            [Type: _KTHREAD] 
+    [0xb]            [Type: _KTHREAD] 
+    [0xc]            [Type: _KTHREAD] 
+    [0xd]            [Type: _KTHREAD] 
+    [0xe]            [Type: _KTHREAD] 
+    [0xf]            [Type: _KTHREAD] </code></pre>
+<p class="zwts1">这只是ExPool的情况。别忘了系统中还有一个IoPool，它是这个NUMA节点（节点0）上的下一个索引（索引1）。我们可以继续通过实验查看其他私有池，例如存储管理器的池。</p>
+<pre class="代码无行号"><code>lkd&gt; dx ((nt!_EX_PARTITION*)(*(nt!_EPARTITION**)&amp;nt!PspSystemPartition)-&gt;ExPartition)-&gt;
+    WorkQueues[0][1],d 
+((nt!_EX_PARTITION*)(*(nt!_EPARTITION**)&amp;nt!PspSystemPartition)-&gt;ExPartition)-&gt;
+    WorkQueues[0][1],d        : 0xffffa483ede77c50 [Type: _EX_WORK_QUEUE *] 
+    [+0x000] WorkPriQueue     [Type: _KPRIQUEUE] 
+    [+0x2b0] Partition        : 0xffffa483ede51090 [Type: _EX_PARTITION *] 
+    [+0x2b8] Node             : 0xfffff80467f24440 [Type: _ENODE *] 
+    [+0x2c0] WorkItemsProcessed : 1844267 [Type: unsigned long] 
+    [+0x2c4] WorkItemsProcessedLastPass : 1843485 [Type: unsigned long] 
+    [+0x2c8] ThreadCount      : 5 [Type: long] 
+    [+0x2cc (30: 0)] MinThreads       : 0 [Type: long] 
+    [+0x2cc (31:31)] TryFailed        : 0 [Type: unsigned long] 
+    [+0x2d0] MaxThreads       : 4096 [Type: long] 
+    [+0x2d4] QueueIndex       : IoPoolUntrusted (1) [Type: _EXQUEUEINDEX] 
+    [+0x2d8] AllThreadsExitedEvent : 0x0 [Type: _KEVENT *]</code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"a89070c3-60d0-4159-89c3-afa07663a88a","id":"ae43721c-d260-41c7-848d-c85affcc90db"}</p>

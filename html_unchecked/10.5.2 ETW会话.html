@@ -1,0 +1,46 @@
+<h3 class="bt3" id="sigil_toc_id_152">10.5.2　ETW会话</h3>
+<p class="zw">会话（session，内部称之为记录器实例）是ETW最重要的实体之一，它是提供程序和消费者之间的黏合剂。一个事件跟踪会话可从控制器启用的一个或多个提供程序处记录事件。会话通常包含所需的全部信息，借此可以描述需要将哪个提供程序提供的哪个事件记录起来，以及事件的具体处理方式。例如，某个会话可能会被配置为记录来自Microsoft- Windows-Hyper-V-Hypervisor提供程序（在内部，可使用{52fc89f8-995e-434c-a91e-199986449890}这个GUID进行标识）的所有事件。用户还可以配置过滤器。提供程序（或提供程序组）生成的每个事件均可根据事件级别（信息、警报、错误、关键）、事件关键字、事件ID以及其他特征进行过滤。会话配置还可以定义会话的其他细节，例如，事件时间戳该使用哪种时间来源（如QPC、TSC或系统时钟），哪些事件应捕获堆栈跟踪信息等。会话还有一个重要作用：托管ETW记录器线程，这是将事件刷新到日志文件或实时提供给消费者的主要实体。</p>
+<p class="zw">会话可使用StartTrace API创建，并使用ControlTrace和EnableTraceEx2进行配置。一些命令行工具（如xperf、logman、tracelog和wevtutil）可使用这些API启动或控制跟踪会话。会话还可配置为创建会话的进程专用的。这种情况下，ETW只能消费由同一个应用程序（该应用程序同时也是提供程序）创建的事件。这可以帮助应用程序消除内核模式转换相关的开销。专用ETW会话只能记录执行自己进程的线程所产生的事件，不能实时传递事件。本书并不涉及专用ETW的内部架构。</p>
+<p class="zw">在创建了全局会话后，StartTrace API会验证参数并将其复制到一个数据结构中，NtTraceControl API会使用该数据结构来调用内核中的内部函数EtwpStartLogger。在内部，ETW会话是通过ETW_LOGGER_CONTEXT数据结构所表示的，其中包含了指向会话内存缓冲区的重要指针，而事件会被写入这样的缓冲区中。如“ETW初始化”一节所述，系统支持的ETW会话数量是有限的，具体数量存储在全局每Silo数据结构内的一个数组中。EtwpStartLogger&nbsp;会检查该全局会话数组，确定是否还有可用空间或使用相同名称的会话是否已经存在。如果已存在，则它会退出并返回一个错误代码。否则它会生成一个会话GUID（如果调用方未指定GUID），分配并初始化表示该会话的ETW_LOGGER_ CONTEXT数据结构，为其分配索引，再将其插入每Silo数组中。</p>
+<p class="zw">ETW会根据HKLM\System\CurrentControlSet\Control\Wmi\Security注册表键下的会话安全描述符来查询权限。如图10-33所示，该键下的每个注册表值都以会话的GUID命名（不过注册表键还包含了提供程序的GUID），其中存储了一种自关联安全描述符的二进制表示。如果会话的安全描述符不存在，则会为会话返回一个默认安全描述符（详见下文“查看ETW会话的默认安全描述符”实验）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2824.png" style="width: 100%" />
+<p class="图题">图10-33　ETW安全注册表键</p>
+<p class="zw">EtwpStartLogger函数会使用当前进程的访问令牌对会话的安全描述符执行访问检查，并检查是否具有TRACELOG_GUID_ENABLE访问权限（以及TRACELOG_CREATE_ REALTIME或TRACELOG_CREATE_ONDISK权限，取决于日志文件模式）。如果检查成功，则该例程会计算事件缓冲区的默认大小和数量，这是根据系统物理内存大小计算而来的（默认缓冲区大小为8&nbsp;KB、16&nbsp;KB或64&nbsp;KB）。缓冲区数量取决于处理器数量以及是否存在EVENT_TRACE_NO_PER_PROCESSOR_BUFFERING记录器模式标记，该标记可避免（由不同处理器生成的）事件写入每处理器缓冲区。</p>
+<p class="zw">ETW会获取会话的初始参考时间戳。目前支持三种时钟精度：查询性能计数器（Query Performance Counter，QPC，一种不受系统时钟影响的高精度时间戳）、系统时钟（system time）以及CPU周期计数器（CPU cycle counter）。EtwpAllocateTraceBuffer函数可将每个缓冲区分配给相关的记录器会话（缓冲区数量可在此之前计算确定，也可以由用户指定）。缓冲区可以从分页池、非分页池或直接从物理大页面分配，这主要取决于记录模式。每个缓冲区都会存储在多个内部每会话列表中，这样即可为ETW主记录器函数和ETW提供程序提供更快的查找速度。最后，如果日志模式未设置为循环缓冲区，EtwpStartLogger函数还将启动主ETW记录器线程，该线程的作用是将与会话相关的提供程序写入的事件刷新到日志文件，或提供给实时消费者。这个主线程启动后，ETW会向已注册的会话通知提供程序（GUID为2a6e185b-90de-4fc5-826c-9f44e608a427）发送一个会话通知，这个特殊的提供程序可以在某些ETW事件发生后（如新会话已创建或已销毁）、新日志文件创建后，或日志出现错误后向自己的消费者发出通知。</p>
+<p class="zwtsh">实验：枚举ETW会话</p>
+<p class="zwts1">在Windows 10中可通过多种方式枚举活跃的ETW会话。在有关ETW的这个以及下一个实验中，我们将用到伴随Windows评估和部署工具包（ADK）提供的Windows性能工具包中的XPERF工具。ADK可从下列地址免费下载：https://docs.microsoft.com/ windows-hardware/get-started/adk-install。</p>
+<p class="zwts1">活跃ETW会话的枚举可通过多种方式进行。如果使用XPERF，则可执行下列命令（XPERF通常会被安装到C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit）：</p>
+<pre class="代码无行号"><code>xperf -Loggers </code></pre>
+<p class="zwts1">上述命令的输出结果很长，因此建议将输出结果重定向至一个TXT文件：</p>
+<pre class="代码无行号"><code>xperf -Loggers &gt; ETW_Sessions.txt </code></pre>
+<p class="zwts1">该工具可解码所有会话配置数据，并以人工易读形式显示。下列例子显示了EventLog-Application会话的相关信息，事件记录器服务（Wevtsvc.dll）会使用该会话写入事件查看器中所有与Application.evtx文件有关的数据：</p>
+<pre class="代码无行号"><code>Logger Name           : EventLog-Application 
+Logger Id             : 9 
+Logger Thread Id      : 000000000000008C 
+Buffer Size           : 64 
+Maximum Buffers       : 64 
+Minimum Buffers       : 2 
+Number of Buffers     : 2 
+Free Buffers          : 2 
+Buffers Written       : 252 
+Events Lost           : 0 
+Log Buffers Lost      : 0 
+Real Time Buffers Lost: 0 
+Flush Timer           : 1 
+Age Limit             : 0 
+Real Time Mode        : Enabled 
+Log File Mode         : Secure PersistOnHybridShutdown PagedMemory IndependentSession 
+NoPerProcessorBuffering 
+Maximum File Size     : 100 
+Log Filename          : 
+Trace flags           : "Microsoft-Windows-CertificateServicesClient-Lifecycle-User":0x800
+0000000000000:0xff+"Microsoft-Windows-SenseIR":0x8000000000000000:0xff+ 
+... (output cut for space reasons) </code></pre>
+<p class="zwts1">该工具还可显示会话中启用的每个提供程序的名称，以及提供程序应该记录的事件类别位掩码。有关位掩码（显示在“Trace flags”下）的解读取决于具体的提供程序。例如，提供程序可以定义用类别1（设置位0）表示在初始化和清理阶段生成的事件，用类别2（设置位1）表示执行注册表I/O过程中生成的事件，以此类推。System会话对Trace flags的解读方式略有差异（详见下文“系统记录器”一节）。对于System会话，标记将由启用的内核标记进行解码，内核标记指定了系统会话应该记录哪些类型的内核事件。</p>
+<p class="zwts1">Windows性能监视器除了可以处理系统性能计数器，还可以轻松枚举ETW会话。打开性能监视器（在搜索框中输入perfmon），展开“<strong style="color:#0092dd">数据收集器集</strong>”，并点击“<strong style="color:#0092dd">事件跟踪会话</strong>”。随后该应用程序会列出与XPERF中所示完全相同的会话。右击一个会话的名称并选择“<strong style="color:#0092dd">属性</strong>”，即可查看该会话的各种属性。尤其是“<strong style="color:#0092dd">安全</strong>”属性会列出该ETW会话安全描述符的解码结果。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2831.png" style="width: 100%" />
+<p class="zwts1">最后，我们也可以使用Microsoft Logman控制台工具（%SystemRoot%\System32\ logman.exe）枚举活跃的ETW会话（使用命令行参数-ets）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"0a817dad-0fff-43aa-90f7-5114d262a9ee","id":"bf797dd2-50a1-459a-be33-202b1948bb9e"}</p>

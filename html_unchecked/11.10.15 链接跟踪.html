@@ -1,0 +1,6 @@
+<h3 class="bt3" id="sigil_toc_id_244">11.10.15　链接跟踪</h3>
+<p class="zw">外壳（Shell）快捷方式可以让用户将文件放置在自己的外壳命名空间（如自己的桌面上），再将其链接至文件系统命名空间中的文件。Windows开始菜单就大量使用了外壳的快捷方式。类似地，对象链接和嵌入（OLE）链接可以将来自一个应用程序的文档以透明的方式嵌入另一个应用程序的文档中。微软Office办公套件中的PowerPoint、Excel和Word等都使用了OLE链接。</p>
+<p class="zw">虽然外壳链接和OLE链接提供了一种将不同的文件相互连接，以及将文件与外壳命名空间相互连接的简单方法，但如果用户移动了外壳或OLE链接源（链接源是指链接指向的文件或目录），最终可能会变得非常难以管理。Windows中的NTFS支持一种名为分布式链接跟踪的服务应用程序，借此可在目标移动后维持外壳和OLE链接的完整性。借助对NTFS链接跟踪的支持，如果位于NTFS卷上的链接目标移动到原始卷域内任何其他的NTFS卷上，链接跟踪服务可以透明地跟踪移动操作，并更新链接以反映变化。</p>
+<p class="zw">NTFS链接跟踪支持基于一种可选文件属性：对象ID。应用程序可以使用FSCTL_ CREATE_OR_GET_OBJECT_ID（借此在未分配的情况下分配ID）和FSCTL_SET_OBJECT_ ID文件系统控制代码向文件分配对象ID。对象ID可使用FSCTL_CREATE_OR_GET_ OBJECT_ID和FSCTL_GET_OBJECT_ID文件系统控制代码查询。FSCTL_DELETE_ OBJECT_ID文件系统控制代码可以让应用程序从文件中删除对象ID。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":14,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"fdab8a6d-cbee-4d74-a34d-dcc68eb61fd0"}</p>

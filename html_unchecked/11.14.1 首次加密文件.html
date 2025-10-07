@@ -1,0 +1,35 @@
+<h3 class="bt3" id="sigil_toc_id_289">11.14.1　首次加密文件</h3>
+<p class="zw">在遇到加密文件后，NTFS驱动程序会调用EFS辅助函数。文件的属性中记录了该文件是被加密的，同时还可通过这种方式记录文件是被压缩的（详见上文）。NTFS有一个专门的接口，可以将文件从非加密状态转换为加密状态，但该过程很大程度上是由用户模式组件驱动的。如上文所述，Windows可以让用户通过两种方式来加密文件：使用命令行工具cipher，或在Windows资源管理器的“高级属性”对话框中选中“加密内容以便保护数据”选项。这两种方式都用到了Windows的EncryptFile API。</p>
+<p class="zw">EFS只在加密文件中存储一个信息块，共享该文件的每个用户都在这个信息块中有一个对应的项。这些项称为密钥项（Key Entry），EFS会将其存储在文件的EFS数据的数据解密字段（Data Decryption Field，DDF）中。多个密钥项的集合则被称为密钥环（Key Ring），正如上文所述，EFS可供多个用户共享同一个加密文件。</p>
+<p class="zw">图11-70展示了文件的EFS的信息和密钥项的格式。EFS在密钥项的第一部分存储了精确描述用户公钥所需的足够信息。这些数据包括用户的安全ID（SID）（请注意，SID无法保证一定存在）、存储密钥的容器名称、加密提供程序的名称，以及非对称密钥对的证书哈希。解密过程只会用到非对称密钥证书哈希。密钥项的第二部分包含FEK的加密版本。EFS会通过CNG使用所选的非对称加密算法和用户的公钥来加密FEK。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2899.png" style="width: 100%" />
+<p class="图题">图11-70　EFS的信息和密钥项的格式</p>
+<p class="zw">EFS在文件的数据恢复字段（Data Recovery Field，DRF）中存储了有关恢复密钥项的信息。DRF项的格式与DDF项的完全相同。DRF的用途是，当管理工作必须访问用户的数据时，让指定的账户或恢复代理解密用户文件。例如，当公司员工忘记自己的登录密码时，管理员可以重置用户密码，但如果不借助恢复代理，用户加密的数据将无法恢复。</p>
+<p class="zw">恢复代理是通过本地计算机或域的加密数据恢复代理安全策略定义的。该策略可通过图11-71所示的本地安全策略MMC控制台配置。当使用添加恢复代理向导（右键点击“加密文件系统”并点击“添加数据恢复代理”）时，可以添加恢复代理并指定恢复代理使用哪个私钥/公钥对（通过证书来指定）进行EFS恢复。Lsasrv（本地安全机构服务，详见卷1第7章）会在初始化及收到有关恢复策略已更改的通知时解释恢复策略。EFS会使用为EFS恢复注册的加密提供程序为每个恢复代理创建DRF密钥项。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2907.png" style="width: 100%" />
+<p class="图题">图11-71　加密数据恢复代理组策略</p>
+<p class="zw">用户可以使用cipher /r命令创建自己的数据恢复代理（Data Recovery Agent，DRA）证书。借此生成的私钥证书文件可通过恢复代理向导导入，也可以通过域控制器或管理员解密文件所用的计算机的“证书”控制台导入。</p>
+<p class="zw">作为为文件创建EFS信息的最后一步，Lsasrv会使用Cryptographic Provider 1.0的MD5哈希设施计算DDF和DRF的校验值。Lsasrv将校验值计算结果存储在EFS信息头部。EFS会在解密过程中参考这些校验值，以确保文件的EFS信息内容不被损坏或不被篡改。</p>
+<h4 class="bt4 sigil_not_in_toc">加密文件数据</h4>
+<p class="zw">当用户加密现有文件时，会发生下列操作。</p>
+<p class="zw">1）EFS以独占访问的方式打开目标文件。</p>
+<p class="zw">2）文件中的所有数据流被复制到系统临时目录下一个明文的临时文件中。</p>
+<p class="zw">3）随机生成一个FEK，并使用该FEK通过AES-256算法加密文件。</p>
+<p class="zw">4）创建一个DDF，其中包含使用用户的公钥加密后的FEK。EFS可以从用户的X.509版本3文件加密证书中自动获取用户的公钥。</p>
+<p class="zw">5）如果通过组策略指定了恢复代理，则会创建一个DRF，其中包含使用RSA和恢复代理的公钥加密后的FEK。</p>
+<p class="zw">6）EFS从恢复代理的X.509版本3证书中自动获取恢复代理的公钥，而该证书存储在EFS策略中。如果有多个恢复代理，则会使用每个代理的公钥加密一个FEK副本，并分别创建DRF来存储每个加密后的FEK。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　证书中的File Recovery（文件恢复）属性是增强型密钥使用（Enhanced Key Usage，EKU）字段的一个用例。EKU拓展和拓展属性决定并限制了证书的有效用途。作为微软公钥基础架构（PKI）的一部分，File Recovery是微软定义的一个EKU字段。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">7）EFS将加密后的数据以及DDF和DRF重新写回文件。由于对称加密不会增加额外数据，因此文件加密后的体积只会有很小的变化。元数据主要由加密后的FEK组成，通常大小不会超过1&nbsp;KB。因此，加密前后文件大小的字节数通常不会有变化。</p>
+<p class="zw">8）明文临时文件被删除。</p>
+<p class="zw">在用户将文件保存到已被加密的文件夹之后，也将发生类似上述过程的操作，只不过不会创建临时文件。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"8e765ccd-1733-46fe-b48f-23c09944a7ed","id":"1cb18c5c-b803-4c7a-ad0f-3109bb65b8ab"}</p>

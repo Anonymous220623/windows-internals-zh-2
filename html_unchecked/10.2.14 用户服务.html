@@ -1,0 +1,65 @@
+<h3 class="bt3" id="sigil_toc_id_136">10.2.14　用户服务</h3>
+<p class="zw">如“用备选账户运行服务”一节所述，我们可以使用本地系统中的用户账户运行服务。这样配置的服务将始终使用指定的用户账户运行，无论该用户当前是否已登录。但在多用户环境中，这可能会造成一些局限，因为服务会使用当前登录用户的访问令牌来执行。此外，这也可能将所用的用户账户置于风险中，因为恶意用户将可能注入服务进程，并使用服务令牌访问自己本不应访问的资源（也将可以通过网络进行身份验证）。</p>
+<p class="zw">从Windows 10创作者更新（RS2）开始，用户服务（user service）功能可以让服务使用当前已登录用户的令牌运行。用户服务可以通过自己的进程运行，或者可以像标准服务那样，与使用同一个已登录用户账户运行的其他服务共享同一个进程。当用户执行交互式登录时，这些服务会被启动；用户注销后，服务也会停止。SCM内部支持两个额外的类型标记：SERVICE_USER_SERVICE (64)和SERVICE_USERSERVICE_INSTANCE (128)，这两个标记用于识别用户服务模板和用户服务实例。</p>
+<p class="zw">在发起交互式登录后，将执行Winlogon有限状态机的一个状态（有关Winlogon和启动过程的详细信息，请参阅第12章）。该状态会新建一个用户登录会话、窗口站、桌面以及环境，并映射HKEY_CURRENT_USER注册表配置单元，同时会向登录订阅方（LogonUI和用户管理器）发出通知。用户管理器服务（Usermgr.dll）可通过RPC调用SCM以交付WTS_SESSION_LOGON会话事件。</p>
+<p class="zw">SCM会通过ScCreateUserServicesForUser函数处理该消息，这个函数会回调到用户管理器以获取当前登录用户的令牌，随后会从SCM数据库查询用户模板服务列表，并为每个模板生成新的用户实例服务名称。</p>
+<p class="zwtsh">实验：见证用户服务</p>
+<p class="zwts1">内核调试器可以轻松显示出进程令牌的安全属性。在本实验中，我们需要一台启用了内核调试器的Windows 10计算机，并连接到主机（本地调试也可以）。在该实验中，我们将选择一个用户服务实例并分析其托管进程的令牌。请打开服务工具（在搜索框中输入“服务”），随后可以看到标准服务以及用户服务实例（尽管它错误地将Local System显示为一个用户账户），这些实例很容易区分，因为其显示名中带有一个本地唯一ID（LUID，由用户管理器生成）。在本例中，Connected Device User Service就会被“服务”工具显示为Connected Device User Service_55d01。</p>
+<p class="zwts1">双击这样的服务，随后可以看到用户服务实例的真实名称（本例中为CDPUserSvc_ 55d01）。如果该服务运行在共享进程中，例如本例中选择的这个服务，那么可以使用注册表编辑器打开用户服务模板的服务根键，其中会显示与实例相同的名称，但不包含LUID（本例的用户服务模板名称为CDPUserSvc）。正如在“查看服务所需的特权”实验中解释的那样，Service DLL名称会存储在Parameters子键下。在Process Explorer中</p>
+<p class="zwts1">可以使用DLL名称找到正确的托管进程ID（或在最新版的Windows 10中可以直接使用任务管理器找到）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2179.png" style="width: 100%" />
+<p class="zwts1">找到托管进程的PID后，需要进入内核调试器并运行下列命令（请将&lt;ServicePid&gt;替换为服务托管进程的PID）：</p>
+<pre class="代码无行号"><code>!process &lt;ServicePid&gt; 1 </code></pre>
+<p class="zwts1">调试器会显示很多信息，其中包含相关联的安全令牌对象的地址：</p>
+<pre class="代码无行号"><code>Kd: 0&gt; !process 0n5936 1 
+Searching for Process with Cid == 1730 
+PROCESS ffffe10646205080 
+    SessionId: 2 Cid: 1730 Peb: 81ebbd1000 ParentCid: 0344 
+    DirBase: 8fe39002 ObjectTable: ffffa387c2826340 HandleCount: 313. 
+    Image: svchost.exe 
+    VadRoot ffffe1064629c340 Vads 108 Clone 0 Private 962. Modified 214. Locked 0.
+    DeviceMap ffffa387be1341a0 
+    Token                           ffffa387c2bdc060 
+    ElapsedTime                     00:35:29.441 
+    ... 
+    &lt;Output omitted for space reasons&gt; </code></pre>
+<p class="zwts1">要查看令牌的安全属性，我们需要使用!token命令，后跟上一条命令得到的令牌对象地址（在内部，令牌对象会表示为一种_TOKEN数据结构）。只要看到WIN://ScmUserService安全特性，即可轻松确认该进程托管了用户服务，如下列输出结果所示：</p>
+<pre class="代码无行号"><code>0: kd&gt; !token ffffa387c2bdc060 
+_TOKEN 0xffffa387c2bdc060 
+TS Session ID: 0x2 
+User: S-1-5-21-725390342-1520761410-3673083892-1001 
+User Groups: 
+ 00 S-1-5-21-725390342-1520761410-3673083892-513 
+    Attributes - Mandatory Default Enabled 
+　
+... &lt;Output omitted for space reason&gt; ... 
+　
+OriginatingLogonSession: 3e7 
+PackageSid: (null) 
+CapabilityCount: 0      Capabilities: 0x0000000000000000 
+LowboxNumberEntry: 0x0000000000000000 
+Security Attributes: 
+ 00 Claim Name   : WIN://SCMUserService 
+    Claim flags: 0x40 - UNKNOWN 
+    Value Type   : CLAIM_SECURITY_ATTRIBUTE_TYPE_UINT64 
+    Value Count: 1 
+    Value[0]   : 0 
+ 01 Claim Name   : TSA://ProcUnique 
+    Claim flags: 0x41 - UNKNOWN 
+    Value Type   : CLAIM_SECURITY_ATTRIBUTE_TYPE_UINT64 
+    Value Count: 2 
+    Value[0]   : 102 
+    Value[1]   : 352550 </code></pre>
+<p class="zwts1">Process Hacker是一款与Process Explorer类似的工具，下载地址为https://processhacker. sourceforge.io/，我们可以借助该工具提取相同的信息。</p>
+<p class="zwts1">如上文所述，用户服务实例的名称是将服务的原名称与用户管理器为了识别用户的交互式会话（内部称之为上下文ID）所生成的本地唯一ID（LUID）结合在一起生成的。交互式登录会话的上下文ID存储在易失的HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\VolatileUserMgrKey\&lt;Session ID&gt;\&lt;User SID&gt;\contextLuid注册表键中，其中&lt;Session ID&gt;和&lt;User SID&gt;表示登录会话ID和用户SID。如果在注册表编辑器中打开该键，则会发现与生成用户服务实例名称所用相同的上下文ID值。</p>
+<p class="zw">图10-22展示了Clipboard User Service这个用户服务实例的范例，该服务使用当前登录用户的令牌运行。根据用户管理器的易失注册表键（详见上一个实验）可知，为会话1生成的上下文ID为0x3a182。随后，SCM会调用ScCreateService，借此在SCM数据库中创建服务记录。新服务记录表示这个新的用户服务实例，会与常规服务一样保存到注册表中。服务安全描述符、所有依赖的服务及触发器信息则可从用户服务模板复制到新的用户服务实例。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2186.png" style="width: 100%" />
+<p class="图题">图10-22　在上下文ID 0x3a182中运行的Clipboard User Service实例</p>
+<p class="zw">SCM会注册最终服务触发器（详见上文“触发启动的服务”一节），随后启动该服务（如果其启动类型被设置为SERVICE_AUTO_START），根据“服务登录”一节的介绍，当SCM启动托管用户服务的进程时，会分配当前登录用户的令牌以及SCM所使用的WIN://ScmUserService安全特性，借此确认该服务确实托管了服务。如图10-23所示，当用户登录到系统后，实例和模板子键都会存储在表示同一个用户服务的服务根键中。用户注销时，实例子键会被删除，如果系统启动时该子键依然存在，则会被忽略。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2194.png" style="width: 100%" />
+<p class="图题">图10-23　用户服务实例和模板注册表键</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":13,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"9757a514-565b-4fb1-901b-e88a30f4ed2f"}</p>

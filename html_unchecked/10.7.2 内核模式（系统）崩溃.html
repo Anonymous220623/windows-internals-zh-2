@@ -1,0 +1,119 @@
+<h3 class="bt3" id="sigil_toc_id_164">10.7.2　内核模式（系统）崩溃</h3>
+<p class="zw">在讨论内核崩溃后WER的运作之前，首先需要介绍内核是如何记录崩溃信息的。默认情况下，所有Windows系统都会配置为在出现蓝屏死机（BSOD）界面前，首先尝试记录系统状态信息，随后重启动系统。要查看或修改这些设置，请打开“控制面板”中的“系统属性”工具（在“系统和安全、系统、高级系统设置”中），点击“高级”选项卡，随后点击启动和故障恢复选项对应的“设置”按钮。Windows系统的默认设置如图10-40所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3726.png" style="width: 100%" />
+<p class="图题">图10-40　崩溃转储设置</p>
+<h4 class="bt4 sigil_not_in_toc">崩溃转储文件</h4>
+<p class="zw">系统崩溃后可记录不同级别的信息。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">活动内存转储。</strong>活动内存转储包含崩溃发生时，Windows可访问并正在使用的所有物理内存。此类转储是“完全内存转储”的子集，其中会排除掉主机上与故障排查无关的内存页面。此类转储包含分配给用户模式应用程序的内存，以及映射到内核或用户空间的活动内存，同时还包含由页面文件支持的特定过渡页、备用页和已修改页，例如，使用VirtualAlloc分配的内存或页面文件支持的节。活动转储不包含闲置和归零列表中的页面，也不包含文件缓存、客户虚拟机页面，以及对调试工作无法提供帮助的其他类型的内存。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">完全内存转储。</strong>完全内存转储会产生最大的内核模式转储文件，其中包含Windows能访问的所有物理内存页。此类转储在所有平台上都不能完全支持（活动内存转储取代了完全内存转储）。Windows要求页面文件的大小至少是物理内存的大小外加1&nbsp;MB的头部。设备驱动程序可以为二级崩溃转储数据额外增加最多256&nbsp;MB，因此稳妥起见，建议将页面文件的大小再增加256&nbsp;MB。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">核心内存转储。</strong>核心内存转储仅包含操作系统、HAL以及设备驱动程序分配，且在崩溃时位于物理内存中的内核模式页面。此类转储不包含用户进程所属的页面。因为仅内核模式代码可以直接导致Windows崩溃，而用户进程页面通常不太可能是崩溃调试所必需的。此外，与崩溃转储分析有关的所有数据结构（包括运行中进程列表、当前线程的内核模式堆栈、已加载驱动程序列表）都存储在非分页内存中，因此也会包含在核心内存转储中。核心内存转储文件的大小无法预测，因为其大小取决于由操作系统和计算机中的驱动程序分配的内核模式内存的数量。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">自动内存转储。</strong>这是Windows客户端和服务器系统的默认设置。自动内存转储类似于核心内存转储，但也会存储与崩溃时处于活跃状态的用户模式进程相关的元数据。此外，此类转储可以更好地管理系统分页文件大小。Windows可将分页文件的大小设置为小于RAM的大小，但又足够大，以保证大部分时候都可以创建核心内存转储。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">小内存转储。</strong>小内存转储文件的大小通常介于128&nbsp;KB到1&nbsp;MB之间，因此也叫作小型转储（Minidump）或会审（Triage）转储，其中包含了停止代码和参数、已加载驱动程序列表、描述当前进程和线程的数据结构（名为EPROCESS和ETHREAD，详见卷1第3章）、导致崩溃的线程的内核堆栈，以及崩溃转储启发算法认为可能与崩溃有关系的其他内存，例如由处理器寄存器引用的包含内存地址的页面，以及驱动程序添加的二级转储数据。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　设备驱动程序可以通过调用KeRegisterBugCheckReasonCallback注册二级转储数据回调例程。内核会在崩溃后调用这些回调，并通过回调例程向崩溃转储文件中添加额外的数据，例如设备硬件内存或设备信息，借此为调试提供帮助。整个系统的所有驱动程序最多可添加256&nbsp;MB的数据，这个限制取决于存储转储所需的空间以及转储文件的大小，每个回调例程最多可增加额外可用空间1/8容量的数据。一旦额外空间耗尽，后续调用的驱动程序将无法增加数据。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">在加载小型转储时，调试器会提醒用户自己可用的信息较为有限，而类似!process这种列出活跃进程的基础命令也无法获得自己所需的数据。核心内存转储包含了更多信息，但无法切换至其他进程的地址空间映射，因为转储文件不包含所需数据。虽然完全内存转储是其他几种转储类型的超集，但其不足之处在于，此类转储文件的大小会与系统可用物理内存数量相等，因此使用并不广泛。在分析大部分崩溃时，虽然并不会用到用户模式的代码和数据，但活动内存转储克服了这一限制，只转储实际使用的内存（不包括闲置列表和归零列表中的物理页）。因此活动内存转储中可以切换地址空间。</p>
+<p class="zw">小型转储的优势在于占用空间小，方便通过电子邮件等方式传输。此外，每次崩溃都会在%SystemRoot%\Minidump目录下生成一个文件，文件名由日期、系统启动后经历过的时间毫秒数以及一个序列号组成（例如040712-24835-01.dmp），这种名称具备唯一性。如果存在冲突，系统会调用Windows的GetTickCount函数返回一个更新后的系统时钟周期计数并增大序列号，借此额外创建一个具备唯一性的文件名。默认情况下，Windows会保存最新的50个小型转储。该数量可修改HKLM\SYSTEM\CurrentControlSet\Control\ CrashControl注册表键下的MinidumpsCount值进行定制。</p>
+<p class="zw">小型转储的最大不足在于，可存储的数据极为有限，可能会对有效的分析产生负面影响。但在将系统配置为产生核心转储、完全转储、活动转储、自动转储的情况下，我们可以然可以使用WinDbg打开更大的转储文件，随后使用.dump /m命令从中提取小型转储，借此获得小型转储所提供的优势。需要注意的是，就算将系统配置为创建完整或核心转储，依然会同时自动创建小型转储。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　我们可以在LiveKd中使用.dump命令为运行中的系统生成内存映像，随后即可在不关闭系统的情况下进行脱机分析。如果系统出现问题但依然可以提供服务，并且我们希望在不中断服务的情况下进行排错，这种方法将较为有用。由于内存中的不同区域反映了不同时间点的状态，为避免创建不一定完全一致的崩溃映像，LiveKd支持了–m标记。这种镜像转储选项可借助内存管理器的内存镜像API为内核模式内存创建一致的快照，为系统提供一种时间点视图。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">核心内存转储选项提供了一种实用的“折中”。因为它包含所有内核模式物理内存，提供了与完全内存转储一致的分析数据，但忽略了通常无关的用户模式数据和代码，因此转储文件的体积大幅降低。例如在一台具备4&nbsp;GB RAM、运行64位Windows的系统中，核心内存转储文件的大小仅为294&nbsp;MB。</p>
+<p class="zw">如上文所述，在配置使用核心内存转储时，系统会检查分页文件是否足够大。我们无法可靠地预测核心内存转储的文件大小，因为这个大小取决于在崩溃那一刻，操作系统和驱动程序使用的内核模式内存的数量。因此在崩溃时，有可能分页文件太小而不足以容纳核心转储，这种情况下系统将转为创建小型转储。如果想查看自己系统创建的核心转储大小，可以配置注册表选项，强制以手动方式从控制台让系统崩溃（详见https://docs.microsoft. com/ windows-hardware/drivers/debugger/forcing-a-system-crash-from-the-keyboard），或者也可以使用Notmyfault工具（https://docs.microsoft.com/sysinternals/downloads/notmyfault）。</p>
+<p class="zw">不过自动内存转储克服了这些局限。借此，系统将能创建一个足够大的分页文件，以保证大部分时候都能捕获核心内存转储。如果计算机崩溃，而分页文件不够大，无法捕获核心内存转储，Windows会将分页文件的大小增大到至少和已安装的物理内存相等。</p>
+<p class="zw">为减少崩溃转储占用的磁盘空间，Windows需要确定自己是否应当保留最后一个核心转储或完全转储的副本。在报告了内核错误（详见下文）后，Windows会使用下列算法决定是否要保留Memory.dmp文件。对于服务器系统，Windows会始终存储转储文件。在客户端Windows系统中，仅加入域的计算机默认会始终存储转储文件。对于未加入域的计算机，Windows只有在目标卷，也就是系统配置的要将Memory.dmp文件保存到的那个卷的可用磁盘空间大于25&nbsp;GB（ARM64系统大于4GB时，该值可通过HKLM\SYSTEM\ CurrentControlSet\Control\CrashControl\PersistDumpDiskSpaceLimit注册表键进行定制）时才会保留崩溃转储。如果因为磁盘空间限制，系统无法保存崩溃转储文件的副本，此时会将一条事件写入系统事件日志，表明转储文件已被删除（见图10-41）。该行为也可以调整，为此只需创建HKLM\SYSTEM\CurrentControlSet\Control\CrashControl\AlwaysKeepMemoryDump这个DWORD值，并将其数据设置为1。这样，无论可用磁盘空间有多少，Windows都会保留一个崩溃转储。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3817.png" style="width: 100%" />
+<p class="图题">图10-41　转储文件删除事件日志项</p>
+<p class="zwtsh">实验：查看转储文件信息</p>
+<p class="zwts1">每个崩溃转储文件都包含一个转储头，其中描述了停止代码及其参数、发生崩溃的系统类型（包括版本信息），以及分析过程中需要的重要内核模式结构的指针列表。转储头还包含了所写入的崩溃转储类型以及与该类型转储有关的其他信息。调试器的.dumpdebug命令可显示崩溃转储文件的转储头信息。例如，下列内容是一个配置了自动转储的系统所创建的转储文件的相关信息：</p>
+<pre class="代码无行号"><code>0: kd&gt; .dumpdebug 
+----- 64 bit Kernel Bitmap Dump Analysis - Kernel address space is available, 
+      User address space may not be available. 
+　
+DUMP_HEADER64: 
+MajorVersion        0000000f 
+MinorVersion        000047ba 
+KdSecondaryVersion  00000002 
+DirectoryTableBase  00000000`006d4000 
+PfnDataBase         ffffe980`00000000 
+PsLoadedModuleList  fffff800`5df00170 
+PsActiveProcessHead fffff800`5def0b60 
+MachineImageType    00008664 
+NumberProcessors    00000003 
+BugCheckCode        000000e2 
+BugCheckParameter1  00000000`00000000 
+BugCheckParameter2  00000000`00000000 
+BugCheckParameter3  00000000`00000000 
+BugCheckParameter4  00000000`00000000 
+KdDebuggerDataBlock fffff800`5dede5e0 
+SecondaryDataState  00000000 
+ProductType         00000001 
+SuiteMask           00000110 
+Attributes          00000000 
+　
+BITMAP_DUMP: 
+DumpOptions         00000000 
+HeaderSize          16000 
+BitmapSize          9ba00 
+Pages               25dee 
+　
+KiProcessorBlock at fffff800`5e02dac0 
+  3 KiProcessorBlock entries: 
+  fffff800`5c32f180 ffff8701`9f703180 ffff8701`9f3a0180 </code></pre>
+<p class="zwts1">其中，.enumtag命令可以显示崩溃转储中存储的所有二级转储数据（如下文所示）。对于二级数据的每个回调，都会显示标签、数据长度以及数据本身（以字节和ASCII格式显示）。开发者可以使用Debugger Extension API创建自定义的调试器扩展，借此读取二级转储数据（详见帮助文件中的“Windows调试工具”一节）。</p>
+<pre class="代码无行号"><code>{E83B40D2-B0A0-4842-ABEA71C9E3463DD1} - 0x100 bytes 
+  46 41 43 50 14 01 00 00 06 98 56 52 54 55 41 4C  FACP......VRTUAL 
+  4D 49 43 52 4F 53 46 54 01 00 00 00 4D 53 46 54  MICROSFT....MSFT 
+  53 52 41 54 A0 01 00 00 02 C6 56 52 54 55 41 4C  SRAT......VRTUAL 
+  4D 49 43 52 4F 53 46 54 01 00 00 00 4D 53 46 54  MICROSFT....MSFT 
+  57 41 45 54 28 00 00 00 01 22 56 52 54 55 41 4C  WAET(...."VRTUAL 
+  4D 49 43 52 4F 53 46 54 01 00 00 00 4D 53 46 54  MICROSFT....MSFT 
+  41 50 49 43 60 00 00 00 04 F7 56 52 54 55 41 4C  APIC`.....VRTUAL 
+... </code></pre>
+<h4 class="bt4 sigil_not_in_toc">崩溃转储的生成</h4>
+<p class="zw">在系统启动过程的阶段1期间，I/O管理器可读取HKLM\SYSTEM\CurrentControlSet\ Control\CrashControl注册表键来检查崩溃转储选项配置。如果转储已配置，则I/O管理器会加载崩溃转储驱动程序（Crashdmp.sys）并调用其入口点函数。该入口点会向I/O管理器回传一个控制函数表，I/O管理器会通过该表与崩溃转储驱动程序交互。I/O管理器还会初始化安全内核所需的安全加密，以便在转储中保存加密后的页。控制函数表中的一个控制函数还会初始化全局崩溃转储系统，借此获得存储分页文件的物理扇区（文件范围）以及与之相关的卷设备对象。</p>
+<p class="zw">全局崩溃转储初始化函数会获得管理存储分页文件的物理磁盘的微型端口驱动程序，随后使用MmLoadSystemImageEx例程为崩溃转储驱动程序以及磁盘微型端口驱动程序创建副本，通过dump_字符串为它们的原始名称添加前缀。请注意，这意味着还要为微型端口驱动程序导入的所有驱动程序创建一个副本，如图10-42所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3829.png" style="width: 100%" />
+<p class="图题">图10-42　为了生成和写入崩溃转储文件而复制的内核模块</p>
+<p class="zw">系统还会查询DumpFilters值，以获得对卷执行写入操作所需的过滤器驱动程序，例如，BitLocker驱动器加密崩溃转储过滤器驱动程序Dumpfve.sys。系统还会收集与写入崩溃转储所涉及的组件有关的信息，包括磁盘微型端口驱动程序的名称、写入转储所必需的I/O管理器结构，以及分页文件在磁盘上的映射。这些数据会通过两个副本保存到转储上下文结构中。至此，系统已经准备好通过安全的、不会造成破坏的方式创建并写入转储了。</p>
+<p class="zw">当系统崩溃时，崩溃转储驱动程序（%SystemRoot%\System32\Drivers\Crashdmp.sys）会执行内存比较，借此来验证启动过程中获得的两个转储上下文结构的完整性。如果比较不匹配，则不会写入崩溃转储，因为这样做可能导致磁盘故障或损坏。如果验证通过，则Crashdmp.sys会在复制的磁盘微型端口驱动程序以及所需的其他过滤器驱动程序帮助下，将转储信息直接写入磁盘上被分页文件占据的扇区中，并会绕过文件系统驱动程序和存储驱动程序栈（因为它们可能已经损坏，甚至可能是导致崩溃的“罪魁祸首”）。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　由于在系统启动的早期阶段，分页文件会被提前打开以用于崩溃转储，因此，系统启动阶段初始化的驱动程序所包含的Bug导致的大部分崩溃都会产生转储文件。对于Windows启动过程早期阶段涉及的组件（如HAL或此时初始化的驱动程序）导致的崩溃，由于发生得太早，系统此时还没有分页文件，这种情况下只能使用另一台计算机对启动过程进行调试，进而进行崩溃分析。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">在启动过程中，会话管理器（Smss.exe）会检查注册表值HKLM\SYSTEM\ CurrentControlSet\Control\Session Manager\Memory Management\ExistingPageFiles，以获取系统上次启动时存在的分页文件列表（有关分页文件的详情请参阅卷1第5章）。随后它会循环遍历该列表，针对存在的每个文件调用SmpCheckForCrashDump函数，查看其中是否包含崩溃转储数据。在检查过程中，它会搜索每个分页文件最前方的文件头是否存在PAGEDUMP（32位系统）或PAGEDU64（64位系统）签名（找到匹配的签名意味着该分页文件包含崩溃转储信息）。如果存在崩溃转储数据，会话管理器随后会从HKLM\ SYSTEM\CurrentControlSet\Control\CrashControl注册表键读取一系列崩溃参数，包括DumpFile值，其中包含了目标转储文件的名称（除非另外配置，否则通常为%SystemRoot%\ Memory.dmp）。</p>
+<p class="zw">接下来，Smss.exe会检查目标转储文件是否位于与分页文件不同的其他卷上。如果是这种情况，则会检查目标卷是否有足够的可用磁盘空间（崩溃转储文件所需的空间大小信息存储在分页文件的转储头中），随后会将分页文件截断为转储数据的大小，并将其重命名为临时转储文件名（会话管理器会调用NtCreatePagingFile函数新建一个分页文件）。这个临时转储文件名采用了DUMPxxxx.tmp的格式，其中“xxxx”是系统时钟周期计数器的当前低字值（为了找到一个不冲突的值，系统会尝试100次）。重命名分页文件后，系统会移除文件的隐藏和系统属性，并设置必要的安全描述符来保护崩溃转储文件。</p>
+<p class="zw">随后，会话管理器会创建易失注册表键HKLM\SYSTEM\CurrentControlSet\Control\ CrashControl\MachineCrash，并在DumpFile值中存储临时转储文件的名称。随后它会向TempDestination值写入一个DWORD，以此表明转储文件位置是否为一个临时位置。如果分页文件和目标转储文件在同一个卷上，则将不使用临时转储文件，因为分页文件会被截断并直接重命名为目标转储文件的名称。此时DumpFile值将会是目标转储文件，而TempDestination的值会是0。</p>
+<p class="zw">在启动过程后期，Wininit会检查是否存在MachineCrash键，如果存在，则会使用-k –c命令行开关（k标记表示内核错误报告，c标记表示要将完整或核心转储转换为小型转储）启动Windows Fault Reporting进程（Werfault.exe）。WerFault会读取TempDestination和DumpFile值。如果TempDestination值设置为1，这意味着使用了临时文件，WerFault会将临时文件移动到目标位置并为目标文件提供保护，只允许System账户和本地Administrators组访问。随后WerFault会将最终的转储文件名写入MachineCrash键下的FinalDumpFileLocation值。这一系列步骤如图10-43所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3883.png" style="width: 100%" />
+<p class="图题">图10-43　崩溃转储文件的生成</p>
+<p class="zw">为对转储文件写入位置进行更多控制，例如，对从SAN启动的系统或存储分页文件的卷磁盘空间不足的系统进行控制，Windows还支持使用专用转储文件，该文件可通过HKLM\SYSTEM\CurrentControlSet\Control\CrashControl注册表键下的DedicatedDumpFile和DumpFileSize值配置。指定专用转储文件后，崩溃转储驱动程序会创建指定大小的转储文件，并向其中（而不再向分页文件中）写入崩溃数据。如果未指定DumpFileSize值，则Windows会使用存储完整转储文件所需的最大文件尺寸来创建专用转储文件。为了计算所需的大小，Windows会将系统中配备的物理内存页的总大小与转储头所需的大小（32位系统为一页，64位系统为两页）相加，另外会加上二级崩溃转储数据的最大值（256&nbsp;MB）。如果配置了完整转储或核心转储，但目标卷可用的磁盘空间不足以创建专用转储文件，那么系统将改为创建小型转储。</p>
+<h4 class="bt4 sigil_not_in_toc">内核报告</h4>
+<p class="zw">在Wininit启动了WerFault进程并正确生成最终的转储文件后，WerFault将生成随后会发送给微软在线分析网站（如果已配置，还可发送给内部的错误报告服务器）的报告。为内核崩溃生成报告的过程包含下列工作。</p>
+<p class="zw">1）如果转储类型不是小型转储，则会从转储文件中提取小型转储，并将其保存在默认位置%SystemRoot%\Minidump。这个位置可通过HKLM\SYSTEM\CurrentControlSet\ Control\CrashControl注册表键下的MinidumpDir值进行调整。</p>
+<p class="zw">2）将小型转储文件的名称写入HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\KernelFaults\Queue。</p>
+<p class="zw">3）在HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce下添加一条执行WerFault.exe（%SystemRoot%\System32\WerFault.exe）的命令，并为该命令使用–k –rq标记（rq标记指定使用队列报告模式，并且WerFault会重启动），这样即可在第一个用户登录系统时执行WerFault并发送错误报告。</p>
+<p class="zw">在登录过程中执行WerFault时，由于配置了自身的启动方式，所以会使用–k –q标记来运行（q标记本身就指定了使用队列报告模式），并会终止前一个实例。这是为了防止Windows外壳（Shell）在WerFault上等待并尽快将控制返回给RunOnce。新启动的WerFault.exe会检查HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\ KernelFaults\Queue键，查找可能在之前的转储转换阶段添加到队列中的报告。此外，它还会检查之前的会话中是否有未发送的崩溃报告。如果有，WerFault.exe会生成两个XML格式的文件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 第一个包含有关系统的基本描述，如操作系统版本、系统中安装的驱动程序列表、系统中存在的设备列表。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 第二个包含OCA服务使用的元数据，如触发WER的事件类型、系统制造商等额外的配置信息。</p>
+<p class="zw">随后，WerFault会将两个XML文件的副本和小型转储文件发送给微软OCA服务器，该服务器会将数据转发至服务器场并进行自动分析。该服务器场的自动分析功能使用了与我们在微软内核调试器中加载崩溃转储文件时相同的分析引擎。同时该分析功能会生成一个桶ID，借此可以区分特定的崩溃类型。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"e82c68f3-ce07-4590-87fa-97745b952b95","id":"e04dd3a0-4916-47db-9499-bec7238adfa1"}</p>

@@ -1,0 +1,18 @@
+<h3 class="bt3" id="sigil_toc_id_293">11.14.5　BitLocker加密卸载</h3>
+<p class="zw">NTFS文件系统驱动程序可以使用加密文件系统（EFS）提供的服务来执行文件加密和解密操作。这些内核模式的服务可以与通过回调提供给NTFS的用户模式加密文件服务（Efssvc.dll）通信。当用户或应用程序首次加密文件时，EFS服务会向NTFS驱动程序发送FSCTL_SET_ENCRYPTION的控制代码。NTFS文件系统驱动程序可以使用EFS的“写入”回调对原始文件中的数据执行内存中加密。实际的加密过程始终会对文件内容进行拆分，通常会将2&nbsp;MB大小的文件块（Block）拆分为512&nbsp;B的小块（Chunk）。EFS库会使用BCryptEncrypt API加密拆分后的小块。如上文所述，加密引擎由内核CNG驱动程序（Cng.sys）提供，该引擎支持EFS所使用的AES或3DES算法（以及其他一些算法）。EFS会对每个512&nbsp;B的小块（这也是标准硬盘扇区上最小的物理尺寸）进行加密，每一轮加密操作还会使用当前块的字节偏移量更新IV（Initialization Vector，初始化向量，也叫盐值（salt value），这是一种128位的数字，用于为加密方案实现随机化）。</p>
+<p class="zw">在Windows 10中，BitLocker加密卸载（Offload）进一步改善了加密性能。在启用BitLocker的情况下，存储堆栈已经包含一个由全卷加密驱动程序（Fvevol.sys）创建的设备，如果卷已被加密，那么可在物理磁盘扇区上进行实时加密/解密；否则将直接通过I/O请求加以处理。</p>
+<p class="zw">NTFS驱动程序可以使用IRP扩展来延后文件的加密操作。IRP扩展由I/O管理器提供（有关I/O管理器的详细信息，请参阅卷1第6章），可借此在IRP中存储不同类型的额外信息。当创建文件时，EFS驱动程序会探测设备堆栈，借此使用IOCTL_FVE_ GET_CDOPATH控制代码检查是否存在BitLocker控制设备对象（Control Device Object，CDO）。如果存在，则会在SCB中设置一个标记，代表该流可支持加密卸载。</p>
+<p class="zw">每当读取或写入加密文件，或文件被首次加密时，NTFS驱动程序会根据之前设置的标记来判断是否需要加密/解密每个文件块。在启用加密卸载的情况下，NTFS会跳过对EFS的调用，直接在IRP中添加一个IRP扩展，该扩展将被发送到相关卷设备以便执行物理I/O。在IRP扩展中，NTFS驱动程序存储了即将读取或写入文件块的起始虚拟字节偏移量、其大小，以及一些标记。最终，NTFS驱动程序会使用IoCallDriver API将I/O发送给相关卷设备。</p>
+<p class="zw">卷管理器将解析IRP并将其发送给正确的存储驱动程序。BitLocker驱动程序可以识别IRP扩展，并使用自己的例程加密NTFS发送到设备堆栈的数据，这些操作会针对物理扇区执行（作为一种卷过滤器驱动程序，BitLocker中并未实现文件和目录的概念）。一些存储驱动程序，例如逻辑磁盘管理器驱动程序（VolmgrX.sys，为动态磁盘提供了支持）则是附加到卷设备对象的过滤器驱动程序。这些驱动程序位于卷管理器之下，但位于BitLocker驱动程序之上，可以提供数据冗余、条带或存储虚拟化功能，这些特征通常是将原始IRP拆分为多个次级IRP实现的，这些次级IRP会被发送到不同的物理磁盘设备。在这种情况下，次级I/O在被BitLocker驱动程序拦截后，将使用不同的盐值对数据进行加密，从而导致文件数据被损坏。</p>
+<p class="zw">IRP扩展也支持IRP传播的概念，每当原始IRP被拆分时，都会自动修改存储在IRP扩展中的文件虚拟字节偏移量。通常，EFS驱动程序会在512字节的边界上加密文件块，但IRP无法在小于扇区大小的对齐情况下拆分。因此，BitLocker可以正确加密和解密数据，确保不会导致文件被损坏。</p>
+<p class="zw">BitLocker驱动程序的很多例程无法承受内存故障。然而，因为IRP扩展是在拆分IRP时从非分页池中动态分配的，因此该分配可能失败。I/O管理器会通过IoAllocateIrpEx例程解决此问题。内核驱动程序可通过该例程分配IRP（例如传统的IoAllocateIrp）。但新例程分配了一个额外的堆栈位置，并将所有IRP扩展存储在其中。在新API分配的IRP上请求IRP扩展的驱动程序将不再需要通过非分页池来分配新的内存。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　无论是否需要向多个物理设备发出多个I/O，存储驱动程序均可出于不同原因决定拆分IRP。例如卷影复制驱动程序（Volsnap.sys）当需要从“写入时复制”的卷影副本中读取文件时，如果文件驻留在不同区域，例如一部分文件位于实时卷中，另一部分文件位于卷影副本（该副本则位于隐藏目录System Volume Information中）的差分文件中，此时就会拆分I/O。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"8e765ccd-1733-46fe-b48f-23c09944a7ed","id":"75c97924-441d-4384-ac46-26420997e599"}</p>

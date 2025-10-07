@@ -1,0 +1,61 @@
+<h3 class="bt3" id="sigil_toc_id_78">9.1.9　嵌套虚拟化</h3>
+<p class="zw">大型服务器和云服务提供商有时候需要在客户机分区内部运行容器或额外的虚拟机。如图9-20所示，虚拟机监控程序运行在裸机硬件之上，被视作L0虚拟机监控程序（L0代表Level 0，即0级），它使用硬件提供的虚拟化扩展创建了一个客户虚拟机。此外，该L0虚拟机监控程序还模拟了处理器的虚拟化扩展并将其暴露给客户虚拟机（这种暴露虚拟化扩展的能力就叫作嵌套虚拟化）。客户虚拟机只需使用L0虚拟机监控程序暴露的模拟虚拟化扩展即可运行另一个虚拟机监控程序实例（此时该实例为L1虚拟机监控程序，L1代表Level 1，即1级）。L1虚拟机监控程序创建了嵌套的根分区并在其中启动了L2根操作系统。以同样的方式，L2根操作系统可以与L1虚拟机监控程序相互协调启动嵌套的客户虚拟机。在这样的配置中，最终的客户虚拟机可以称为L2客户机。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1256.png" style="width: 100%" />
+<p class="图题">图9-20　嵌套虚拟化的结构</p>
+<p class="zw">嵌套虚拟化是一种软件构造：虚拟机监控程序必须能模拟并管理虚拟化扩展。L1客户虚拟机执行的每条虚拟化指令都会导致L0虚拟机监控程序中产生一个VMEXIT，随后虚拟机监控程序即可通过自己的模拟器重构该指令并执行模拟所需的工作。截至撰写这部分内容，仅Intel和AMD硬件可支持这种做法。嵌套虚拟化能力需要为L1虚拟机明确启用，否则当客户机操作系统执行虚拟化指令时，L0虚拟机监控程序会为虚拟机注入常规保护异常。</p>
+<p class="zw">在Intel硬件上，Hyper-V可通过下列两个主要概念实现嵌套虚拟化。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> VT-x虚拟化扩展模拟。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 嵌套地址转换。</p>
+<p class="zw">正如本节上文所讨论的那样，对于Intel硬件，描述虚拟机基本数据结构的是虚拟机控制结构（Virtual Machine Control Structure，VMCS）。除了代表L1虚拟机的标准物理VMCS之外，当L0虚拟机监控程序创建的虚拟处理器属于支持嵌套虚拟化的分区时，此时将分配一些嵌套的VMCS（这与虚拟VMCS是两个不同概念，请勿混淆）。嵌套VMCS是一种软件描述符，其中包含了L0虚拟机监控程序为L2分区启动并运行嵌套的虚拟处理器所需的全部信息。正如“虚拟机监控程序的启动”一节简要介绍的那样，当L1虚拟机监控程序启动时，会检测自己是否运行在虚拟化环境中。如果是，则会启用各种嵌套启发，如启发的VMCS或直接虚拟刷新（详见下文）。</p>
+<p class="zw">如图9-21所示，对于每个嵌套VMCS，L0虚拟机监控程序还会创建一个虚拟VMCS和一个硬件物理VMCS，这两个类似的数据结构代表了运行L2虚拟机的虚拟处理器。虚拟VMCS很重要，它在嵌套虚拟化数据的维持方面起到了重要作用。物理VMCS则会在L2虚拟机启动时被L0虚拟机监控程序加载，当L0虚拟机监控程序拦截了L1虚拟机监控程序执行的VMLAUNCH指令时会发生该操作。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1263.png" style="width: 100%" />
+<p class="图题">图9-21　一个使用虚拟处理器2运行L2虚拟机的L0虚拟机监控程序</p>
+<p class="zw">在图9-21中，L0虚拟机监控程序调度了通过VP2（使用嵌套的虚拟处理器1）运行的，由L1虚拟机监控程序所管理的L2虚拟机。L1虚拟机监控程序只能对复制到虚拟VMCS中的虚拟化数据进行操作。</p>
+<h4 class="bt4 sigil_not_in_toc">VT-x虚拟化扩展模拟</h4>
+<p class="zw">在Intel硬件上，L0虚拟机监控程序可同时支持启发和未启发的L1虚拟机监控程序。不过唯一可以获得官方支持的做法是在Hyper-V的基础上运行另一个Hyper-V。</p>
+<p class="zw">在未启发的虚拟机监控程序中，所有在L1客户机中执行的VT-x指令都会产生VMEXIT。当L1虚拟机监控程序分配了用于描述全新L2虚拟机的客户机物理VMCS后，通常会将其标记为活跃（在Intel硬件上是通过VMPTRLD指令实现的）。L0虚拟机监控程序会拦截该操作，并将已分配的嵌套VMCS与L1虚拟机监控程序指定的客户机物理VMCS关联在一起。此外，它还会为VMCS填充初始值，并将当前虚拟处理器的嵌套VMCS设置为活跃状态（但并不会切换物理VMCS，执行上下文还会保留在L1虚拟机监控程序中）。由L1虚拟机监控程序针对物理VMCS执行的每个后续读取或写入操作始终会被L0虚拟机监控程序拦截并重定向至虚拟VMCS（请参阅图9-21）。</p>
+<p class="zw">当L1虚拟机监控程序启动虚拟机（执行一种名为VMENTRY的操作）后，还会执行特定的硬件指令（Intel硬件上为VMLAUNCH指令），这些指令也会被L0虚拟机监控程序拦截。对于未启发的情况，L0虚拟机监控程序会将虚拟VMCS的所有客户机字段复制到代表L2虚拟机的另一个物理VMCS中，并通过将其指向L0虚拟机监控程序的入口点来写入主机字段，同时会将其设置为活跃状态（在Intel平台上这是通过硬件VMPTRLD指令实现的）。如果L1虚拟机监控程序使用了二级地址转换（Intel硬件上这叫EPT），L0虚拟机监控程序将会映射当前活跃的L1扩展页表（详情请参阅下一节）。最后，它还会执行特定的硬件指令以执行实际的VMENTRY。最终硬件开始执行L2虚拟机的代码。</p>
+<p class="zw">在执行L2虚拟机过程中，每个会导致VMEXIT的操作都会将执行上下文切回L0（而非L1）虚拟机监控程序。作为回应，L0虚拟机监控程序会在代表L1虚拟机监控程序上下文的原始物理VMCS上执行另一个VMENTRY，并注入一个综合VMEXIT事件。L1虚拟机监控程序重新开始执行，并像常规非嵌套VMEXIT那样处理拦截的事件。当L1完成对综合VMEXIT事件的内部处理后，它会执行VMRESUME操作，该操作会再次被L0虚拟机监控程序拦截，并使用与上文描述类似的初始VMENTRY操作那样进行管理。</p>
+<p class="zw">每次L1虚拟机监控程序执行虚拟化指令后都执行一个VMEXIT，这是一种开销很高的操作，无疑会使L2虚拟机的运行速度普遍受到影响。为了解决此问题，Hyper-V虚拟机监控程序为启发的VMCS提供了支持，这种优化措施在启用后，可以让L1虚拟机监控程序从L1与L0虚拟机监控程序共享的内存页（而非物理VMCS）加载、读取并写入虚拟化数据。这个共享页也叫作启发的VMCS。当L1虚拟机监控程序操作属于L2虚拟机的虚拟化数据时，并不需要使用会导致L0虚拟机监控程序产生VMEXIT的硬件指令，而是可以直接从启发的VMCS中读写。这种设计可显著提高L2虚拟机的性能。</p>
+<p class="zw">在支持启发的情况下，L0虚拟机监控程序只需要拦截VMENTRY和VMEXIT操作（以及其他一些与本讨论无关的操作）。L0虚拟机监控程序管理VMENTRY的方式与非启发场景类似，但在执行上文描述的任何操作前，首先会将共享的启发VMCS内存页中包含的虚拟化数据复制到代表L2虚拟机的虚拟VMCS中。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　值得一提的是，对于非启发场景，L0虚拟机监控程序还支持通过另一种技术防止产生VMEXIT同时管理嵌套的虚拟化数据，这种技术名为影子VMCS。影子VMCS是一种与启发VMCS较为类似的硬件优化技术。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">嵌套地址转换</h4>
+<p class="zw">正如“分区的物理地址空间”一节所述，虚拟机监控程序使用SLAT为虚拟机提供隔离的客户机物理地址空间，并将GPA转换为真正的SPA。而嵌套的虚拟机需要在现有这两层基础上使用另一个额外的硬件转换层。为了向嵌套虚拟化提供支持，这个新层应当能将L2 GPA转换为L1 GPA。由于建立一种支持三层转换的处理器MMU需要更复杂的电子器件，Hyper-V虚拟机监控程序采取了另一种策略来提供额外的地址转换层：影子嵌套页表。影子嵌套页表使用了类似于影子页（可参阅上一节）的技术，可直接将L2 GPA转换为SPA。</p>
+<p class="zw">在创建了支持嵌套虚拟化的分区后，L0虚拟机监控程序会分配并初始化一个嵌套页表影子域。这种数据结构可用于存储与分区中所创建的不同L2虚拟机相互关联的影子嵌套页表列表。此外，其中还存储了分区的活跃域世代编号（详见下一节的讨论）以及嵌套内存统计数据。</p>
+<p class="zw">当L0虚拟机监控程序为了启动L2虚拟机而执行初始VMENTRY时，它会分配与该虚拟机有关的影子嵌套页表，并用空值进行初始化（创建出空的物理地址空间）。当L2虚拟机开始执行代码时，由于嵌套页故障（Intel硬件上这叫作EPT违规），L2虚拟机会立即生成VMEXIT。L0虚拟机监控程序此时并不会将故障注入L1，而会遍历由L1虚拟机监控程序为客户机构建的嵌套页表。如果在其中找到了L2 GPA对应的有效条目，则会读取对应的L1 GPA，将其转换为SPA，并创建所需的影子嵌套页表层次结构，以便将其映射至L2虚拟机。随后它会使用有效的SPA填充叶表项（虚拟机监控程序使用大页面来映射影子嵌套页）并将描述用的嵌套VMCS设置为活跃状态，借此直接恢复L2虚拟机的执行。</p>
+<p class="zw">为了让嵌套地址转换正常工作，L0虚拟机监控程序需要获知对L1嵌套页表所做的所有改动，否则L2虚拟机可能会用陈旧的条目来运行。这种实现是特定于具体平台的，通常来说，虚拟机监控程序会保护L2嵌套页表，只允许读取访问，这样即可在L1虚拟机监控程序修改了嵌套页表后获得通知。不过Hyper-V虚拟机监控程序采取了另一种更聪明的策略，可以保证描述L2虚拟机的影子嵌套页表始终会得到更新，这是因为满足了如下两个前提条件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 当L1虚拟机监控程序在L2嵌套页表中添加新条目时，不会对嵌套虚拟机执行任何其他操作（L0虚拟机监控程序不会进行拦截）。只有当嵌套页表错误导致L0虚拟机监控程序产生VMEXIT时（上文讨论过这种情况），才会在影子嵌套页表中新增加一个条目。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 对于非嵌套虚拟机，当嵌套页表中有条目被更改或删除后，虚拟机监控程序始终会发出TLB刷新，以便让硬件TLB以正确的方式失效。对于嵌套虚拟化，当L1虚拟机监控程序发出TLB刷新时，L0会拦截请求并让影子嵌套页表彻底失效。L0虚拟机监控程序还借助存储在影子VMCS和嵌套页表影子域中的世代ID维持了一种名为虚拟TLB的概念（虚拟TLB架构的讨论已超出了本书的范围）。</p>
+<p class="zw">因为一个地址的变化而让影子嵌套页表彻底失效，这种做法看似有些多余，但这是由硬件支持决定的（Intel硬件的INVEPT指令不允许指定要从TLB中删除哪一个GPA）。在经典虚拟机中这不算什么问题，因为很少会对物理地址空间进行改动。当经典虚拟机启动后，它的所有内存均已分配完成（详见“虚拟化栈”一节）。不过VA支持的虚拟机和VSM并不属于这种情况。</p>
+<p class="zw">为了改善非经典嵌套虚拟机和VSM的性能（详见下一节），虚拟机监控程序对“直接虚拟刷新”提供了支持，借此为L1虚拟机监控程序提供了两个能让TLB失效的虚拟化调用。尤其是HvFlushGuestPhysicalAddressList这个虚拟化调用（详见TLFS文档记录）可以让L1虚拟机监控程序将影子嵌套页表中的某一个具体条目失效，而无须为了刷新整个影子嵌套页表并通过多个VMEXIT重建而导致性能受到影响。</p>
+<p class="zwtsh">实验：在Hyper-V中启用嵌套虚拟化</p>
+<p class="zwts1">如本节所述，为了在L1 Hyper-V虚拟机中运行虚拟机，首先需要在宿主系统中启用嵌套虚拟化功能。为了完成本实验，我们需要一台搭载Intel或AMD CPU、安装了Windows</p>
+<p class="zwts1">10或Windows Server 2019（版本不低于Anniversary Update RS1）的工作站。我们将使用Hyper-V管理器或Windows PowerShell创建一个内存不少于4GB的二类虚拟机。同时本实验还会在创建好的虚拟机中再创建一个嵌套的L2虚拟机，因此必须分配足够的内存。</p>
+<p class="zwts1">第一次启动虚拟机并完成初始配置后，需要关闭该虚拟机，随后以管理员身份打开PowerShell窗口（在搜索框中输入<strong>Windows PowerShell</strong>，随后右击<strong>PowerShell</strong><strong style="color:#0092dd">图标</strong>并选择“<strong style="color:#0092dd">以管理员身份运行</strong>”）。随后运行下列命令，其中“&lt;VmName&gt;”应替换为我们自己的虚拟机名称：</p>
+<pre class="代码无行号"><code>Set-VMProcessor -VMName "&lt;<em>VmName</em>&gt;" -ExposeVirtualizationExtension $true </code></pre>
+<p class="zwts1">若要验证嵌套虚拟化功能是否已经成功启用，请运行：</p>
+<pre class="代码无行号"><code>$(Get-VMProcessor -VMName "&lt;<em>VmName</em>&gt;").ExposeVirtualizationExtensions </code></pre>
+<p class="zwts1">返回的结果应该是True。</p>
+<p class="zwts1">启用嵌套虚拟化功能后，即可重新启动虚拟机。在通过该虚拟机运行L1虚拟机监控程序前，首先需要通过控制面板添加必要的组件。在虚拟机的搜索框内输入“<strong style="color:#0092dd">控制面板</strong>”，点击打开，随后点击“<strong style="color:#0092dd">程序</strong>”，然后选择“<strong style="color:#0092dd">打开或关闭</strong><strong>Windows</strong><strong style="color:#0092dd">功能</strong>”。整个Hyper-V节点下的所有功能都必须选中，如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/268.png" style="width: 100%" />
+<p class="zwts1">点击“<strong style="color:#0092dd">确定</strong>”。添加操作完成后，点击“<strong style="color:#0092dd">重启动</strong>”让虚拟机重新启动（这一步是必需操作）。虚拟机重启动后，即可通过系统信息应用程序（在搜索框中输入<strong>msinfo32</strong>。详见本章下文的“检测VBS及其提供的服务”实验）确认L1虚拟机监控程序的存在。如果因为某些原因该虚拟机监控程序未启动，可在虚拟机中打开一个管理员身份的命令提示符窗口（在搜索框中输入<strong>cmd</strong>并选择“<strong style="color:#0092dd">以管理员身份运行</strong>”），运行下列命令强制启动：</p>
+<pre class="代码无行号"><code>bcdedit /set {current} hypervisorlaunchtype Auto </code></pre>
+<p class="zwts1">随后即可用Hyper-V管理器或Windows PowerShell直接在虚拟机内部创建L2客户虚拟机。结果类似下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1375.jpg" style="width: 100%" />
+<p class="zwts1">我们还可以在L2根分区中启用L1虚拟机监控程序调试器，具体做法类似本章上文的“连接虚拟机监控程序调试器”实验。在撰写这部分内容时，这方面唯一的限制是嵌套配置下无法使用网络调试，唯一能对L1虚拟机监控程序进行的调试方式是使用串口。这意味着在宿主机系统中，我们需要为L1虚拟机启用两个虚拟串口（一个用于虚拟机监控程序，另一个用于L2根分区）并将其连接到命名管道。对于二类虚拟机，可以使用下列PowerShell命令在L1虚拟机中设置两个串口（与上一条命令类似，需要将“&lt;VMName&gt;”替换为实际的虚拟机名称）：</p>
+<pre class="代码无行号"><code>Set-VMComPort -VMName "&lt;<em>VMName</em>&gt;" -Number 1 -Path \\.\pipe\HV_dbg 
+Set-VMComPort -VMName "&lt;<em>VMName</em>&gt;" -Number 2 -Path \\.\pipe\NT_dbg </code></pre>
+<p class="zwts1">随后即可配置虚拟机监控程序调试器连接到COM1串口，而NT内核调试器可连接至COM2（详见上一个实验）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":8,"parentId":"ea2ec385-5fa3-4b0f-b598-9bcb1e169157","id":"e8a0e715-831a-4ccc-aa0b-c58a8d58565f"}</p>

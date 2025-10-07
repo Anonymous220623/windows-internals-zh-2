@@ -1,0 +1,12 @@
+<h2 class="bt2" id="sigil_toc_id_196"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 11.8　预读取和延后写入</h2>
+<p class="zw">本节将介绍由缓存管理器代表文件系统驱动程序实现文件数据读取和写入的方式。请注意，只有在文件未使用FILE_FLAG_NO_BUFFERING标记打开的情况下，缓存管理器才会参与到文件I/O操作中，并使用Windows的I/O函数（如ReadFile和WriteFile函数）进行读/写。映射的文件或设置有FILE_FLAG_NO_BUFFERING标记的文件不经过缓存管理器。</p>
+<table width="99%"> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　当应用程序使用FILE_FLAG_NO_BUFFERING标记打开一个文件时，其文件I/O必须从与设备对齐的偏移量处开始，大小必须为对齐大小的倍数，输入和输出缓冲区也必须是与设备对齐的虚拟地址。对于文件系统，这通常与扇区大小（通常NTFS为4096字节，CDFS为2048字节）一致。除了改善缓存性能，缓存管理器提供的另一个好处是可以执行中间缓冲，借此实现以任意方式对齐的，或者任意大小的I/O。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"12042f06-13bb-4487-b2cc-12b9114bd68f","id":"12f97583-be18-467a-a595-eb74d0d9db22"}</p>

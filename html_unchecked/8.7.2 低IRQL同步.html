@@ -1,0 +1,816 @@
+<h3 class="bt3" id="sigil_toc_id_35">8.7.2　低IRQL同步</h3>
+<p class="zw">在多处理器环境中，内核之外的执行软件也需要以同步的方式访问全局数据结构。例如，内存管理器只有一个页帧（page frame）数据库，该数据库可作为全局数据结构访问，而设备驱动程序需要保证自己能以独占方式访问自己的设备。通过调用内核函数，执行体即可创建、获取并释放自旋锁。</p>
+<p class="zw">然而，自旋锁只能在部分程度上满足执行体对同步机制的需求。因为等待自旋锁的过程实际上会让处理器停止运行，而自旋锁只能在以下这些严格受限的情况下使用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 必须快速访问受保护资源，并且不与其他代码进行复杂的交互。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 临界区代码不能通过分页操作移出内存，不能引用可分页数据，不能调用外部程序（包括系统服务），不能产生中断或异常。</p>
+<p class="zw">这些限制是有界限的，可能无法在所有情况下都能得到满足。此外，除了互相排斥，执行体还需要执行其他类型的同步，还必须为用户模式提供同步机制。</p>
+<p class="zw">当自旋锁不可用时，还有其他一些额外的同步机制可供选择：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 内核调度程序对象（互斥、信号量、事件、计时器）</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 快速互斥和受保护互斥</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 推锁（Pushlock）</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 执行体资源</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 运行一次初始化（InitOnce）</p>
+<p class="zw">此外，同样以低IRQL执行的用户模式代码需要拥有自己的锁定基元，Windows支持各种用户模式专用锁定基元。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 引用内核调度程序对象（突变体、信号量、事件、计时器）的系统调用</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 条件变量（CondVars）</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Slim Reader-Writer锁（SRW锁）</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 基于地址的等待</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 运行一次初始化（InitOnce）</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 临界区</p>
+<p class="zw">稍后我们会详细介绍用户模式基元及其底层的内核模式支持，现在将专注于内核模式对象。表8-26对比了这些机制的功能以及它们与内核模式APC交付所进行的交互。</p>
+<p class="表题">表8-26　内核同步机制</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td></td> 
+   <th> <p class="bt">暴露供设备驱动程序使用</p> </th> 
+   <th> <p class="bt">禁用常规的内核模式APC</p> </th> 
+   <th> <p class="bt">禁用特殊的内核模式APC</p> </th> 
+   <th> <p class="bt">支持递归获取</p> </th> 
+   <th> <p class="bt">支持共享和独占获取</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">内核调度程序互斥</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">内核调度程序信号量、事件、计时器</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">快速互斥</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">受保护互斥</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">推锁</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">执行体资源</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">断开（Rundown）保护</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+   <td> <p class="bg">是</p> </td> 
+   <td> <p class="bg">否</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">内核调度程序对象</h4>
+<p class="zw">内核还以内核对象形式为执行体提供额外的同步机制，内核对象统称为调度程序对象。Windows API可见的同步对象可从这些内核调度程序对象获得它们的同步能力。每个支持同步的Windows API可见对象都封装了至少一个内核调度程序对象。Windows程序员可通过WaitForSingleObject和WaitForMultipleObjects函数查看执行体的同步语义，而这些函数是Windows子系统调用对象管理器所提供的类似系统服务实现的。Windows应用程序中的线程可以与各种对象同步，包括Windows进程、线程、事件、信号量、互斥、可等待计时器、I/O完成端口、ALPC端口、注册表键或文件对象。实际上，内核暴露出的几乎所有对象都可等待。其中一些是适宜的调度程序对象，另外一些则是其中包含调度程序对象的更大的对象（例如端口、键或文件）。表8-27（详见“对象的信号状态”一节）列出了适宜的调度程序对象，Windows API允许等待的其他任何对象在内部都可能包含其中一个基元。</p>
+<p class="zw">执行体资源和推锁是另外两种值得一提的执行体同步机制。这些机制提供了独占访问（如互斥）和共享读取访问（多个读取方针对同一个结构共享只读访问）的能力。然而，它们仅对内核模式代码可用，因此无法通过Windows API访问。同时它们也不是真正的对象，它们具备一种通过原始指针和Ex API暴露的API，但并不涉及对象管理器及其句柄系统。下文将介绍等待调度程序对象的实现细节。</p>
+<h4 class="bt4 sigil_not_in_toc">等待调度程序对象</h4>
+<p class="zw">线程与调度程序对象同步的传统方式是等待对象句柄，或对于某些类型的对象，可直接等待对象的指针。NtWaitForXxx类API（亦可暴露给用户模式）可使用句柄，而KeWaitForXxx API可直接处理调度程序对象。</p>
+<p class="zw">一方面，由于Nt API需要与对象管理器（ObWaitForXxx类函数）通信，因此会按照上文“对象类型”一节介绍的方式进行抽象。例如，Nt API允许将句柄传递给文件对象，因为对象管理器会使用对象类型中的信息将等待重定向到FILE_OBJECT内部的Event字段。另一方面，Ke API只适用于真正的调度程序对象，即以DISPATCHER_HEADER结构开头的对象。无论采用何种方法，这些调用最终都会导致内核将线程置于等待状态。</p>
+<p class="zw">另一种截然不同且更现代的调度程序对象等待方式是依赖异步等待。该方式可利用现有的I/O完成端口基础设施，通过一种名为等待完成数据包（wait completion packet）的中间对象，将调度程序对象与支撑I/O完成端口的内核队列进行关联。在这种机制下，线程本质上注册了一个等待，但不会直接阻塞调度程序对象，也不会进入等待状态。相反，当等待被满足后，I/O完成端口将插入等待完成数据包，并作为通知发送给需要从该I/O完成端口拉取内容或进行等待的任何一方。借此，一个或多个线程将能针对各种对象注册等待，并由一个单独的线程（或线程池）实际进行等待。大家可能已经猜到，这种机制正是线程池API（在CreateThreadPoolWait和SetThreadPoolWait等API中）支持等待回调功能的关键。</p>
+<p class="zw">最后，较新版本的Windows 10还借助目前为Hyper-V保留的DPC Wait Event功能，对这种异步等待机制进一步进行扩展（虽然该API已导出，但尚未提供相关文档）。这也为调度程序提供了最后一种仅供内核模式驱动程序使用的等待方式。在该方式中，延迟过程调用（DPC，详见上文介绍）可与调度程序对象相关联，而无须与线程或I/O完成端口关联。与上文介绍的机制类似，DPC可向对象注册，当等待满足后，DPC会在当前处理器队列中排队（就好像驱动程序刚调用了KeInsertQueueDpc那样）。当调度程序锁被丢弃且IRQL返回到低于DISPATCH_LEVEL的级别后，DPC会在当前处理器上执行，此时驱动程序提供的回调即可针对对象信号状态做出反应。</p>
+<p class="zw">无论哪种等待机制，正被等待的同步对象均可处于两种状态之一：信号状态（signaled state）或非信号状态（nonsignaled state）。线程在等待满足前无法恢复执行，而这种情况主要发生在当线程正在等待的句柄所对应的调度程序对象同时发生了状态变化，从非信号状态变为信号状态（例如其他线程设置了事件对象）时。</p>
+<p class="zw">为了与对象同步，线程需要调用对象管理器所提供的某种等待系统服务，并传递自己希望同步的对象的句柄。线程可以等待一个或多个对象，同时可指定如果在一定时间内没有结束，自己的等待应当被取消。每当内核将一个对象设置为信号状态时，内核的某个信号例程就会检查是否有线程正在等待该对象，而不是正在等待其他对象变为信号状态。如果有，内核会从等待状态中释放一个或多个线程，使其可以继续执行。</p>
+<p class="zw">为了以异步方式通知对象已变为信号状态，线程会创建一个I/O完成端口，并调用NtCreateWaitCompletionPacket来创建等待完成数据包对象，并接收返回给自己的句柄。随后，线程会调用NtAssociateWaitCompletionPacket传入I/O完成端口以及刚创建的等待完成数据包的句柄，并将其与自己想通知的对象的句柄结合在一起。当内核将对象设置为信号状态时，信号例程都会意识到当前没有任何线程在等待该对象，进而检查该等待是否关联了I/O完成端口。如果有，则内核会向与端口关联的队列对象发送信号，这会导致当前等待它的任何线程被唤醒并使用等待完成数据包（或者队列只是发出信号，直到有线程进入并试图进行等待）。或者如果该等待没有关联I/O完成端口，则会检查是否关联了DPC，这会导致在当前处理器上排队。这样即可处理上文提到的仅内核的DPC Wait Event机制。</p>
+<p class="zw">下列有关设置事件的范例演示了同步机制与线程调度进行交互的方式：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 用户模式线程等待事件对象的句柄。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 内核将线程的调度状态改为等待中，随后将该线程加入等待某事件的线程列表。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 另一个线程设置了事件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 内核沿着等待事件的线程列表向下移动。如果某个线程的等待条件已满足（参阅下方的注意事项），那么内核会让该线程从等待状态脱离。如果是优先级可变的线程，内核可能还会提高其执行优先级（有关线程调度的详情请参阅卷1第4章）。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　一些线程可能正在等待多个对象，因此会继续等待，除非指定了WaitAny等待，在这种等待中，只要一个对象（而非全部对象）变为信号状态，线程就会被唤醒。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">对象的信号状态</h4>
+<p class="zw">不同对象的信号状态截然不同。线程对象在其生命周期内会处于非信号（nonsignaled）状态，并会在线程终止时由内核设置为信号状态。类似地，当进程的最后一个线程被终止时，内核也会将进程对象设置为信号状态。相比之下，计时器对象（如警报）会在某一时间被设置为“关闭”。当其时间到期时，内核会将计时器对象设置为信号状态。</p>
+<p class="zw">在选择同步机制时，程序员必须考虑决定各种同步对象行为的规则。当对象被设置为信号状态时，线程的等待是否结束取决于线程正在等待的对象类型，具体如表8-27所示。</p>
+<p class="zw">当一个对象被设置为信号状态后，等待它的线程通常会立即从等待状态中释放。</p>
+<p class="表题">表8-27　信号状态的定义</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">对象类型</p> </th> 
+   <th> <p class="bt">何时设置为信号状态</p> </th> 
+   <th> <p class="bt">对正在等待的线程产生的效果</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">进程</p> </td> 
+   <td> <p class="bg">最后一个线程被终止</p> </td> 
+   <td> <p class="bg">全部被释放</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">线程</p> </td> 
+   <td> <p class="bg">线程被终止</p> </td> 
+   <td> <p class="bg">全部被释放</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">事件（通知类型）</p> </td> 
+   <td> <p class="bg">线程设置了事件</p> </td> 
+   <td> <p class="bg">全部被释放</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">事件（同步类型）</p> </td> 
+   <td> <p class="bg">线程设置了事件</p> </td> 
+   <td> <p class="bg">一个线程被释放并可能被提升，事件对象被重置</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">门（锁定类型）</p> </td> 
+   <td> <p class="bg">线程向门发信号</p> </td> 
+   <td> <p class="bg">第一个等待的线程被释放并收到提升</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">门（信号类型）</p> </td> 
+   <td> <p class="bg">线程向类型发信号</p> </td> 
+   <td> <p class="bg">第一个等待的线程被释放</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">键控事件</p> </td> 
+   <td> <p class="bg">线程使用键设置事件</p> </td> 
+   <td> <p class="bg">等待该键以及与信号发出方位于同一个处理器的线程被释放</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">信号量</p> </td> 
+   <td> <p class="bg">信号量计数器降至“1”</p> </td> 
+   <td> <p class="bg">一个线程被释放</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">计时器（通知类型）</p> </td> 
+   <td> <p class="bg">设置的时间已到或时间间隔过期</p> </td> 
+   <td> <p class="bg">全部均被释放</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">计时器（同步类型）</p> </td> 
+   <td> <p class="bg">设置的时间已到或时间间隔过期</p> </td> 
+   <td> <p class="bg">一个线程被释放</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">互斥</p> </td> 
+   <td> <p class="bg">线程释放互斥</p> </td> 
+   <td> <p class="bg">一个线程被释放且获得互斥的所有权</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">队列</p> </td> 
+   <td> <p class="bg">有东西被放入队列</p> </td> 
+   <td> <p class="bg">一个线程被释放</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw"></p>
+<p class="zw">例如，通知事件对象（在Windows API中称为手动重置事件，manual reset event）可用于宣布某个事件的发生。当事件对象被设置为信号状态时，所有等待该事件的线程均会被释放。但一次等待多个对象的线程属于例外，此类线程可能需要继续等待，直到所等待的其他对象也变为信号状态。</p>
+<p class="zw">与事件对象相比，互斥对象具有与之关联的所有权（除非是在DPC期间获得的）。它可用于对资源获得互斥的访问，同一时间仅一个线程可以持有互斥。当互斥对象空闲时，内核会将其设置为信号状态，随后选择一个等待中的线程来执行，同时还会继承已应用的任何优先级提升操作（有关优先级提升的详情，请参阅卷1第4章）。内核选择的线程将获得互斥对象，所有其他线程则需要继续等待。</p>
+<p class="zw">互斥对象亦可被放弃，当目前拥有互斥对象的线程被终止后，便会发生这种情况。当线程被终止时，内核会枚举该线程拥有的所有互斥，并将其设置为已放弃的状态，就信号逻辑而言，该状态会被视为一种信号状态，因为互斥的所有权会被转移给等待中的线程。</p>
+<p class="zw">上述简短的讨论并不是为了列举使用各种执行体对象的所有原因和应用方式，而是为了介绍它们的基本功能和同步行为。有关如何在Windows程序中使用这些对象的详细信息，请参阅Windows参考文档中与对象同步有关的话题，以及由Jeffrey Richter和Christophe Nasarre撰写的Microsoft Press出版的<em>Windows via C/C++</em>一书。</p>
+<h4 class="bt4 sigil_not_in_toc">无对象等待（线程警报）</h4>
+<p class="zw">虽然等待或通知线程变为信号状态的功能非常强大，并且程序员可以使用的调度程序对象种类十分丰富，但有时也需要更简单的方式。一个线程想要等待一种特定状况的发生，而另一个线程可能需要在该状况发生后发出信号。虽然可以通过将事件与状况绑定来达到这种目的，但这样做需要一些资源（例如内存和句柄），资源的获取和创建操作可能失败，整个过程需要一定时间，并且很复杂。Windows内核为不依赖调度程序对象的同步提供了两种机制：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 线程警报（thread alert）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 按ID发出的线程警报（thread alert by ID）。</p>
+<p class="zw">虽然名称类似，但这两种机制工作方式并不相同。先来看看线程警报的工作方式。首先，希望同步的线程使用SleepEx（最终导致NtDelayExecutionThread）进入可告警睡眠状态。内核线程也可选择使用KeDelayExecutionThread。上文在有关软件中断和APC的章节曾介绍过可告警功能这一概念。这种情况下，线程可以指定超时值或让睡眠状态无限持续。其次，另一方可使用NtAlertThread（或KeAlertThread）API向线程告警，这会导致睡眠状态被中止，返回状态代码STATUS_ALERTED。为了完整讲述所有可能的情况，还需要注意，线程也可以选择不进入可告警的睡眠状态，而是稍后在自己选择的时间调用NtTestAlert（或KeTestAlertThread）API。最后，线程还可以选择挂起自己（通过NtSuspendThread或KeSuspendThread）以避免进入可告警的等待状态。这种情况下，另一方可以使用NtAlertResumeThread向线程告警并恢复该线程的运行。</p>
+<p class="zw">尽管这种机制优雅又简单，但也存在一些问题，首先是无法区分警报是否与等待有关，换句话说，任何其他线程也可能提醒正在等待的线程，此时将无法区分不同的警报。其次，警报API并未提供官方文档，这意味着虽然内部内核与用户服务可以使用该机制，但第三方开发者不应使用这种警报。然后，一旦线程收到警报，任何排队等待的APC都会开始执行，例如当这些警报API被应用程序使用后，用户模式APC也会开始执行。最后，NtAlertThread依然需要打开目标线程的句柄，从技术上来看，该操作会被视作一种获取资源的操作，但也可能失败。调用方理论上可以提前打开句柄，从而保证告警操作成功完成，但这依然会让整个机制增加句柄方面的成本。</p>
+<p class="zw">为应对这些问题，Windows内核从Windows 8开始采用了一种更现代的机制：按ID发出线程警报。虽然该机制背后的系统调用（NtAlertThreadByThreadId和NtWaitForAlertByThreadId）并未提供公开文档，但稍后要介绍的Win32用户模式等待API是有相关文档的。这些系统调用非常简单，无需资源，只使用线程ID作为输入。当然，由于未使用句柄，可能会造成一些安全问题，这些API的一个不足之处在于只能用于与当前进程中的线程同步。</p>
+<p class="zw">这种机制的行为解释起来也相当明显：首先，线程使用NtWaitForAlertByThreadId API进行阻塞，传入一个可选的超时。这会让线程进入真正的等待状态且无须考虑可告警性的问题。实际上，虽然名称有警报二字，但这类等待按照设计是不可告警的。其次，另一个线程调用NtAlertThreadByThreadId API会导致内核查找线程ID，以确保该线程属于发起调用的进程，随后会检查该线程是否确实阻塞了对NtWaitForAlertByThreadId的调用。如果该线程属于这种情况，那么只需直接唤醒。这种简单、优雅的机制是下文要介绍的很多用户模式同步基元的核心，可用于包括从壁垒到更复杂的同步方法在内的很多东西。</p>
+<h4 class="bt4 sigil_not_in_toc">数据结构</h4>
+<p class="zw">在跟踪谁正在等待，它们如何等待，它们在等待什么，以及整个等待操作正处于怎样的状态方面，有三个数据结构起到了关键作用。这三个结构分别为：调度程序头（dispatcher header）、等待块（wait block）以及等待状态寄存器（wait status register）。前两个结构是在WDK的包含文件Wdm.h中公开定义的，最后一个结构虽未提供相关文档，但在类型为KWAIT_STATUS_REGISTER的公开符号中可见（且Flags字段对应了KWAIT_STATE枚举）。</p>
+<p class="zw">调度程序头是一种打包的结构，因为它需要在一个固定大小的结构中保存大量信息（有关调度程序头数据结构定义的详细信息，请参阅“实验：查看等待队列”一节）。其定义中使用的一种主要技术是将互斥的标记存储在与结构相同的内存位置（偏移量），在编程理论中这种做法也叫联合。通过使用Type字段，内核可以知道这些字段中的哪些是相关的。例如，互斥可以为Abandoned状态，但计时器可以为Relative状态。同理，计时器可以Inserted到计时器列表，但调试器只能对一个进程保持Active状态。除了这些特定字段，调度程序头还包含与调度程序对象无关但有意义的信息：与对象关联的等待块的信号状态和等待列表头。</p>
+<p class="zw">这些等待块代表着一个线程（或者在异步等待情况下，代表一个I/O完成端口）被绑定到某一个对象。处于等待状态的每个线程都有一个最多包含64个等待块的数组，这些等待块代表了线程正在等待的对象（可能还包括一个指向内部线程计时器的等待块，可用于满足调用方已经指定的超时值）。或者如果使用了“按ID发出的警报”基元，则会存在一个带有特殊指示的块，以此表明这并非基于调度程序的等待。Object字段会被NtWaitForAlertByThreadId的调用方所指定的Hint替代。维护该数组主要有以下两个目的。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 当线程终止时，它所等待的所有对象必须取消引用，等待块需要删除并与对象断开连接。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 当线程被正在等待的一个对象唤醒（即变为信号状态并满足等待）后，它可能一直在等待的其他所有对象必须取消引用，删除等待块并断开连接。</p>
+<p class="zw">正如上文提到的每个线程都拥有一个数组，其中包含自己所等待的所有对象那样，每个调度程序对象也有一个与自己绑定的等待块相关的链表。保存该链表的目的在于，在一个调度程序对象收到信号后，内核可以快速确定谁在等待该对象（或哪个I/O完成端口被绑定到该对象），并应用下文很快会介绍的等待满足逻辑。</p>
+<p class="zw">因为在每个CPU上运行的平衡集管理器线程（有关平衡集管理器的详情请参阅卷1第5章）需要分析每个线程一直在等待的时间（这是为了决定是否将内核栈换出页面），每个PRCB也会有一个列表，其中包含正在等待且符合要求，最后会在该处理器上运行的线程。这一过程重用了KTHREAD结构的Ready List字段，因为线程不能同时处于就绪状态和等待状态。符合要求的线程必须满足下列三个条件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 等待必须以UserMode的等待模式发出（KernelMode的等待会假设为时间敏感的，不值得付出栈交换成本）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 线程必须设置EnableStackSwap标记（内核驱动程序可使用KeSetKernelStackSwapEnable API禁用）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 线程的优先级必须处于或低于Win32实时优先级范围起点（24，即“实时”进程优先级类中普通线程的默认值）。</p>
+<p class="zw">等待块的结构始终是固定的，但它的一些字段会根据等待的类型以不同方式使用。例如，通常来说，等待块会有一个指向正被等待的对象的指针，但正如上文所述，“按ID发出警报”的等待并不涉及任何对象，因此这可以代表由调用方指定的Hint。类似地，虽然等待块通常会指回等待该对象的线程，但也可以指向I/O完成端口队列，此时，作为异步等待的一部分，等待完成数据包会与对象相关联。</p>
+<p class="zw">此外还需要始终维持两个字段：wait type（等待类型）和wait block state（等待块状态），并且取决于类型，可能还存在wait key（等待键）。等待类型在等待是否被满足过程中非常重要，因为它决定了具体要使用五种可能的等待满足机制中的哪一种：对于wait any（等待任意）机制，内核并不关心其他对象的状态，因为至少其中一个对象（当前对象）已经收到了信号。另外，对于wait all（等待全部）机制，只有在所有其他对象同时处于信号状态后，内核才会唤醒线程，这需要针对等待块及其关联对象进行迭代。</p>
+<p class="zw">此外还有wait dequeue（等待出队）这种特殊情况，此时调度程序对象实际上是一个队列（I/O完成端口），有一个线程等待该队列提供可用的完成数据包（通过调用KeRemoveQueue(Ex)或(Nt)IoRemoveIoCompletion）。附加到队列的等待块以LIFO（后进先出，而不像其他调度程序对象那样使用FIFO，即先进先出顺序）唤醒顺序运行，因此，在队列收到信号后即可执行正确的操作（请注意，线程可能在等待多个对象，因此可能还有其他等待块正处于Wait any或Wait all状态，这些状态也需要定期处理）。</p>
+<p class="zw">对于wait notification（等待通知），内核知道没有任何线程与对象关联，并且这是一个异步等待，因此会向相关I/O完成端口的队列发送信号（因为队列本身就是一个调度程序对象，这会导致队列以及任何潜在等待队列的线程满足二级等待）。</p>
+<p class="zw">最后还有wait DPC（等待DPC），这是最新引入的等待类型，可以让内核知道没有与此等待相关的线程或I/O完成端口，只有相关的DPC对象。此时，指针会指向一个初始化后的KDPC结构，一旦调度程序锁被丢弃，内核就会立刻执行当前处理器的队列。</p>
+<p class="zw">等待块还包含一个易失的等待块状态（KWAIT_BLOCK_STATE），该状态定义了该等待块在当前所从事的事务等待操作中的当前状态。表8-28详细列出了不同状态、这些状态的含义及其在等待逻辑代码中所产生的效果。</p>
+<p class="表题">表8-28　等待块状态</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">状态</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+   <th> <p class="bt">效果</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WaitBlockActive (4)</p> </td> 
+   <td> <p class="bg">该等待块作为处于等待状态线程的一部分，已主动链接到对象</p> </td> 
+   <td> <p class="bg">等待满足期间，该等待块将从等待块列表中取消链接</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WaitBlockInactive (5)</p> </td> 
+   <td> <p class="bg">与此等待块关联的线程等待已满足（或设置时的超时值已过期）</p> </td> 
+   <td> <p class="bg">等待满足期间，该等待块不会从等待块列表中取消链接，因为等待满足处于活跃状态期间必须已经取消链接</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WaitBlockSuspended (6)</p> </td> 
+   <td> <p class="bg">与此等待块关联的线程正在进行轻量级挂起操作</p> </td> 
+   <td> <p class="bg">本质上与WaitBlockActive相同，但仅在恢复线程时使用。常规等待满足期间会被忽略（期间应该不可见，因为挂起的线程无法等待！）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WaitBlockBypassStart (0)</p> </td> 
+   <td> <p class="bg">等待尚未提交时，正在向线程发送信号</p> </td> 
+   <td> <p class="bg">等待满足期间（应该会在线程进入真正等待状态前立即实现），等待线程必须与信号发送方同步，因为等待对象可能位于栈上，而这存在一种风险：将等待块标记为非活跃，可能导致等待方展开栈，而此时信号发送方可能依然在访问栈</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WaitBlockBypassComplete (1)</p> </td> 
+   <td> <p class="bg">与此等待块关联的线程等待现已正确同步（等待满足已实现），“绕过”场景现已完成</p> </td> 
+   <td> <p class="bg">等待块现在基本上会被视作与非活跃等待块等同（会被忽略）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WaitBlockSuspendBypassStart (2)</p> </td> 
+   <td> <p class="bg">轻量级挂起尚未提交时，正在向线程发送信号</p> </td> 
+   <td> <p class="bg">等待块基本会被视作与WaitBlockBypassStart等同</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WaitBlockSuspendBypassComplete (3)</p> </td> 
+   <td> <p class="bg">与此等待块关联的轻量级挂起现在已正确同步</p> </td> 
+   <td> <p class="bg">等待块现在的行为与WaitBlockSuspended无异</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">上文还提到了等待状态计时器。随着Windows 7全局内核调度程序锁的移除，线程（或为了开始等待而需要的其他任何对象）的整体状态可以在等待操作仍在进行的过程中发生变化。由于不再有任何全局状态同步，因此没有什么可以阻止（在其他逻辑处理器上执行的）另一个线程向正在等待的对象发送信号、向线程告警，甚至向其发送APC。因此内核调度程序会对每个等待中的线程对象跟踪多个额外的数据点：线程当前的细化等待状态（KWAIT_STATE，请勿将其与等待块状态混淆）以及任何可能修改正在进行中的等待操作结果的挂起状态变更。这两类数据构成等待状态寄存器（KWAIT_ STATUS_REGISTER）。</p>
+<p class="zw">当线程接到指示（例如WaitForSingleObject调用）开始等待特定对象时，它首先会尝试通过进入等待而转入进行中的等待状态（WaitInProgress）。如果此时该线程没有挂起的警报，那么操作会成功（基于等待的可告警性以及等待的当前处理器模式，这决定了警报是否可以抢占等待）。如果有警报，则完全不会进入等待状态，调用方会收到相应的状态代码；否则随后线程会进入WaitInProgress状态，此时主线程的状态会被设置为Waiting（等待中），等待原因和等待时间会被记录在案，同时还会注册所指定的任何超时值。</p>
+<p class="zw">等待开始后，线程可以根据需要初始化等待块（并在进程中将其标记为WaitBlockActive），随后继续锁定属于此等待的所有对象。由于每个对象都有自己的锁，因此，当多个处理器可能需要分析包含很多对象的等待链（由WaitForMultipleObjects调用产生）时，内核必须要能维持一致的锁定顺序方案。内核使用了一种名为地址排序（address ordering）的技术来实现这一点：因为每个对象都有一个各异且静态的内核模式地址，因此可以按照单调递增的地址顺序对这些对象进行排序，从而保证所有调用方总是以相同的顺序获取和释放锁。这意味着调用方提供的对象数组将被复制并酌情进行排序。</p>
+<p class="zw">下一步需要检查是否可以立即满足等待，例如，线程可能被告知需要等待一个已经被释放的互斥对象或事件已经收到信号。这种情况下，等待可以立即被满足，该过程涉及相关等待块的取消链接（然而这种情况下尚未插入任何等待块），同时需要执行等待退出操作（处理等待状态寄存器中标记的所有挂起的调度程序操作）。如果这种捷径失败，随后内核会尝试着检查该等待指定的超时（如果存在的话）是否已过期。这种情况下等待的并非“被满足”，而是“过期”，尽管结果可能相同，但这会让退出代码的处理速度略微加快一些。</p>
+<p class="zw">如果上述捷径均无效，那么等待块会被插入线程的等待列表中，随后线程会试图提交自己的等待（同时对象锁会被释放，进而其他处理器可以修改该线程目前理应试图等待的所有对象的状态）。假如是其他处理器对该线程或其等待对象不感兴趣的非争用场景，只要等待状态寄存器未标记为包含未决变更，等待就会切换至已提交状态。提交操作会链接至PRCB列表中的等待线程，如果需要，还会激活一个额外的等待队列线程，并插入与等待超时有关的计时器（如果有的话）。因为此时可能已经过去了相当多的周期，因此可能已经超过了超时时间。这种情况下，插入计时器会导致立即向线程发送信号，从而满足计时器的等待以及等待的总超时值。否则在更常见的情况下，CPU会通过上下文切换运行准备好执行的下一个线程（有关调度的详细信息请参阅卷1第4章）。</p>
+<p class="zw">在多处理器计算机上高度争用的代码路径中，尝试提交等待的线程很可能并且很大概率已经在等待的过程中经历了更改。一种可能的情况是：正在等待的某一个对象刚刚收到信号。如前文所述，这会导致相关等待块进入WaitBlockBypassStart状态，并且线程的等待状态寄存器现在会显示为WaitAborted等待状态。另一种可能的情况是：已经向等待的线程发出了警报或APC，但并不设置WaitAborted状态，而是启用等待状态寄存器中的一个与之相对应的位。因为APC可以打断等待（取决于APC类型、等待模式和可告警性），此时会交付APC并中止等待。可以修改等待状态寄存器而不产生完整中止周期的操作包括：修改线程的优先级或相关性，与上文提到的情况类似，这些操作会在因为提交失败而退出等待时进行处理。</p>
+<p class="zw">正如在卷1第4章“调度”一节中简单提过的，在使用SuspendThread和ResumeThread的情况下，最新版本的Windows实现了一种轻量级挂起机制，该机制不再总是将APC放入队列，然后获取线程对象中嵌入的挂起事件。相反，如果符合以下情况，现有等待将被转换为挂起状态。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> KiDisableLightWeightSuspend&nbsp;为&nbsp;0（管理员可以使用注册表HKLM\SYSTEM\ CurrentControlSet\Session Manager\Kernel键下的DisableLightWeightSuspend值关闭这项优化措施）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 线程状态为Waiting，即线程已经处于等待状态。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 等待状态寄存器被设置为WaitCommitted，即线程的等待已被完全占用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 该线程不是UMS主线程或调度线程（有关用户模式调度的详细信息请参阅卷1第4章），因为这需要在调度器的挂起APC中实现额外的逻辑。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 线程在IRQL 0（被动级别）发出等待，因为APC_LEVEL级别的等待所需的特殊处理只有“挂起APC”可以提供。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 线程当前没有已禁用的APC，也没有进行中的APC，因为这些情况需要额外的同步，只有调度器的挂起APC交付可以实现这种同步。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 由于调用了KeStackAttachProcess，线程当前没有附加到不同的进程，因为与上一种情况类似，这也需要特殊的处理。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果与线程等待关联的第一个等待块不处于WaitBlockInactive块状态，其等待类型必须为WaitAll，否则这意味着至少有一个活跃的WaitAny块。</p>
+<p class="zw">正如上述列表所暗示的那样，这种转换是通过获取当前活跃的等待块，并将其转换为WaitBlockSuspended状态的方式实现的。如果等待块当前指向一个对象，就会从其调度程序头的等待列表中取消链接（这样，向对象发送的信号将不再能唤醒该线程）。如果线程关联了计时器，则会被取消并从线程的等待块数组中移除，同时设置一个标记代表该操作已完成。最后，最初的等待模式（Kernel或User）也会被保存在一个标记中。</p>
+<p class="zw">由于不再使用真正的等待对象，这种机制需要引入表8-28中列出的三个额外的等待块状态及四个全新的等待状态：WaitSuspendInProgress、WaitSuspended、WaitResumeInProgress以及WaitResumeAborted。这些新状态的行为方式与它们常规的等价物类似，但解决了上文所提到的轻量级挂起操作中所提到的争用状况。</p>
+<p class="zw">例如，当一个线程恢复时，内核会检测它是否被置于轻量级挂起状态，并会撤销该操作，然后将等待寄存器设置为WaitResumeInProgress。随后将枚举每个等待块，对于任何处于WaitBlockSuspended状态的块，会将其置于WaitBlockActive状态然后重新链接回对象调度程序头的等待块列表，除非在此期间对象收到信号，此时则会将对象设置为WaitBlockInactive状态，这也与常规的唤醒操作类似。最后，如果线程有一个与自己的等待相关的超时被取消，线程的计时器会被重新插入计时器表中，并保持原先的过期（超时）时间。</p>
+<p class="zw">图8-39展示了调度程序对象到等待块，再到线程，最后到PRCB之间的关系（前提是线程有资格进行栈交换）。在本例中，CPU 0有两个等待中（已提交）的线程：线程1正在等待对象B，线程2正在等待对象A和对象B。如果对象A收到信号，内核会注意到这一点，因为线程2也在等待另一个对象，线程2还无法准备好开始执行。另一方面，如果对象B收到信号，内核可以立即让线程1准备好执行，因为该线程无须等待其他对象（或者，如果线程1也在等待其他对象，但它的等待类型为WaitAny，此时内核依然可以唤醒线程1）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx4346.png" style="width: 100%" />
+<p class="图题">图8-39　“等待”的数据结构</p>
+<p class="zwtsh">实验：查看等待队列</p>
+<p class="zwts1">我们可以使用内核调试器的!thread命令查看线程正在等待的对象列表。例如，下列命令摘录自!process命令的输出结果，显示了该线程正在等待一个事件对象：</p>
+<pre class="代码无行号"><code>lkd&gt; !process 0 4 explorer.exe 
+　
+    THREAD ffff898f2b345080 Cid 27bc.137c Teb: 00000000006ba000 
+    Win32Thread: 0000000000000000 WAIT: (UserRequest) UserMode Non-Alertable 
+            ffff898f2b64ba60 SynchronizationEvent </code></pre>
+<p class="zwts1">也可以使用dx命令解读对象的调度程序头，如下所示：</p>
+<pre class="代码无行号"><code>lkd&gt; dx (nt!_DISPATCHER_HEADER*)0xffff898f2b64ba60 
+(nt!_DISPATCHER_HEADER*)0xffff898f2b64ba60: 0xffff898f2b64ba60 [Type: _DISPATCHER_HEADER*] 
+    [+0x000] Lock             : 393217 [Type: long] 
+    [+0x000] LockNV           : 393217 [Type: long] 
+    [+0x000] Type             : 0x1 [Type: unsigned char] 
+    [+0x001] Signalling       : 0x0 [Type: unsigned char] 
+    [+0x002] Size             : 0x6 [Type: unsigned char] 
+    [+0x003] Reserved1        : 0x0 [Type: unsigned char] 
+    [+0x000] TimerType        : 0x1 [Type: unsigned char] 
+    [+0x001] TimerControlFlags : 0x0 [Type: unsigned char] 
+    [+0x001 ( 0: 0)] Absolute         : 0x0 [Type: unsigned char] 
+    [+0x001 ( 1: 1)] Wake             : 0x0 [Type: unsigned char] 
+    [+0x001 ( 7: 2)] EncodedTolerableDelay : 0x0 [Type: unsigned char] 
+    [+0x002] Hand             : 0x6 [Type: unsigned char] 
+    [+0x003] TimerMiscFlags   : 0x0 [Type: unsigned char] 
+    [+0x003 ( 5: 0)] Index            : 0x0 [Type: unsigned char] 
+    [+0x003 ( 6: 6)] Inserted         : 0x0 [Type: unsigned char] 
+    [+0x003 ( 7: 7)] Expired          : 0x0 [Type: unsigned char] 
+    [+0x000] Timer2Type       : 0x1 [Type: unsigned char] 
+    [+0x001] Timer2Flags      : 0x0 [Type: unsigned char] 
+    [+0x001 ( 0: 0)] Timer2Inserted   : 0x0 [Type: unsigned char] 
+    [+0x001 ( 1: 1)] Timer2Expiring   : 0x0 [Type: unsigned char] 
+    [+0x001 ( 2: 2)] Timer2CancelPending : 0x0 [Type: unsigned char] 
+    [+0x001 ( 3: 3)] Timer2SetPending : 0x0 [Type: unsigned char] 
+    [+0x001 ( 4: 4)] Timer2Running    : 0x0 [Type: unsigned char] 
+    [+0x001 ( 5: 5)] Timer2Disabled   : 0x0 [Type: unsigned char] 
+    [+0x001 ( 7: 6)] Timer2ReservedFlags : 0x0 [Type: unsigned char] 
+    [+0x002] Timer2ComponentId : 0x6 [Type: unsigned char] 
+    [+0x003] Timer2RelativeId : 0x0 [Type: unsigned char] 
+    [+0x000] QueueType        : 0x1 [Type: unsigned char] 
+    [+0x001] QueueControlFlags : 0x0 [Type: unsigned char] 
+    [+0x001 ( 0: 0)] Abandoned        : 0x0 [Type: unsigned char] 
+    [+0x001 ( 1: 1)] DisableIncrement : 0x0 [Type: unsigned char] 
+    [+0x001 ( 7: 2)] QueueReservedControlFlags : 0x0 [Type: unsigned char] 
+    [+0x002] QueueSize        : 0x6 [Type: unsigned char] 
+    [+0x003] QueueReserved    : 0x0 [Type: unsigned char] 
+    [+0x000] ThreadType       : 0x1 [Type: unsigned char] 
+    [+0x001] ThreadReserved   : 0x0 [Type: unsigned char] 
+    [+0x002] ThreadControlFlags : 0x6 [Type: unsigned char] 
+    [+0x002 ( 0: 0)] CycleProfiling   : 0x0 [Type: unsigned char] 
+    [+0x002 ( 1: 1)] CounterProfiling : 0x1 [Type: unsigned char] 
+    [+0x002 ( 2: 2)] GroupScheduling  : 0x1 [Type: unsigned char]
+    [+0x002 ( 3: 3)] AffinitySet      : 0x0 [Type: unsigned char]
+    [+0x002 ( 4: 4)] Tagged           : 0x0 [Type: unsigned char]
+    [+0x002 ( 5: 5)] EnergyProfiling  : 0x0 [Type: unsigned char]
+    [+0x002 ( 6: 6)] SchedulerAssist  : 0x0 [Type: unsigned char]
+    [+0x002 ( 7: 7)] ThreadReservedControlFlags : 0x0 [Type: unsigned char]
+    [+0x003] DebugActive      : 0x0 [Type: unsigned char]
+    [+0x003 ( 0: 0)] ActiveDR7        : 0x0 [Type: unsigned char]
+    [+0x003 ( 1: 1)] Instrumented     : 0x0 [Type: unsigned char]
+    [+0x003 ( 2: 2)] Minimal          : 0x0 [Type: unsigned char]
+    [+0x003 ( 5: 3)] Reserved4        : 0x0 [Type: unsigned char]
+    [+0x003 ( 6: 6)] UmsScheduled     : 0x0 [Type: unsigned char]
+    [+0x003 ( 7: 7)] UmsPrimary       : 0x0 [Type: unsigned char]
+    [+0x000] MutantType       : 0x1 [Type: unsigned char]
+    [+0x001] MutantSize       : 0x0 [Type: unsigned char]
+    [+0x002] DpcActive        : 0x6 [Type: unsigned char]
+    [+0x003] MutantReserved   : 0x0 [Type: unsigned char]
+    [+0x004] SignalState      : 0 [Type: long]
+    [+0x008] WaitListHead     [Type: _LIST_ENTRY]
+        [+0x000] Flink            : 0xffff898f2b3451c0 [Type: _LIST_ENTRY *]
+        [+0x008] Blink            : 0xffff898f2b3451c0 [Type: _LIST_ENTRY *] </code></pre>
+<p class="zwts1">该结构是一种联合，因此我们可以忽略与特定对象类型不对应的值，因为这些值是不相关的。然而，除了查看Windows内核源代码或WDK头文件的注释，我们还很难判断哪些字段与哪个类型相关。为了方便起见，表8-29列出了调度程序头标记及其适用的对象。</p>
+<p class="表题">表8-29　调度程序头标记的用法和含义</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">标记</p> </th> 
+   <th> <p class="bt">适用于</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Type</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">所有调度程序对象</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">来自KOBJECTS枚举的值，用于标识调度程序对象的类型</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Lock</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">所有对象</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">用于在等待期间需要修改状态或链接的时候锁定对象，实际上对应于Type字段的第7位（0x80）</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Signaling</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">门</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">当门收到信号时，为了唤醒线程而需要提高的优先级</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Size</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">事件、信号量、门、进程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">为适合单个字节的要求，将对象的大小除以4之后的大小</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Timer2Type</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">闲置可复原计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">Type字段的映射</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Timer2Inserted</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">闲置可复原计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">在计时器插入计时器句柄表的时候设置</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Timer2Expiring</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">闲置可复原计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">在计时器正在到期时设置</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Timer2CancelPending</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">闲置可复原计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">在取消计时器时设置</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Timer2SetPending</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">闲置可复原计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">在注册计时器时设置</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Timer2Running</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">闲置可复原计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">在计时器回调当前处于活跃状态时设置</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Timer2Disabled</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">闲置可复原计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">在禁用计时器时设置</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Timer2ComponentId</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">闲置可复原计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">用于标识与计时器关联的、众所周知的组件</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Timer2RelativeId</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">闲置可复原计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">在之前指定的组件ID中标识这是哪一个计时器</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TimerType</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">Type字段的映射</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Absolute</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">过期时间为绝对值而非相对值</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Wake</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">代表可唤醒计时器，意味着收到信号后应退出待机状态</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">EncodedTolerableDelay</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器在预期周期之外运行时可支持的最大容差量（以2的幂变化）</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Hand</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器句柄表索引</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Index</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器过期表索引</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Inserted</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">在计时器被插入计时器句柄表时设置</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Expired</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">计时器</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">在计时器已过期时设置</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ThreadType</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">Type字段的映射</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ThreadReserved</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">未使用</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CycleProfiling</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">已为此线程启用CPU周期分析（Profiling）</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CounterProfiling</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">已为此线程启用硬件CPU性能计数器监控/分析</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">GroupScheduling</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">已为此线程启用调度组，例如在DFSS（分布式公平共享调度器）模式下运行，或通过实现CPU限流的作业对象运行</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">AffinitySet</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程有一个与之关联的CPU集</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Tagged</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程已分配属性标签</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">EnergyProfiling</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">为该线程所属的进程启用了能耗估算</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SchedulerAssist</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">Hyper-V XTS（eXTended Scheduler）已启用，并且该线程属于VM最小进程内部的虚拟处理器（VP）线程</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Instrumented</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">指定该线程是否具备用户模式检测回调</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ActiveDR7</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">正在使用硬件断点，因此DR7处于活跃状态，应在上下文操作期间进行清理。该标记有时也叫作DebugActive</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Minimal</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">该线程属于一个最小进程</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">AltSyscall</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">已为拥有该线程的进程注册了一个备用系统调用处理程序，例如Pico Provider或Windows CE PAL</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">UmsScheduled</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">该线程是UMS Worker（已调度）线程</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">UmsPrimary</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">线程</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">该线程是UMS Scheduler（主要）线程</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">MutantType</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">突变体</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">Type字段的映射</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">MutantSize</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">突变体</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">未使用</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DpcActive</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">突变体</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">DPC期间获得了突变体</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">MutantReserved</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">突变体</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">未使用</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">QueueType</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">队列</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">Type字段的映射</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Abandoned</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">队列</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">队列不再被任何线程等待</span></p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DisableIncrement</p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">队列</span></p> </td> 
+   <td> <p class="bg"><span style="font-family: Times New Roman，楷体_GB2312">不应为了唤醒线程并处理队列中的数据包而提高线程优先级</span></p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw"></p>
+<p class="zwts1">最后，调度程序头也包含上文提到的SignalState字段以及WaitListHead字段。不过需要注意，在等待列表头指针相同时，这可能意味着没有正在等待的线程，或意味着有一个线程正在等待该对象。若要区分这两种情况，可以看看相同的指针是否恰好是列表本身的地址，如果是，那么代表完全没有正在等待的线程。在上文的例子中，0XFFFF898F2B3451C0并非列表本身的地址，因此可以这样转储等待块：</p>
+<pre class="代码无行号"><code>lkd&gt; dx (nt!_KWAIT_BLOCK*)0xffff898f2b3451c0 
+(nt!_KWAIT_BLOCK*)0xffff898f2b3451c0       : 0xffff898f2b3451c0 [Type: _KWAIT_BLOCK *]
+    [+0x000] WaitListEntry     [Type: _LIST_ENTRY]
+    [+0x010] WaitType          : 0x1 [Type: unsigned char]
+    [+0x011] BlockState        : 0x4 [Type: unsigned char]
+    [+0x012] WaitKey           : 0x0 [Type: unsigned short]
+    [+0x014] SpareLong         : 6066 [Type: long]
+    [+0x018] Thread            : 0xffff898f2b345080 [Type: _KTHREAD *]
+    [+0x018] NotificationQueue : 0xffff898f2b345080 [Type: _KQUEUE *]
+    [+0x020] Object            : 0xffff898f2b64ba60 [Type: void *]
+    [+0x028] SparePtr          : 0x0 [Type: void *] </code></pre>
+<p class="zwts1">本例中，等待类型是WaitAny，因此可以知道有一个线程正在阻塞事件，还能得到线程的指针。此外还能看到，该等待块是活跃的。接下来可以进一步调查线程结构中与等待相关的几个字段：</p>
+<pre class="代码无行号"><code>lkd&gt; dt nt!_KTHREAD 0xffff898f2b345080 WaitRegister.State WaitIrql WaitMode <br>WaitBlockCount
+     WaitReason WaitTime
+   +0x070 WaitRegister       : 
+   +0x000 State              : 0y001
+   +0x186 WaitIrql           : 0 ''
+   +0x187 WaitMode           : 1 ''
+   +0x1b4 WaitTime           : 0x39b38f8
+   +0x24b WaitBlockCount     : 0x1 ''
+   +0x283 WaitReason         : 0x6 '' </code></pre>
+<p class="zwts1">数据显示是一个在IRQL 0（被动级别）下执行的已提交等待，其等待模式为UserMode，其时间显示为自启动以来15&nbsp;ms的时钟周期，而产生的原因在于用户模式应用程序的请求。我们还可以发现，这是该线程唯一的等待块，意味着该线程并未等待其他任何对象。</p>
+<p class="zwts1">如果等待列表头包含多个条目，我们还可以对等待块的WaitListEntry字段中的第二个指针值执行相同命令（并最终在等待块的线程指针上执行!thread），借此来遍历列表并查看等待该对象的其他线程。如果这些线程正在等待多个对象，则可以查看其WaitBlockCount以了解还存在多少个其他等待块，并直接为指针增加sizeof(KWAIT_ BLOCK)所对应的值。</p>
+<p class="zwts1">另一种可能是，等待类型为WaitNotification，此时可以使用通知队列指针来转储Queue (KQUEUE)结构，这本身是一个调度程序对象。此外可能还会有自己的非空等待块列表，这会显示与工作线程相关的等待块，而这个工作线程将以异步方式接收到对象已获得信号的通知。要确定最终会执行哪个回调，我们需要转储用户模式线程池数据结构。</p>
+<h4 class="bt4 sigil_not_in_toc">键控事件</h4>
+<p class="zw">一种名为键控事件（keyed event）的同步对象特别值得一提，因为它在用户模式独占同步基元和按照ID发出警报基元的开发过程中扮演了关键角色。通过下文的介绍大家会知道，这实际上是Windows中实现的一种类似于Linux操作系统中Futex（一种经过了充分研究的计算机科学概念）的东西。最初实现键控事件是为了帮助进程在使用临界区时处理内存不足的情况，是一种用户模式的同步对象，很快我们还将详细介绍。有一种未公开的键控事件允许线程指定自己要等待的“键”，当同一个进程的另一个线程使用相同的键向该事件发送信号后，这个线程就会被唤醒。但正如上文所述，如果觉得这与警报机制比较类似，那是因为键控事件实际上可以看成警报的前兆。</p>
+<p class="zw">如果发生争用，EnterCriticalSection会动态分配一个事件对象，想要获取临界区的线程会等待拥有该临界区的其他线程向LeaveCriticalSection发送信号。显然，在内存不足的时候这会导致一个问题：临界区的获取可能会失败，因为系统无法分配所需的事件对象。在“病态”情况下，内存不足本身也可能是应用程序试图获取临界区而导致的，这种情况下系统将会遇到死锁。但内存不足并非导致这种失败的唯一情况，一些较为罕见的情况下可能是句柄耗尽导致的。如果进程达到句柄数量上限，事件对象的新句柄创建就会失败。</p>
+<p class="zw">似乎预先分配一个全局标准事件对象可以解决这种问题，就像上文曾介绍过的保留对象那样。然而，由于一个进程可以有多个临界区，每一个都有自己的锁定状态，这种做法需要预先分配未知数量的事件对象，因此这种方法并不会有效。不过键控事件最主要的特点在于，一个事件可以在不同线程之间重用，只要每个线程提供一个不同的键加以区分即可。通过使用临界区的虚拟地址本身作为这个“键”，这种做法可以有效地让多个临界区（进而让等待方）使用同一个键控事件句柄，而这个句柄是可以在进程启动时预先分配的。</p>
+<p class="zw">当线程发出键控事件信号或等待键控事件时，会使用一种名为“键”的唯一标识符，键可用于区分不同的键控事件实例（键控事件与单一临界区之间的关联）。当所有者线程发送信号释放键控事件后，只会唤醒等待该键的一个线程（与同步事件行为类似，与通知事件行为相反）。继续介绍使用自己的地址作为键的临界区的例子，这也意味着每个进程依然需要自己的键控事件，因为虚拟地址很明显只能在一个进程的地址空间内维持唯一性。然而事实证明，内核只能唤醒当前进程中的等待方，因此，不同进程之间的键实际上是被隔离的，这意味着整个系统只能有一个键控事件对象。</p>
+<p class="zw">因此，当EnterCriticalSection调用NtWaitForKeyedEvent等待键控事件时，会给出一个NULL句柄作为该键控事件的参数，告诉内核自己无法创建键控事件。内核会识别出这种行为并使用一个名为ExpCritSecOutOfMemoryEvent的全局键控事件。这样做的好处在于，进程不再需要为具名的键控事件浪费一个句柄，因为内核会跟踪该对象及其引用。</p>
+<p class="zw">然而，键控事件不仅仅是低内存情况下的后备目标。当多个等待方在等待同一个键并且需要被唤醒时，该键会多次收到信号，这需要由对象维持一个列出了所有等待方的列表，以便针对每个等待方执行“唤醒”操作（回想一下，向一个键控事件发送信号的结果与向一个同步事件发送信号的结果是一样的）。即使等待方列表不包含任何线程，线程也可以向键控事件发送信号，这种情况下，将由发出信号的线程来等待事件。</p>
+<p class="zw">如果没有这种后备机制，那么发出信号的线程可能会在用户模式代码中将键控事件视为未收到信号，并尝试进行等待的情况下向键控事件发出信号。等待可能是在发出信号的线程向键控事件发出信号之后发生的，这会导致错过脉冲，进而导致等待中的线程死锁。通过在这种情况下强制发出信号的线程进行等待，实际上保证了只在当有一方正在寻找（等待）的情况下，才会真正向键控事件发出信号。这种行为也使得键控事件与Linux Futex较为相似但也并不完全相同，并使得键控事件可以跨越多个用户模式基元使用，例如SRW（Slim Read Writer）锁，我们很快将介绍这些内容。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　当键控事件等待代码需要等待时，它会使用内核模式线程对象（ETHREAD）中一种名为KeyedWaitSemaphore的内置信号量（该信号量会与ALPC等待信号量共享自己的位置）。有关线程对象的详情请参阅卷1第4章。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">然而，键控事件并未取代临界区所实现的标准事件对象。最开始在Windows XP时代，这是因为键控事件在大量使用的情况下无法提供可扩展性能。仔细回忆一下会发现，之前介绍的所有算法都只能用于关键的低内存场景中，此时性能和可扩展性并没有那么重要。取代标准事件对象，会给键控事件造成本不应承担的压力。主要的性能瓶颈在于，键控事件通过一种双链表列出了所有等待方，此类列表的遍历速度很慢，这意味着遍历整个列表需要花费大量时间。这种情况下，具体所需的时间取决于正在等待的线程数量。由于对象是全局的，列表中可能会包含数十个线程，因此每次设置或等待键的时候都需要花费很长时间进行遍历。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　该列表的头保存在键控事件对象中，而线程会通过内核模式线程对象（ETHREAD）的KeyedWaitChain字段（会与线程的退出时间共享，存储为LARGE_INTEGER，其大小与双链表的大小相同）链接在一起。有关该对象的详细信息请参阅卷1第4章。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">Windows Vista使用哈希表（而非链表）保存等待方线程，由此改善了键控事件的性能。这项优化措施最终使得Windows能够提供三个全新的轻量级用户模式同步基元（下文很快将会介绍），这些基元都需要依赖键控事件。不过临界区会继续使用事件对象，这主要是为了保证应用程序的兼容性和调试功能，因为事件对象及其内部原理都是公开且记录在案的，而键控事件是不透明的，也并未暴露给Win32 API。</p>
+<p class="zw">不过随着Windows 8引入了全新的按照线程ID进行报警的功能，一切又再次发生了变化，取消了整个系统对键控事件的使用（但键控事件依然保留供init once同步中的一种情况使用，下文很快将会提到）。随着时间推移，临界区结构最终放弃了对常规事件对象的使用，转为使用这种新的功能（需要时可通过应用程序兼容性铺垫来恢复对原始事件对象的使用）。</p>
+<h4 class="bt4 sigil_not_in_toc">快速互斥和受保护互斥</h4>
+<p class="zw">快速互斥（fast mutex）也叫执行体互斥，相较互斥对象，它们可提供更好的性能，因为它们尽管建立在调度程序对象（一种事件）上，但只有在执行快速互斥时才会等待。与总是通过调度程序获取的标准互斥不同，在存在争用的情况下，这种特性会让快速互斥获得更好的性能。快速互斥已被广泛应用在设备驱动程序中。</p>
+<p class="zw">然而，这种效率也要付出成本，因为快速互斥仅适用于所有内核模式APC（上文进行过介绍）交付可以被禁用的情况下，不像常规互斥对象只需要阻止常规APC的交付。有鉴于这一点，执行体定义了两个可用于获取快速互斥的函数：ExAcquireFastMutex和ExAcquireFastMutexUnsafe。前者可以将处理器的IRQL提升至APC级别以阻止所有APC交付，后一个“不安全”函数可在将IRQL提升至APC级别，进而将所有内核模式APC交付全部禁用的情况下调用。ExTryToAcquireFastMutex的执行过程与第一个函数类似，但如果快速互斥已经被持有，实际上它并不会等待，而是直接返回FALSE。快速互斥的另一个局限在于，无法以递归的方式获取，这一点与互斥对象有所差异。</p>
+<p class="zw">Windows 8和后续版本中的受保护互斥（guarded mutex）与快速互斥相同，但要通过KeAcquireGuardedMutex和KeAcquireGuardedMutexUnsafe获取。与快速互斥类似，受保护互斥也存在KeTryToAcquireGuardedMutex方法。</p>
+<p class="zw">在Windows 8之前，这些函数并不会通过将IRQL提升至APC级别而禁用APC，而是会进入一个受保护区域，借此可在线程的对象结构中设置一个特殊计数器以禁用APC交付，直到该区域退出，这一点上文也有提及。在使用PIC（本章上文同样进行了介绍）的老版本系统中，这种方式比通过IRQL的做法速度更快。此外，受保护互斥使用了一种门调度程序对象，因此速度会比事件略快一些，但这个差异目前也已经不复存在。</p>
+<p class="zw">受保护互斥的另一个问题在于内核函数KeAreApcsDisabled。在Windows Server 2003之前，该函数通过检查代码是否在临界区运行而判断常规APC是否被禁用。在Windows Server 2003中，该函数被改为确定代码是否处于临界区或受保护部分中，如果特殊内核APC被禁用，该函数也会返回TRUE。</p>
+<p class="zw">因为当特殊内核APC被禁用时，驱动程序不应执行某些操作，因此，我们调用KeGetCurrentIrql来检查IEQL是否为APC级别，这种做法是有意义的，这也是禁用特殊内核APC的唯一方法。然而，随着受保护区域和受保护互斥的引入，即使内存管理器大量使用了这些机制，这些检查也会因为受保护互斥不提升IRQL而失败。为此，驱动程序必须调用KeAreAllApcsDisabled，以此通过受保护部分来检查特殊内核APC是否被禁用。这种特性与驱动程序验证器（Driver Verifier）中脆弱的检查功能相结合，会导致误报，最终这一切还导致决定使用快速互斥代替受保护互斥。</p>
+<h4 class="bt4 sigil_not_in_toc">执行体资源</h4>
+<p class="zw">执行体资源是一种支持共享访问和独占访问的同步机制，与快速互斥类似，获取执行体资源之前需要禁用所有内核模式APC交付。执行体资源也建立在调度程序对象基础上，只会用于存在争用的情况下。整个系统中都用到了执行体资源，尤其是文件系统驱动程序，因为此类驱动程序往往有较长的等待期，并且在等待期间依然要在一定程度上允许进行I/O操作（例如读取）。</p>
+<p class="zw">如果线程要等待获取可共享访问的执行体资源，需要等待该资源相关联的信号量；而如果线程要等待获取可独占访问的执行体资源，需要等待事件。共享的等待方会使用一种包含无限计数器的信号量，因为当独占的持有者通过向信号量发送信号释放资源后，所有等待方都会被唤醒并获得资源访问权。当线程等待独占访问的资源目前被其他线程所拥有时，该线程会等待一个同步事件对象，因为当该事件收到信号后，只有一个等待方会被唤醒。在上文关于同步事件的介绍中曾经提过，一些事件的取消等待（Unwait）操作实际上可能导致优先级提升，使用执行体资源时就会出现这种情况，而这也是执行体资源需要像互斥那样跟踪所有权的原因（有关执行体资源优先级提升的详情，请参阅本书卷1第4章）。</p>
+<p class="zw">共享访问和独占访问提供的灵活性催生了多种资源获取函数：ExAcquireResource SharedLite、ExAcquireResourceExclusiveLite、ExAcquireSharedStarveExclusive以及ExAcquireShareWaitForExclusive。这些函数均在WDK中提供了相关文档。</p>
+<p class="zw">新版Windows增加了使用相同API名称但辅以“Fast”字样的快速执行体资源，如ExAcquireFastResourceExclusive、ExReleaseFastResource等。因为通过不同的方式来处理锁的所有权，这些资源的速度更快，但除了弹性文件系统（Resilient File System，ReFS），其他组件并未使用这种资源。在高争用的文件系统访问场景中，ReFS的性能略优于NTFS，部分原因也是因为锁定速度更快。</p>
+<p class="zwtsh">实验：列出已获得的执行体资源</p>
+<p class="zwts1">内核调试器的!locks命令可以使用内核的执行体资源链表并转储其状态。默认情况下，该命令只能列出当前拥有的执行体资源，通过曾经公开记录的–d选项可列出所有执行体资源，但现在已不再支持。不过我们依然可以使用-v标记转储所有资源的详细信息。该命令的部分输出结果如下：</p>
+<pre class="代码无行号"><code>lkd&gt; !locks -v 
+**** DUMP OF ALL RESOURCE OBJECTS **** 
+　
+Resource @ nt!ExpFirmwareTableResource (0xfffff8047ee34440)   Available 
+Resource @ nt!PsLoadedModuleResource (0xfffff8047ee48120)   Available 
+    Contention Count = 2 
+Resource @ nt!SepRmDbLock (0xfffff8047ef06350)   Available 
+    Contention Count = 93 
+Resource @ nt!SepRmDbLock (0xfffff8047ef063b8)   Available 
+Resource @ nt!SepRmDbLock (0xfffff8047ef06420)   Available 
+Resource @ nt!SepRmDbLock (0xfffff8047ef06488)   Available 
+Resource @ nt!SepRmGlobalSaclLock (0xfffff8047ef062b0)   Available 
+Resource @ nt!SepLsaAuditQueueInfo (0xfffff8047ee6e010)   Available 
+Resource @ nt!SepLsaDeletedLogonQueueInfo (0xfffff8047ee6ded0)   Available 
+Resource @ 0xffff898f032a8550   Available 
+Resource @ nt!PnpRegistryDeviceResource (0xfffff8047ee62b00)   Available 
+    Contention Count = 27385 
+Resource @ nt!PopPolicyLock (0xfffff8047ee458c0)   Available 
+    Contention Count = 14 
+Resource @ 0xffff898f032a8950   Available 
+Resource @ 0xffff898f032a82d0   Available </code></pre>
+<p class="zwts1">请注意，从资源结构中提取的争用计数（contention count）记录了线程试图获取资源，但因为资源被其他线程所拥有而只能等待的次数。通过调试器进入运行中的系统后，我们可能足够幸运捕获到一些这种被持有的资源，例如：</p>
+<pre class="代码无行号"><code>2: kd&gt; !locks 
+**** DUMP OF ALL RESOURCE OBJECTS **** 
+KD: Scanning for held locks..... 
+　
+Resource @ 0xffffde07a33d6a28   Shared 1 owning threads 
+    Contention Count = 28 
+     Threads: ffffde07a9374080-01&lt;*&gt; 
+KD: Scanning for held locks.... 
+　
+Resource @ 0xffffde07a2bfb350   Shared 1 owning threads 
+    Contention Count = 2 
+     Threads: ffffde07a9374080-01&lt;*&gt; 
+KD: Scanning for held locks...................................................
+　
+Resource @ 0xffffde07a8070c00   Shared 1 owning threads 
+     Threads: ffffde07aa3f1083-01&lt;*&gt; *** Actual Thread ffffde07aa3f1080 
+KD: Scanning for held locks...................................................
+　
+Resource @ 0xffffde07a8995900   Exclusively owned 
+     Threads: ffffde07a9374080-01&lt;*&gt; 
+KD: Scanning for held locks...................................................
+    9706 total locks, 4 locks currently held </code></pre>
+<p class="zwts1">我们可以查看特定资源对象的详情，包括拥有该资源的线程以及正在等待该资源的其他线程。为此需要指定–v开关并提供资源地址，但前提是当前存在被获取（拥有）的资源。例如，下列这个被持有的共享资源似乎与NTFS有关，有线程正试图从文件系统执行读取操作：</p>
+<pre class="代码无行号"><code>2: kd&gt; !locks -v 0xffffde07a33d6a28 
+　
+Resource @ 0xffffde07a33d6a28    Shared 1 owning threads 
+    Contention Count = 28 
+     Threads: ffffde07a9374080-01&lt;*&gt; 
+　
+     THREAD ffffde07a9374080 Cid 0544.1494   Teb: 000000ed8de12000 
+     Win32Thread: 0000000000000000 WAIT: (Executive) KernelMode Non-Alertable 
+         ffff8287943a87b8  NotificationEvent 
+     IRP List: 
+         ffffde07a936da20: (0006,0478) flags: 00020043 Mdl: ffffde07a8a75950 
+         ffffde07a894fa20: (0006,0478) flags: 00000884 Mdl: 00000000 
+     Not impersonating 
+     DeviceMap                 ffff8786fce35840 
+     Owning Process            ffffde07a7f990c0       Image:       svchost.exe
+     Attached Process          N/A            Image:         N/A 
+     Wait Start TicksCount     3649           Tickss: 0 
+     Context Switch Count      31             IdealProcessor: 1 
+     UserTime                  00:00:00.015 
+     KernelTime                00:00:00.000 
+Win32 Start Address 0x00007ff926812390 
+Stack Init ffff8287943aa650 Current ffff8287943a8030 
+Base ffff8287943ab000 Limit ffff8287943a4000 Call 0000000000000000 
+Priority 7 BasePriority 6 PriorityDecrement 0 IoPriority 0 PagePriority 1 
+Child-SP          RetAddr           Call Site 
+ffff8287`943a8070 fffff801`104a423a nt!KiSwapContext+0x76 
+ffff8287`943a81b0 fffff801`104a5d53 nt!KiSwapThread+0x5ba 
+ffff8287`943a8270 fffff801`104a6579 nt!KiCommitThreadWait+0x153 
+ffff8287`943a8310 fffff801`1263e962 nt!KeWaitForSingleObject+0x239 
+ffff8287`943a8400 fffff801`1263d682 Ntfs!NtfsNonCachedIo+0xa52 
+ffff8287`943a86b0 fffff801`1263b756 Ntfs!NtfsCommonRead+0x1d52 
+ffff8287`943a8850 fffff801`1049a725 Ntfs!NtfsFsdRead+0x396 
+ffff8287`943a8920 fffff801`11826591 nt!IofCallDriver+0x55</code></pre>
+<h4 class="bt4 sigil_not_in_toc">推锁</h4>
+<p class="zw">推锁（pushlock）是另一种基于事件对象的优化同步机制，与快速互斥和受保护互斥类似，推锁仅在锁争用时才会等待事件。不过推锁也提供了优于两种互斥的优势：推锁与执行体资源一样，能够以共享或独占的模式获取。然而与执行体资源的不同之处在于，推锁由于其大小而提供了一种额外优势：资源对象的大小为104字节，而推锁的大小和指针相当。因此推锁无须进行分配或初始化，可以保证在内存不足时正常工作。内核中的很多组件已经从执行体组件转为使用推锁，现代的第三方驱动程序也全部使用了推锁。</p>
+<p class="zw">推锁可分为四种类型：常规（Normal）、缓存感知（Cache-aware）、自动扩展（Auto- expand）以及基于地址（Address-based）。常规推锁只需要与指针一样大小的存储容量（32位系统为4字节，64位系统为8字节）。当线程获得常规推锁后，如果该推锁目前尚未被任何一方拥有，推锁代码会将该推锁标记为“已被拥有”。如果推锁被独占拥有，或线程希望独占拥有但该推锁目前正被其他线程所共享，该线程会在线程栈上分配一个等待块，在等待块中初始化一个事件对象，随后将该等待块添加到与该推锁相关的等待列表中。当其他线程释放该推锁后，线程会唤醒一个等待方（如果存在的话），为此会为等待方的等待块中的事件发送信号。</p>
+<p class="zw">由于推锁的大小与指针相同，因此其中会包含各种位，并借助这些位来描述自己的状态。随着推锁从争用状态变为非争用状态，这些位的含义也会发生变化。在初始状态下，推锁包含下列结构。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个锁定位，如果锁已被获取，则会被设置为“1”。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个等待位，如果锁处于争用状态并且有其他方正在等待，则会被设置为“1”。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个等待位，如果锁已经被分配给某个线程并且等待方的列表需要优化，则会被设置为“1”。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个多重共享位，如果推锁被共享并且目前被多个线程所获取，则会被设置为“1”。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 28（32位Windows）或60（64位Windows）个共享计数位，包含目前获取该推锁的线程的数量信息。</p>
+<p class="zw">正如上文所述，当线程需要以独占方式获取推锁，而该推锁已被多个读取方或一个写入方所获取时，内核会分配一个推锁等待块。而推锁值本身的结构也会发生变化，共享计数位将变为等待块的指针。因为该等待块是在栈上分配的，并且头文件包含一个特殊的对齐指令来强制保证16字节对齐，任何推锁等待块结构中底部的4位都将归零。因此在指针取消引用的目的中，这些位会被忽略，而上文提到的4位会与指针值结合在一起。由于这种对齐移除了共享计数位，因此共享计数会被存储在等待块中。</p>
+<p class="zw">缓存感知推锁通过为系统中的每个处理器分配一个推锁，将其与缓存感知推锁相关联，为常规（基本）推锁添加了一个额外的“层”。当线程想要获取可共享访问的缓存感知推锁时，只需获取分配给共享模式下当前处理器的推锁即可；如果要以独占方式获得缓存感知推锁，则线程可以获取独占模式下当前处理器的推锁。</p>
+<p class="zw">不过大家可能已想到，随着Windows现在最多已经可以支持包含2560个处理器的系统，缓存感知推锁中潜在的缓存填充插槽（Cache-padded slot）需要进行大量的固定分配，即便处理器较少的系统也是如此。系统对处理器热添加功能的支持让问题变得更棘手，因为从技术的角度来看，这需要提前预分配所有的2560个插槽，从而导致数KB大小的锁结构。为了解决这个问题，现代版本的Windows还实现了一种自动扩展推锁。顾名思义，此类缓存感知推锁可以根据需要，基于争用或基于处理器数量动态增加缓存插槽的数量，借此保证能够顺利扩展，同时借助执行体的插槽分配程序，预留出分页或非分页内存池（取决于分配自动展开推锁时锁传入的标记）。</p>
+<p class="zw">然而对第三方开发者来说，缓存感知推锁（以及以此为基础发展出来的自动扩展推锁）的相关用法并未提供官方文档，尽管某些数据结构（例如Windows 10 21H1以及后续版本中的FCB头）确实以不透明的方式使用了这些机制（有关FCB头的详细信息请参阅第11章）。内核中使用了自动扩展推锁的内部部分还包括内存管理器，内存管理器会通过该机制保护地址窗口扩展（Address Windowing Extension，AWE）数据结构。</p>
+<p class="zw">最后，还有另一种未提供文档，但可导出的推锁：基于地址的推锁，它使用了一种类似于稍后要介绍的用户模式下基于地址的等待机制，进一步完善了推锁的实现。除了作为一种不同“类型”的推锁，基于地址的推锁更多地被用于代表其背后所使用的接口。在一端，一个调用方使用ExBlockOnAddressPushLock传入一个推锁、感兴趣的某个变量的虚拟地址、变量大小（最多8字节），及一个包含预期或期望变量值的比较地址。如果该变量当前没有预期值，将使用ExTimedWaitForUnblockPushLock初始化一个等待。这种行为与争用推锁的获取行为类似，不同之处在于可指定超时值。在另一端，另一个调用方在对监视的地址进行更改后使用ExUnblockOnAddressPushLockEx向等待方发出信号，告知对方值已更改。这种技术在处理受到锁或互锁操作保护的数据时非常有用，借此相互竞争的读取方就可以在锁之外等待写入方通知更改已完成。除了内存占用更小，推锁相较于执行体资源的另一个优势在于，在争用情况下，推锁不需要冗长的“记账”和整数操作即可获取或释放。因为与指针一样小，内核可以使用原子CPU指令执行这些任务（例如在x86和x64处理器上使用的lock cmpxchg指令，能以原子方式将新老锁进行对比和交换）。如果这种原子性的对比和交换失败，锁将包含调用方未预料到的值（调用方通常期待锁未被使用，或以共享的方式获取锁），随后即可调用更复杂的争用版本。</p>
+<p class="zw">为了进一步改善性能，内核会将推锁功能暴露为内联函数，这意味着在非争用获取期间不会产生任何函数调用，汇编代码会直接插入每个函数中。这会让代码的大小略微增加，但避免了缓慢的函数调用。最终，推锁还会使用多种算法上的小技巧来避免锁护送（lock convoy，这种情况是指多个相同优先级的线程都在等待同一个锁，因而导致几乎没有完成什么实际的工作），并借此实现自我优化：等待推锁的线程列表会定期重新排序，以便在推锁被释放时提供更公平的行为。</p>
+<p class="zw">另一种适用于推锁（包括基于地址的推锁）获取的性能优化措施是：发生争用的过程中，在让调度程序对象等待推锁等待块事件之前，执行类似于机会性自旋锁的行为。如果系统还有至少一个尚未休止（unparked）的处理器（有关内核休止的详细信息，请参阅卷1第4章），内核会像自旋锁那样进入一种紧密的、基于旋转的ExpSpinCycleCount循环，但并不会提升IRQL，而是会为每次迭代发出一个Yield指令（例如x86/x64的Pause指令）。如果在任何迭代期间推锁似乎已被释放，那么将执行互锁操作获取该推锁。</p>
+<p class="zw">如果旋转周期超时，或者互锁操作（因为竞争）失败，或者没有至少一个额外的尚未休止的处理器，则会在推锁等待块中为事件对象使用KeWaitForSingleObject。在包含一个以上逻辑处理器的计算机中，ExpSpinCycleCount会被设置为10240个周期，且无法修改。如果系统搭载AMD处理器并实现了MWAITT（MWAIT计时器）规范，则会使用Monitorx和Mwaitx指令代替旋转循环。这种基于硬件的功能可以在无须进入循环的前提下，在CPU层面上等待某个地址的值发生变化，同时还可允许提供超时值（由内核根据ExpSpinCycleCount提供），这样就无须陷入无尽的等待。</p>
+<p class="zw">最后需要注意的是，随着自动提升功能（详见卷1第4章）的引入，推锁也默认利用了这个功能，除非调用方使用新的ExXxxPushLockXxxEx函数，允许传入禁用该功能的EX_PUSH_LOCK_FLAG_DISABLE_AUTOBOOST标记（该标记未提供官方文档）。在默认情况下，非Ex函数现在可以调用更新的Ex函数，但无法提供这个标记。</p>
+<h4 class="bt4 sigil_not_in_toc">基于地址的等待</h4>
+<p class="zw">考虑到键控事件中存在的一些情况，Windows内核现在暴露给用户模式的键同步基元是一种按照ID发送警报（alert-by-ID）的系统调用（以及对应的按照ID等待警报，wait-on-alert-by-ID）。借助这两种无须内存分配和句柄的简单系统调用，可以构建任意数量的进程本地同步，其中就包括下面即将介绍的基于地址的等待机制。在此之上还有其他基元，例如临界区以及SRW锁，都是基于此形成的。</p>
+<p class="zw">基于地址的等待基于三个已经提供了文档的Win32 API调用：WaitOnAddress、WakeByAddressSingle以及WakeByAddressAll。KernelBase.dll中的这些函数只是Ntdll.dll的转发器，其中真正的实现也以类似的名称存在，这些名称均以“Rtl”字样开头，代表Run Time Library（运行时库）。Wait API会接收指向自己感兴趣值的地址、值的大小（最大8字节）、不需要的值的地址及超时值。Wake API只能接收地址。</p>
+<p class="zw">首先，RtlWaitOnAddress会构建一个本地地址等待块，借此跟踪线程ID和地址，并将其插入进程环境块（Process Environment Block，PEB）中的一个进程哈希表中。这与之前介绍过的ExBlockOnAddressPushLock的实际工作较为类似，但后者不需要这个哈希表，因为调用方需要将推锁指针存储在某个位置。随后，与内核API类似，RtlWaitOnAddress会检查目标地址是否包含与“不需要的值”不同的值，如果包含，则会移除该地址等待块并返回FALSE；否则会调用一个内部函数加以阻塞。</p>
+<p class="zw">如果有多个可用的未休止处理器，阻塞函数会先尝试着在用户模式下对代表可用性的地址等待块位的值进行旋转，以避免进入内核，该位基于RtlpWaitOnAddressSpinCount的值，如果系统包含超过一个处理器，则该值会被写死为“1024”。如果等待块依然存在争用，则会使用NtWaitForAlertByThreadId向内核发出系统调用，并将作为提示参数的地址和超时值传入。</p>
+<p class="zw">如果函数因为超时而返回，那么地址等待块中会设置标记来代表这种情况，并且该块会被移除，函数将返回STATUS_TIMEOUT。不过还有一种较为微妙的竞争关系：调用方可能恰巧在等待超时后的几个周期内调用了Wake函数。由于等待块标记被一条比较-交换指令所修改，所以代码可以检测到这种情况并再一次实际调用NtWaitForAlertByThreadId，这次将不包含超时。借此可保证能够返回，因为代码知道唤醒正在进行中。不过要注意，在非超时的情况下，无须移除等待块，因为唤醒方已经移除了。</p>
+<p class="zw">在等待方这一端，RtlWakeOnAddressSingle和RtlWakeOnAddressAll都利用了相同的辅助函数，该函数可对输入的地址进行哈希处理，并在本节上文提到的PEB哈希表中查找。通过与比较-交换指令慎重地进行同步，即可从哈希表中移除地址等待块，并且，如果已通过提交唤醒了任何等待方，还会遍历相同地址的所有匹配等待块，在该API单一版本的全部或第一个应用中，为每个等待块调用NtAlertThreadByThreadId。</p>
+<p class="zw">借助这样的实现，我们基本上已经具备了键控事件的用户模式实现，该实现不依赖任何内核对象或句柄，甚至不依赖任何全局对象，从而彻底避免了资源不足时的失败。因此，内核只需要负责将线程置于等待状态，或将处于等待状态的线程唤醒。</p>
+<p class="zw">下面将介绍在争用期间利用该功能提供同步的各类基元。</p>
+<h4 class="bt4 sigil_not_in_toc">临界区</h4>
+<p class="zw">临界区是Windows在基于内核的同步基元基础上为用户模式应用程序开发者提供的主要同步基元之一。相较于内核模式的对应基元，临界区相对下文涉及的其他用户模式基元的最大优势之一在于，在锁未被争用的情况（99%甚至更多时候都是这种情况）下，节省了一次到内核模式的往返。然而，存在争用的情况下依然需要调用内核，因为这是系统中唯一可以执行复杂的唤醒和调度逻辑，以便让这些对象可以正常工作的地方。</p>
+<p class="zw">临界区可使用一个本地位提供主要的独占锁逻辑（类似于推锁），以便让自己维持在用户模式下。如果该位设置为“0”，临界区即可被获取，随后所有者会将该位设置为“1”。该操作无须调用内核，而是会使用上文介绍过的互锁CPU操作。临界区的释放也会产生类似行为，通过互锁操作将这个位的状态由“1”改为“0”。另外，很多人可能已经猜到了，如果该位已经为“1”并且其他调用方试图获取该临界区，必须调用内核以便让线程进入等待状态。</p>
+<p class="zw">类似于推锁和基于地址的等待，为避免进入内核，临界区也实现了进一步优化措施：旋转（spinning），这有些类似于锁定位上的自旋锁（尽管处于IRQL 0被动级别），借此实现足够快速的清除以避免阻塞等待。在默认情况下，旋转会设置为2000个周期，但可在创建时使用InitializeCriticalSectionEx或InitializeCriticalSectionAndSpinCount API设置为其他值，创建之后也可调用SetCriticalSectionSpinCount修改默认值。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　正如上文所述，为了进行优化，WaitForAddressSingle已经实现了繁忙的旋转等待，且默认为1024个周期。因此从技术上来看，旋转操作默认将花费3024个周期：首先在临界区的锁定位上旋转，随后在等待地址块的锁定位上旋转，最后才能真正进入内核。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">在确实需要进入真正的争用路径时，临界区会在首次被调用时尝试着初始化自己的LockSemaphore字段。在现代版本的Windows中，只有在设置RtlpForceCSToUseEvents后才会这样做，如果通过应用程序兼容性数据库为当前进程设置了KACF_ ALLOCDEBUGINFOFORCRITSECTIONS (0x400000)标记，就会发生这种情况。然而，如果该标记已设置，还会创建底层的调度程序事件对象（即使该字段代表了信号量，该对象也是一种事件）。随后假设事件已创建，还会调用WaitForSingleObject以阻塞临界区（通常会使用每个进程可配置的超时值以便为死锁的调试提供帮助，然后重新尝试进行等待）。</p>
+<p class="zw">在未请求应用程序兼容性铺垫，或内存严重不足时虽然请求了铺垫但无法创建事件的情况下，临界区将不再使用该事件（也不再使用上文提到的任何键控事件功能）。相反，此时将直接利用上文介绍的基于地址的等待机制（并同样使用上一段所介绍的相同的死锁检测超时机制）。本地位的地址会提供对WaitOnAddress的调用，只要临界区被LeaveCriticalSection释放，即可调用事件对象的SetEvent，或调用本地位的WakeAddressSingle。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　尽管我们一直使用Win32名称来指代API，但实际上，临界区是由Ntdll.dll实现的，而KernelBase.dll只是将函数转发给以“Rtl”字样开头的相同函数，因为它们是运行时库的一部分。因此RtlLeaveCriticalSection会调用NtSetEvent、RtlWakeAddressSingle等函数。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">因为临界区并非内核对象，因此也存在某些局限。主要是我们无法获得临界区的内核句柄，因此对象管理器的安全、命名或其他功能都不适用于临界区。两个进程无法使用相同的临界区来协调自己的操作，也不能进行复制或继承。</p>
+<h4 class="bt4 sigil_not_in_toc">用户模式资源</h4>
+<p class="zw">用户模式资源也提供了比内核基元更细化的锁定机制。资源能够以共享模式或独占模式获取，进而使其可充当数据库等数据结构的多读取方（共享）、单写入方（独占）锁。当以共享模式获取一个资源而其他线程试图获取同一个资源时，将无须访问内核，因为没有正处于等待状态的线程。只有当一个线程试图以独占访问方式获取资源时，或资源已经被独占的所有者锁定时，才需要访问内核。</p>
+<p class="zw">为了使用与内核中相同的调度和同步机制，资源会直接使用现有的内核基元。资源数据结构（RTL_RESOURCE）包含指向两个内核信号量对象的句柄。当资源被多个线程独占获取后，该资源会通过一个释放计数释放独占信号量，因为资源最多只能有一个所有者。当资源被多个线程共享获取后，资源会释放共享信号量，以及与共享的所有者数量相同的释放计数。这种级别的细节通常会对开发者隐藏起来，并且这些内部对象也永远不应直接使用。</p>
+<p class="zw">资源最初是为了支持SAM（Security Account Manager，安全账户管理器，详见本书卷1第7章）而实现的，并未通过Windows API暴露给标准应用程序。下文将要介绍的精简读取器-写入器（Slim Reader-Writer，SRW）锁会通过具备详细文档的API实现一个类似但高度优化的锁定基元，不过一些系统组件依然使用了资源机制。</p>
+<h4 class="bt4 sigil_not_in_toc">条件变量</h4>
+<p class="zw">条件变量（condition variable）为等待条件测试特定结果的一系列线程的同步提供了一种Windows原生实现。尽管通过用户模式的其他同步方法也能实现该操作，但缺乏用于检查条件测试结果并开始结果中某一变化所需的原子机制。系统需要围绕这些代码进行额外的同步。</p>
+<p class="zw">用户模式线程通过调用InitializeConditionVariable来初始化条件变量并设置其初始状态。在需要发起对变量的等待时，会调用SleepConditionVariableCS，借此使用一个临界区（线程必须已经完成该临界区的初始化）来等待变量的更改，更好的情况则是使用SleepConditionVariableSRW，借此将使用下文即将介绍的SRW锁，从而让调用方获得对独占（写入方）获取进行共享（读取方）的优势。</p>
+<p class="zw">同时，设置线程还必须在修改了变量后使用WakeConditionVariable（或WakeAllConditionVariable）。取决于实际使用的函数，该调用可释放一个或全部等待中线程的临界区或SRW锁。这听起来像是基于地址的等待，因为这就是基于地址的等待，并且还能对比较和等待操作的原子性提供额外保证。此外，条件变量是在基于地址的等待之前实现的（也就先于按照ID发出的警报），并且必须依赖键控事件，因此只能近似实现所需行为。</p>
+<p class="zw">在条件变量出现前，通常需要使用通知事件或同步事件（回忆可知，它们在Windows API中被称为“自动重置”或“手动重置”）来指示变量的更改，例如工作队列的状态。等待这种更改需要获取一个临界区随后将其释放，然后等待一个事件。等待之后，还需要重新获取临界区。在这一系列获取和释放过程中，线程可能已经切换了上下文，如果其中一个线程调用了PulseEvent就会导致问题（类似于键控事件在没有等待方的情况下强制等待其他线程发出信号所要解决的问题）。有了条件变量后，临界区或SRW锁的获取可以由应用程序来维护，此时会调用SleepConditionVariableCS/SRW，并且只有在实际工作完成后才会释放。这使得写操作工作队列的代码（和类似的实现）可以用更简单，更可预测的方式完成。</p>
+<p class="zw">然而，随着SRW锁和临界区移动至基于地址的等待基元，条件变量已经可以直接利用NtWaitForAlertByThreadId并直接向线程发出信号，同时可以构建在结构上类似于上文介绍的地址等待块的条件变量等待块。借此可完全消除对键控事件的需求，只不过为了实现向后兼容性，依然需要保留键控事件。</p>
+<h4 class="bt4 sigil_not_in_toc">精简读取器/写入器（SRW）锁</h4>
+<p class="zw">尽管条件变量是一种同步机制，但并非完整的基元锁，因为它们会围绕自己锁定的行为进行隐式值比较，并且依赖于更高级的抽象（也就是“锁”）。同时，基于地址的等待是一种基元操作，但只提供了基本的同步基元，而非真正的锁定。在这两个世界之间，Windows有一种真正的锁定基元，它几乎与推锁完全相同，那就是精简读取器/写入器锁（SRW锁）。</p>
+<p class="zw">与内核中的对应物一样，SRW锁的大小同样与指针相等，使用原子操作来获取和释放，可防止锁护送并会重新调整等待方列表，能够以共享和独占的模式获取。与推锁类似，SRW锁可以从共享模式升级或转换为独占模式，反之亦然，并且在递归获取方面也遵循相同的限制。唯一的真正区别在于：SRW锁是用户模式代码独有的，而推锁是内核模式代码独有的，两者无法从一层共享或暴露给另一层。因为SRW锁同样使用了NtWaitForAlertByThreadId基元，因此无须进行内存分配，并且可以保证永远不会失败（除非使用方法有误）。</p>
+<p class="zw">SRW锁不仅可以彻底取代应用程序代码中的临界区，从而减少分配大型CRITICAL_ SECTION结构（原本需要创建事件对象）的需求，而且提供了多读取方、单写入方功能。SRW锁必须首先使用InitializeSRWLock进行初始化，或者使用Sentinel值进行静态初始化，随后即可通过相应的API（AcquireSRWLockExclusive、ReleaseSRWLockExclusive、AcquireSRWLockShared以及ReleaseSRWLockShared）以独占的或共享的模式获取或释放。此外，还可通过API以机会性的方式获取锁，保证不会发生阻塞操作，以及将锁从一种模式转换为另一种模式。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　与大部分其他Windows API不同，SRW锁函数不返回任何值，相反，它们会在无法获取锁时生成异常。这会让获取操作失败变得更明显，遇到这种情况，原本假设成功获取锁的代码就可以直接终止，而不用冒着可能损坏用户数据的风险继续处理。由于SRW锁不会因资源耗尽而失败，因此在共享模式下错误地释放了非共享SRW锁之后，STATUS_RESOURCE_ NOT_OWNED将成为唯一可能的异常。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">Windows SRW锁会以平等的方式对待读取方和写入方，这意味着在这两种情况下都应该能实现相同的性能。这也使得SRW锁成为临界区的绝佳替代品，因为临界区是写入方独有或独占的同步机制，并且也针对资源优化提供了替代方案。如果SRW锁针对读取方进行优化，那么将成为一种糟糕的独占锁，好在事实并非如此。因此上文我们曾提到，条件变量也可以通过SleepConditionVariableSRW API使用SRW锁。也就是说，键控事件虽然不再用于一种机制（SRW）中，但依然用在其他机制（CS）中，因此，基于地址的等待削弱了除代码更小之外的其他所有好处，并削弱了具备共享锁以及独占锁的能力。尽管如此，以老版本Windows为目标的代码也应当使用SRW锁，以保证在依然使用了键控事件的内核中提供更多好处。</p>
+<h4 class="bt4 sigil_not_in_toc">运行一次初始化</h4>
+<p class="zw">在多线程编程领域存在一个典型问题：如何保证以原子性的方式执行一段负责某类初始化任务（如分配内存、初始化某些变量，甚至按需创建对象）的代码。如果一段代码可以被多个线程同时调用（例如负责初始化DLL的DllMain例程），即可通过多种方法尝试着以正确、原子性、唯一的方式执行初始化任务。</p>
+<p class="zw">对于这种情况，Windows实现了一次性初始化（Init once）机制，即One-time初始化（在内部也叫Run once初始化）。该API以Win32变体的形式存在，可调用Ntdll.dll的运行时库（Rtl），就好像上文介绍的其他各种机制一样。此外，它还能调用一系列记录在案的Rtl API集，这些API可通过Ntoskrnl.exe暴露给内核程序员（很明显，用户模式开发者也可以绕过Win32直接使用Ntdll.dll中的Rtl函数，但不推荐这样做）。这两种实现唯一的差别在于，内核最终会使用事件对象进行同步，而用户模式会使用键控事件（实际上需要传入一个NULL句柄，以使用曾被临界区使用过的低内存键控事件）。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　由于最新版本的Windows在内核模式实现了一种基于地址的推锁，并在用户模式下实现了基于地址的等待基元，因此，Rtl库可能会通过更新转为使用RtlWakeAddressSingle和ExBlockOnAddressPushLock，实际上，未来版本的Windows将可能始终这样做：键控事件只是为老版本Windows中的调度程序事件对象提供了一个类似的接口。必须再次提醒的是，请不要完全依赖本书所介绍的各种内部细节，因为这些细节随时有可能出现变化。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">Init once机制允许以同步方式（意味着其他线程必须等待初始化完成）和异步方式（意味着其他线程可以试着进行自己的初始化并展开竞争）执行某些代码。在了解了同步机制后，再来看看异步执行背后的逻辑。</p>
+<p class="zw">在同步执行情况下，开发者所编写的代码通常可以在专用函数中的全局变量被复查之后开始执行。例程所需的任何信息均可通过Init once例程中可接受的参数变量传递。而任何输出信息都会通过上下文变量返回（初始化操作本身的状态可作为布尔值返回）。为确保正确执行，开发者只需要在使用InitOnceInitialize API初始化INIT_ONCE对象后，通过参数、上下文以及Run-once函数指针调用InitOnceExecuteOnce即可。其余工作将由系统完成。</p>
+<p class="zw">对于想要使用异步模型的应用程序，线程可调用InitOnceBeginInitialize，并收到一个BOOLEAN挂起状态以及上文所提到的上下文。如果挂起状态为FALSE，意味着初始化已经发生，线程将使用结果所包含的上下文值（函数也可能返回FALSE，这意味着初始化失败）。然而，如果挂起状态返回TRUE，则线程应当通过竞争优先创建对象。随后执行的代码将完成所需的各种初始化任务，例如创建对象或分配内存。当这些工作完成后，线程会使用之前工作的结果作为上下文调用InitOnceComplete，并收到BOOLEAN状态。如果该状态为TRUE，意味着线程赢得了竞争，它所创建或分配的对象将成为全局对象。随后取决于具体用法，该线程可以保存该对象或将其返回给调用方。</p>
+<p class="zw">在更复杂的情况下，如果状态为FALSE，这意味着线程竞争失败。此时该线程必须撤销自己所做的全部工作，如删除对象或释放内存，随后再次调用InitOnceBeginInitialize。不过这一次不用像第一次那样请求重新开始竞争，而是可以使用INIT_ONCE_CHECK_ ONLY标记，这样线程就知道自己曾经在竞争中输过，并转为请求竞争胜利者的上下文（例如胜利者所创建或分配的对象或内存）。这会返回另一个状态，可以是TRUE，意味着上下文有效，可以直接使用或返回给调用方；但也可以是FALSE，意味着初始化已失败，大家都不能执行工作（例如可能是因为内存不足）。</p>
+<p class="zw">在这两种情况下，运行一次初始化机制类似于条件变量和SRW锁机制。Init once结构大小与指针相同，内联的汇编版本SRW获取/释放代码可用于非争用情况，键控事件则可用于争用已经发生（该机制以同步模式使用时会发生这种情况）而其他线程必须等待初始化的情况下。异步模式下会以共享模式使用锁，因此多个线程可以同时进行初始化。尽管不像按照ID发出警报基元那么高效，但键控事件保证了Init once机制在内存耗尽时依然能够工作。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"43511468-38ec-4124-81b4-e83ab1356f97","id":"55d48d80-0f2d-4421-b4df-713e900b30a1"}</p>

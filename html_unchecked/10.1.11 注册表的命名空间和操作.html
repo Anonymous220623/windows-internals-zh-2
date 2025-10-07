@@ -1,0 +1,55 @@
+<h3 class="bt3" id="sigil_toc_id_117">10.1.11　注册表的命名空间和操作</h3>
+<p class="zw">为将注册表的命名空间与内核的常规命名空间集成，配置管理器定义了一个键对象类型。配置管理器在Windows命名空间的根部插入了一个名为Registry的键对象，以此作为注册表的入口点。Regedit会将键的名称显示为HKEY_LOCAL_MACHINE\SYSTEM\ CurrentControlSet的形式，但Windows子系统会将这样的名称转换为其对象命名空间的形式（如\Registry\Machine\System\CurrentControlSet）。当Windows对象管理器解析该名称时，首先遇到的是以Registry为名的键对象，随后会将名称的其余部分交给配置管理器处理。配置管理器接管名称解析工作，通过查找自己的内部配置单元树找到所需的键或值。在介绍典型的注册表操作控制流之前，需要先谈谈键对象和键控制块。当应用程序打开或创建注册表键时，对象管理器会提供一个句柄，应用程序可借此引用键。该句柄对应了配置管理器在对象管理器帮助下分配的键对象。借助对象管理器为对象提供的支持，配置管理器即可充分使用对象管理器所提供的安全性和引用计数器功能。</p>
+<p class="zw">对于每个打开的注册表键，配置管理器还会分配一个键控制块。键控制块存储了键的名称，以及控制块指向的键节点的单元格索引，此外还包含了一个标记，该标记决定了当键的最后一个句柄关闭后，配置管理器是否需要删除键控制块指向的键单元格。Windows将所有键控制块保存在一个哈希表中，借此即可按照名称快速搜索现有的键控制块。会有一个键对象指向对应的键控制块，因此如果两个应用程序打开同一个注册表键，每个应用程序都会收到一个键对象，这两个键对象都指向同一个键控制块。</p>
+<p class="zw">当应用程序打开一个现有的注册表键，应用程序在调用对象管理器名称解析例程的注册表API中指定键的名称时，控制流就开始运行了。对象管理器在命名空间中找到配置管理器的注册表键对象后，会将名称路径传递给配置管理器。配置管理器在键控制块哈希表中查找，如果找到相关的键控制块，就无须执行后续的工作（附加到Registry进程）了；否则查找操作会为配置管理器提供与搜索的键最接近的键控制块，并附加到Registry进程中，使用内存中的配置单元数据结构继续搜索键和子键，借此查找特定的键。如果找到键单元格，配置管理器还会搜索键控制块树，以确定该键是否已（被同一个或其他应用程序）打开。搜索例程通过优化，始终会从已打开的键控制块最接近的上一级键控制块开始搜索。举例来说，如果某应用程序要打开\Registry\Machine\Key1\Subkey2，而\Registry\ Machine已经打开，那么解析例程将使用\Registry\Machine的键控制块作为起点。如果该键已打开，配置管理器会增大现有键控制块的引用计数。如果键尚未打开，配置管理器会分配一个新的键控制块并将其插入树中。随后配置管理器会分配一个键对象，将该键对象指向键控制块，断开附加的Registry进程，并将控制权返回给对象管理器，对象管理器向应用程序返回一个句柄。</p>
+<p class="zw">当应用程序新建注册表键时，配置管理器首先会为父键新建一个单元格。随后，配置管理器会在新键将要创建到的配置单元中搜索可用单元格列表，以确定现有单元格是否足够大，可以保存新的键单元格。如果没有足够大的可用单元格，配置管理器会分配一个新的Bin来保存单元格，并将该Bin末尾的所有空间加入可用单元格列表。新建的键单元格会被填充相关信息，包括键的名称，此外配置管理器还会将键单元格添加到父键的子键列表单元格中的子键列表内。最后，系统将父单元格的单元格索引存储到新子键的键单元格中。</p>
+<p class="zw">配置管理器使用键控制块的引用计数器决定何时删除键控制块。对于一个键控制块，当引用了其中一个键的所有句柄都关闭后，引用计数器归零，意味着该键控制块已经不需要了。如果一个调用API删除该键的应用程序设置了删除标记，配置管理器即可从键所在的配置单元中删除相关键，因为它知道该键已经不被任何应用程序打开。</p>
+<p class="zwtsh">实验：查看键控制块</p>
+<p class="zwts1">我们可以使用内核调试器的!reg openkeys命令列出系统中关联的所有键控制块，或者使用!reg querykey命令查看已打开的特定键的键控制块：</p>
+<pre class="代码无行号"><code>0: kd&gt; !reg querykey \Registry\machine\software\microsoft 
+　
+Found KCB = ffffae08c156ae60 :: \REGISTRY\MACHINE\SOFTWARE\MICROSOFT 
+　
+Hive         ffffae08c03b0000 
+KeyNode      00000225e8c3475c 
+　
+[SubKeyAddr]         [SubKeyName] 
+225e8d23e64          .NETFramework 
+225e8d24074          AccountsControl 
+225e8d240d4          Active Setup 
+225ec530f54          ActiveSync 
+225e8d241d4          Ads 
+225e8d2422c          Advanced INF Setup 
+225e8d24294          ALG 
+225e8d242ec          AllUserInstallAgent 
+225e8d24354          AMSI 
+225e8d243f4          Analog 
+225e8d2448c          AppServiceProtocols 
+225ec661f4c          AppV 
+225e8d2451c          Assistance 
+225e8d2458c          AuthHost 
+... </code></pre>
+<p class="zwts1">随后即可使用!reg kcb命令检查报告的键控制块：</p>
+<pre class="代码无行号"><code>kd&gt; !reg kcb ffffae08c156ae60 
+　
+Key              : \REGISTRY\MACHINE\SOFTWARE\MICROSOFT 
+RefCount         : 1f 
+flags            : CompressedName, Stable 
+Extflags         : 
+Parent           : 0xe1997368 
+KeyHive          : 0xe1c8a768 
+KeyCell          : 0x64e598 [cell index] 
+TotalLevels      : 4 
+DelayedCloseIndex: 2048 
+MaxNameLen       : 0x3c 
+MaxValueNameLen  : 0x0 
+MaxValueDataLen  : 0x0 
+LastWriteTime    : 0x1c42501:0x7eb6d470 
+KeyBodyListHead  : 0xe1034d70 0xe1034d70 
+SubKeyCount      : 137
+ValueCache.Count : 0
+KCBLock          : 0xe1034d40
+KeyLock          : 0xe1034d40</code></pre>
+<p class="zwts1">上述Flag字段代表名称以压缩的形式存储，SubKeyCount字段显示该键有137个子键。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":10,"parentId":"5a53b69b-1f5b-45b1-989a-6fe8c9cf2a82","id":"e75ae407-a1bb-49e1-bdcb-9cd39cddbf71"}</p>

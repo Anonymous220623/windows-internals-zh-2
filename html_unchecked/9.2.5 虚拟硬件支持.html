@@ -1,0 +1,72 @@
+<h3 class="bt3" id="sigil_toc_id_85">9.2.5　虚拟硬件支持</h3>
+<p class="zw">为了正确运行虚拟机，虚拟化堆栈需要为虚拟化设备提供支持。Hyper-V支持不同类型的虚拟设备，这些设备是通过虚拟化堆栈的多个组件实现的。发往以及来自虚拟设备的I/O主要由根操作系统负责协调，I/O包括存储、网络、键盘、鼠标、串口以及GPU（图形处理单元）。虚拟化堆栈可以向客户虚拟机公开三类设备。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 模拟设备，（按照行业标准）也可称为完全虚拟化的设备。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 综合设备，也叫半虚拟化设备。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 硬件加速设备，也叫作直接访问设备。</p>
+<p class="zw">为了针对物理设备执行I/O操作，处理器通常会从设备所属的输入和输出端口（I/O端口）读取和写入数据。CPU可以通过两种方式访问I/O端口。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 通过一个独立的I/O地址空间，这是一种与物理内存地址空间不同的空间，在AMD64平台上，该空间可由6.4万个不同的可寻址I/O端口组成。这是一种较老的方法，通常只用于遗留的设备。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 通过内存映射的I/O访问。可以像内存组件那样响应的设备，能够通过处理器的物理内存地址空间访问，这意味着CPU可以通过标准指令访问内存：底层物理内存会被映射至设备。</p>
+<p class="zw">图9-27展示了一个模拟设备范例（第一代虚拟机所用的虚拟IDE控制器），该设备使用内存映射的I/O与虚拟处理器传输数据。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1457.png" style="width: 100%" />
+<p class="图题">图9-27　虚拟IDE控制器，它使用模拟的I/O执行数据传输</p>
+<p class="zw">该模式下，每次虚拟处理器读写设备MMIO空间或发出指令以访问I/O端口时，都会向虚拟机监控成程序发出VMEXIT。虚拟机监控程序调用相应的拦截例程，将例程调度给VID驱动程序。VID驱动程序会构建一条VID消息，并将其放入一个内部队列。该队列会由一个内部VMWP线程排空，这个线程会等待并调度从VID驱动程序收到的虚拟处理器消息。这个线程叫作消息泵线程，隶属于一个在VMWP创建时初始化的内部线程池。虚拟机工作线程可识别导致VMEXIT的物理地址，将其与相应虚拟设备（VDEV）关联，并调用一个VDEV回调（通常是读取或写入回调）。VDEV代码会使用指令模拟器提供的服务执行故障指令，并正确地模拟虚拟设备（本例中的IDE控制器）。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　虚拟机工作进程中的完整指令模拟器也可用于其他用途，例如加快子分区中拦截密集型代码的运行。此时，该模拟器可以让两次拦截期间的执行上下文保留在工作进程中，因为VMEXIT会产生较大的性能开销。旧版本硬件虚拟化扩展禁止在虚拟机中执行实模式代码，对于这种情况，虚拟化堆栈会使用模拟器在虚拟机中执行实模式代码。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">半虚拟化设备</h4>
+<p class="zw">虽然模拟设备总是会产生VMEXIT并且相当慢，但图9-28展示了一种综合或半虚拟化设备范例：综合存储适配器。综合设备知道自己运行在虚拟化环境中，这样可以降低虚拟设备的复杂性，使其实现更高性能。一些综合虚拟设备只以虚拟形式存在，不会模拟任何真正的物理硬件（如综合RDP）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1750.png" style="width: 100%" />
+<p class="图题">图9-28　存储控制器半虚拟化设备</p>
+<p class="zw">半虚拟化设备通常包含三个主要组件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个虚拟化服务提供程序（VSP）驱动程序，该组件运行在根分区中，可通过VMBus提供的服务（详见上文）将特定虚拟化接口公开给客户机。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个综合VDEV，会被映射至虚拟机工作进程，并且通常只在虚拟设备的驱动、拆除、保存和还原过程中提供协调作用。设备的常规工作过程中一般不会用到该组件。综合VDEV会初始化并分配设备特定的资源（例如本例中的SynthStor VDEV会初始化虚拟存储适配器），但最重要的是，它可以让VSP为客户机VSC提供VMBus通信通道。该通道可用于与根分区通信，以及通过虚拟机监控程序发出与设备有关的通知信号。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个虚拟化服务使用程序（VSC）驱动程序，该组件运行在子分区中，可理解VSP所公开的与虚拟化有关的接口，并使用VSP通过VMBus公开的共享内存读/写消息和通知，这样虚拟设备即可比模拟的设备更快速地在子虚拟机中运行。</p>
+<h4 class="bt4 sigil_not_in_toc">硬件加速设备</h4>
+<p class="zw">在服务器版系统中，硬件加速设备（也叫直接访问设备）可供物理设备重映射至客户机分区，而这是通过VPCI基础架构公开的服务实现的。如果物理设备支持诸如单根输入/ 输出虚拟化（Single-root Input/Output Virtualization，SR IOV）或离散设备分配（Discrete Device Assignment，DDA），即可映射至客户机分区。客户机分区可以直接访问与设备相关的MMIO空间，并在无须虚拟机监控程序进行任何拦截的情况下，直接通过客户机内存执行DMA访问。IOMMU提供了所需的安全性，并保证了设备只能在属于虚拟机的物理内存中发起DMA传输。</p>
+<p class="zw">图9-29展示了负责管理硬件加速设备的组件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 运行在虚拟机工作进程中的VPci VDEV（Vpcievdev.dll），它的作用是从虚拟机配置文件中提取硬件加速设备列表，设置VPCI虚拟总线，并将设备分配给VSP。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> PCI代理驱动程序（Pcip.sys），负责从根分区卸载并安装DDA兼容的物理设备，此外它还在获取设备（通过SR-IOV协议）使用的资源（如MMIO空间和中断）列表方面起到了关键的作用。该代理驱动程序提供了对设备物理配置空间的访问，并呈现了一个无法被宿主机操作系统访问的“未挂载”设备。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> VPCI虚拟服务提供程序（Vpcivsp.sys），创建并维护了关联给一个或多个硬件加速设备（在VPCI VSP中这叫作虚拟设备）的虚拟总线对象。虚拟设备可通过VSP创建的VMBus通道公开给客户虚拟机，并提供给客户机分区中的VSC使用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> VPCI虚拟服务客户端（Vpci.sys），这是一种运行于客户虚拟机中的WDF总线驱动程序，可连接至VSP公开的VMBus通道，接收暴露给虚拟机的直接访问设备列表及其资源，并为每个设备创建PDO（物理设备对象）。随后，设备驱动程序即可像在非虚拟化环境中那样创建PDO。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1757.png" style="width: 100%" />
+<p class="图题">图9-29　硬件加速设备</p>
+<p class="zw">当用户要将硬件加速设备映射至虚拟机时，需要使用一些PowerShell命令（详见下面的实验），借此将设备从根分区“卸载”。该操作会迫使VMMS服务与标准PCI驱动程序（通过公开的PciControl设备）通信。VMMS服务通过提供设备描述符（以总线、设备及功能ID形式）向PCI驱动程序发送PCIDRIVE_ADD_VMPROXYPATH这个IOCTL。PCI驱动程序检查描述符，如果验证成功，会将其添加至HKLM\System\CurrentControlSet\ Control\PnP\Pci\VmProxy注册表值。随后VMMS使用PNP管理器暴露的服务启动PNP设备（重新）枚举。在枚举阶段，PCI驱动程序可以找到新的代理设备并加载PCI代理驱动程序（Pcip.sys），将该设备标记为虚拟化堆栈保留，使其对宿主机操作系统不可见。</p>
+<p class="zw">第二步需要将设备分配给虚拟机。这种情况下，VMMS会将设备描述符写入虚拟机配置文件。当虚拟机启动时，VPCI VDEV（Vpcievdev.dll）从虚拟机配置中读取直接访问设备的描述符，并开始一个复杂的配置过程，这个过程主要由VPCI VSP（Vpcivsp.sys）负责协调。实际上，在“上电”回调中，VPCI VDEV会向VPCI VSP（运行在根分区中）发送不同的IOCTL，这是为了执行虚拟总线的创建操作并将硬件加速设备分配给客户虚拟机。</p>
+<p class="zw">“虚拟总线”是一种数据结构，VPCI基础架构可将其用作“黏合剂”来维持根分区、客户虚拟机，以及所分配的直接访问设备之间的连接。VPCI VSP会分配并启动提供给客户虚拟机的VMBus通道，并将其封装在虚拟总线内。此外，虚拟总线还包含一些指向重要数据结构的指针，例如用于双向通信的已分配VMBus数据包、客户机电源状态等。虚拟总线创建完毕后，VPCI VSP会执行设备分配工作。</p>
+<p class="zw">硬件加速设备在内部是通过LUID识别的，并由一种VPCI VSP分配的虚拟设备对象来表示。VPCI VSP可以根据设备的LUID定位适合的代理驱动程序（也叫作Mux驱动程序，通常为Pcip.sys）。VPCI VSP会从代理驱动程序查询SR-IOV或DDA接口，并借此获得直接访问设备的即插即用信息（硬件描述符），同时收集资源需求（MMIO空间、BAR寄存器、DMA通道）。至此，设备就准备好可以附加至客户虚拟机：VPCI VSP会使用WinHvr驱动程序公开的服务向虚拟机监控程序发出HvAttachDevice虚拟化调用，借此重新配置系统的IOMMU，以便将设备的地址空间映射至客户机分区。</p>
+<p class="zw">由于VPCI VSC（Vpci.sys）的存在，客户虚拟机可以知道所映射的设备。VPCI VSC是一种WDF总线驱动程序，由客户虚拟机中的VMBus总线驱动程序枚举并启动。它包含两个主要组件：一个在虚拟机启动时创建的FDO（功能设备对象），以及一个或多个代表映射至客户虚拟机中的物理直接访问设备的PDO（物理设备对象）。当VPCI VSC总线驱动程序在客户虚拟机中运行时，它会创建并启动VMBus通道中用于与VSP交换消息的客户端部分。“发送总线关系”是VPCI VSC通过VMBus通道发送的第一条消息。根分区中的VSP对此的响应是发送一个列表，该列表中包含的硬件ID描述了目前连接到虚拟机的硬件加速设备。当PNP管理器需要获得设备与VPCI VSC之间的新关系时，后者会为发现的每个直接访问设备新建一个PDO。VSC驱动程序还会向VSP发送其他消息，主要用途是请求PDO所需的资源。</p>
+<p class="zw">初始设置完成后，设备管理过程中将很少用到VSC和VSP。客户虚拟机中硬件加速设备的驱动程序会附加至相关PDO并管理外设，就好像这些设备是直接安装在物理计算机上的那样。</p>
+<p class="zwtsh">实验：将硬件加速的NVMe磁盘映射至虚拟机</p>
+<p class="zwts1">如上一节所述，在Windows Server 2019宿主机上，支持SR-IOV和DDE技术的物理设备可以直接映射至客户虚拟机中。在这个实验中，我们要将通过PCI-Ex总线连接至系统，并且支持DDE的NVMe磁盘链接给一个运行Windows 10的虚拟机（Windows Server 2019还支持直接分配显卡，但这已超出了本实验的范围）。</p>
+<p class="zwts1">正如https://docs.microsoft.com/virtualization/community/team-blog/2015/20151120- discrete-device-assignment-machines-and-devices中所述，为了能被重新分配，设备需要符合某些特征，例如支持消息信号中断和内存映射I/O。此外，运行虚拟机监控程序的计算机还需要支持SR-IOV并具备适当的I/O MMU。在这个实验中，首先要确认系统BIOS中已经启用了SR-IOV标准（此处不再详述，具体操作请参阅计算机制造商文档）。</p>
+<p class="zwts1">随后需要下载一个PowerShell脚本来验证自己的NVMe控制器是否兼容离散设备分配（discrete device assignment）。请访问https://github.com/MicrosoftDocs/Virtualization- Documentation/tree/master/hyperv-samples/benarm-powershell/DDA并下载名为survey-dda. ps1的PowerShell脚本。随后以管理员身份打开一个PowerShell窗口（在搜索框中输入<strong>PowerShell</strong>并选择“<strong style="color:#0092dd">以管理员身份运行</strong>”），并运行<strong>Get-ExecutionPolicy</strong>命令检查PowerShell脚本执行策略是否被设置为Unrestricted（不受限）。如果该命令的输出结果为“<strong>Unrestricted</strong>”之外的其他情况，请输入<strong>Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Unrestricted</strong>，按下回车键，然后输入<strong>Y</strong>以确认。</p>
+<p class="zwts1">执行下载的survey-dda.ps1脚本后，其输出结果会强调显示NVMe设备是否可以重新分配给客户虚拟机。输出结果范例如下：</p>
+<pre class="代码无行号"><code>Standard NVM Express Controller 
+Express Endpoint -- more secure. 
+    And its interrupts are message-based, assignment can work. 
+PCIROOT(0)#PCI(0302)#PCI(0000) </code></pre>
+<p class="zwts1">请记录位置路径（本例中为PCIROOT(0)#PCI(0302)#PCI(0000)字符串）。接下来我们需要将目标虚拟机的自动停止操作设置为“关闭”（DDA的必要步骤）并断开设备。本例中的虚拟机名为“Vibranium”，请在PowerShell窗口中输入下列命令（请将虚拟机名称和设备位置替换为实际值）：</p>
+<pre class="代码无行号"><code>Set-VM -Name "Vibranium" -AutomaticStopAction TurnOff 
+Dismount-VMHostAssignableDevice -LocationPath "PCIROOT(0)#PCI(0302)#PCI(0000)"</code></pre>
+<p class="zwts1">如果最后一个命令返回操作失败的错误，很可能是因为尚未禁用设备。请打开“<strong style="color:#0092dd">设备管理器</strong>”并找到NVMe控制器（本例中为Standard NVMe Express Controller），右击并选择“<strong style="color:#0092dd">禁用设备</strong>”。随后即可再次运行最后一条命令，这次应该可以成功运行。随后运行下列命令将设备分配给虚拟机：</p>
+<pre class="代码无行号"><code>Add-VMAssignableDevice -LocationPath "PCIROOT(0)#PCI(0302)#PCI(0000)" -VMName "Vibranium" </code></pre>
+<p class="zwts1">上一条命令可以将NVMe控制器从宿主机中彻底移除，我们可以在宿主机系统中使用设备管理器来验证这一点。随后需要启动虚拟机，为此可以使用Hyper-V管理器工具或PowerShell。如果启动虚拟机后看到类似下图所示的错误信息，则可能意味着BIOS中尚未正确配置SR-IOV，或I/O MMU不符合必需的要求（很可能因为不支持I/O映射）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1765.png" style="width: 100%" />
+<p class="zwts1">否则虚拟机应该可以正常启动。在这种情况下，我们应该可以在子虚拟机的设备管</p>
+<p class="zwts1">理器中同时看到NVMe控制器和NVMe磁盘。我们可以在子虚拟机中使用磁盘管理工具创建分区，具体做法与宿主机操作系统中的操作完全相同。NVMe磁盘可以全速运行，不会有性能损失（可以使用磁盘性能评测工具加以验证）。</p>
+<p class="zwts1">若要正确地将设备从虚拟机中移除并重新挂载到宿主机操作系统，首先需要关闭虚拟机，随后运行下列命令（请注意，始终别忘了替换虚拟机名称和NVMe控制器位置）：</p>
+<pre class="代码无行号"><code>Remove-VMAssignableDevice -LocationPath "PCIROOT(0)#PCI(0302)#PCI(0000)" -VMName
+"Vibranium" 
+Mount-VMHostAssignableDevice -LocationPath "PCIROOT(0)#PCI(0302)#PCI(0000)" </code></pre>
+<p class="zwts1">最后一条命令运行完成后，NVMe控制器应当就可以重新出现在宿主机操作系统的设备管理器中。只需重新启用并重启动宿主机，即可在宿主机中使用这个NVMe磁盘了。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"27c847dd-3f08-4fa4-ad0f-10c10f9d2714","id":"80a08bbe-2644-4b0b-b57c-e741d0208788"}</p>

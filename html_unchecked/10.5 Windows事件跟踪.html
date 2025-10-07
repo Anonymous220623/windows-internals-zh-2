@@ -1,0 +1,21 @@
+<h2 class="bt2" id="sigil_toc_id_150"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 10.5　Windows事件跟踪</h2>
+<p class="zw">Windows事件跟踪（Event Tracing for Windows，ETW）是为应用程序和内核模式驱动程序提供、消费和管理日志与跟踪事件的主要机制。这些事件可以存储在日志文件或循环缓冲区中，也可以实时消费。事件可用于驱动程序、框架（如.NET CLR）或应用程序的调试，并可用于了解它们是否存在潜在的性能问题。ETW设施主要在NT内核中实现，但应用程序也可以使用专用日志记录器，这样就完全不需要切换到内核模式了。使用ETW的应用程序主要可分为如下几个类别。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">控制器（Controller）</strong>。控制器负责启动和停止事件跟踪会话，管理缓冲区池的大小，并负责启用提供程序，这样提供程序即可将事件记录到会话中。控制器的一些例子包括可靠性和性能监视器，以及Windows性能工具包（现已包含在Windows评估和部署工具包中，下载地址为https://docs.microsoft.com/windows-hardware/ get-started/adk-install）中包含的XPerf。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">提供程序（Provider）</strong>。提供程序是一种包含事件跟踪检测机制的应用程序或驱动程序。提供程序会向ETW注册一个GUID（全局唯一标识符），借此定义自己可产生的事件。注册之后，提供程序即可生成事件，控制程序可通过相关跟踪会话启用或禁用这些事件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">消费者（Consumer）</strong>。消费者是一种应用程序，它可以选择一个或多个自己想要从中读取跟踪数据的跟踪会话。消费者可以接收存储在日志文件或循环缓冲区中的事件，或从提供事件的会话中实时读取事件。</p>
+<p class="zw">值得一提的是，在ETW中，每个提供程序、会话、特征（trait）和提供程序组都由GUID来标识（有关这些概念的详情请参阅下文）。系统在ETW的基础上建立了四种用于提供事件的技术，它们的差别主要在于存储和定义事件的方式（不过其他方面也有所差别）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> MOF（或“经典”）提供程序是一种传统的提供程序，主要被WMI使用。MOF提供程序会将事件描述符存储在MOF类中，这样消费者就会知道该如何使用这些事件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> WPP（Windows软件跟踪处理器）提供程序用于跟踪应用程序或驱动程序的操作（属于WMI事件跟踪的扩展），并使用TMF（Trace Message Format，跟踪消息格式）文件让消费者解码跟踪事件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 基于清单的提供程序会使用XML清单文件定义可被消费者解码的事件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> TraceLogging提供程序与WPP提供程序类似，可用于快速跟踪应用程序或驱动程序的操作，它使用的自描述事件中包含了供控制器使用的所有必要信息。</p>
+<p class="zw">在首次安装时，Windows已经包含了数十个提供程序，操作系统的每个组件会使用这些提供程序记录诊断事件和性能跟踪结果。例如，Hyper-V就有多个提供程序，它们为虚拟机监控程序、动态内存、VID驱动程序以及虚拟化堆栈提供了跟踪事件。如图10-31所示，ETW是通过多个组件实现的。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2809.png" style="width: 100%" />
+<p class="图题">图10-31　ETW的架构</p>
+<p class="zwd"><span style="color: #0092dd">●</span> ETW的大部分实现（全局会话创建、提供程序注册和启用、主日志记录器线程）位于NT内核中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> SCM/SDDL/LSA查找API库宿主（sechost.dll）为应用程序提供创建ETW会话，启用提供程序并消费事件所需的主要的用户模式API。Sechost使用Ntdll提供的服务调用NT内核中的ETW。一些ETW用户模式API是直接在Ntdll中实现的，并未向Sechost公开相关功能。例如，提供程序注册和事件生成就是Ntdll（而非Sechost）中实现的用户模式功能。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 事件跟踪解码助手库（TDH.dll）实现了消费者解码ETW事件所需的服务。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 事件消费和配置库（WevtApi.dll）实现了Windows事件日志API（也叫Evt API），消费者应用程序可借此管理本地和远程计算机中的提供程序和事件。在解析由ETW会话产生的事件时，Windows事件日志API支持XPath 1.0或结构化XML查询。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 安全内核实现了基本的安全服务，借此即可与VTL 0中NT内核里运行的ETW进行交互。这样，Trustlet和安全内核即可使用ETW记录自己的安全事件。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"162693e7-e7e7-41c7-8477-5ccbc444fdec","id":"0a817dad-0fff-43aa-90f7-5114d262a9ee"}</p>

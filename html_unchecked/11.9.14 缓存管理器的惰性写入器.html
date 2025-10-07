@@ -1,0 +1,4 @@
+<h3 class="bt3" id="sigil_toc_id_222">11.9.14　缓存管理器的惰性写入器</h3>
+<p class="zw">缓存管理器的惰性写入器线程在已修改页面的写入方面也起到了一定作用，它会定期刷新映射至缓存中，并且已知变脏的文件节视图。缓存管理器执行的刷新操作会调用MmFlushSection，这会触发内存管理器将正在刷新的部分中的任何修改过的页面写入磁盘。与已修改和已映射页面写入器类似，MmFlushSection会使用IoSynchronousPageWrite将数据发送给FSD。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":13,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"c196055c-b998-43a0-9004-fd8cf6354e8f"}</p>

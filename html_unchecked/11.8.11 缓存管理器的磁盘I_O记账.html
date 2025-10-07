@@ -1,0 +1,17 @@
+<h3 class="bt3" id="sigil_toc_id_207">11.8.11　缓存管理器的磁盘I/O记账</h3>
+<p class="zw">在Windows 8.1之前，系统无法精确判断一个进程执行的I/O数量。背后的原因有很多，如下：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 惰性写入和预读取并不是在产生I/O的进程/线程上下文中进行的。缓存管理器会以惰性方式写出数据，并在不同于最初写入文件线程（通常为System上下文）的另一个上下文中完成写操作（实际的I/O甚至可能在进程终止后才发生）。同理，缓存管理器可以选择预读取，进而从文件中获得比实际请求数量更多的数据。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 异步I/O依然由缓存管理器管理，但在某些情况下，缓存管理器完全不会参与，例如未缓存的I/O。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一些特殊应用程序可以使用磁盘堆栈中的底层驱动程序发出底层磁盘I/O。</p>
+<p class="zw">Windows在IRP的尾部存储了一个指向发出I/O的线程的指针。该线程并不总是最初发起I/O请求的那个线程。因此很多时候，I/O会被错误地计入System进程。Windows 8.1通过引入PsUpdateDiskCounters API解决了这个问题，缓存管理器和文件系统驱动程序可以借助该API进行紧密的配合。该函数中存储了读取和写入的字节总数，以及NT内核中用于描述进程的核心EPROCESS数据结构中的I/O操作数量（详见卷1第3章）。</p>
+<p class="zw">缓存管理器会在执行缓存的读取和写入操作（通过公开的文件系统接口）以及发出预读取I/O（通过CcScheduleReadAheadEx导出的API）时，更新进程的磁盘计数器（通过调用PsUpdateDiskCounters函数实现）。NTFS和ReFS文件系统驱动程序可在执行未缓存和分页I/O时调用PsUpdateDiskCounters。</p>
+<p class="zw">与CcScheduleReadAheadEx类似，多个缓存管理器API通过扩展已经可以接收指向发出I/O，并且需要向其“计费”的线程指针（例如CcCopyReadEx和CcCopyWriteEx就是很好的例子）。借此，更新后的文件系统驱动程序甚至可以控制异步I/O中具体要向哪个线程计费。</p>
+<p class="zw">除了每进程计数器，缓存管理器还维持了一种全局磁盘I/O计数器，可全局跟踪文件系统向存储堆栈发出的所有I/O（在通过文件系统驱动程序发出未缓存I/O或分页I/O后，该计数器都会更新一次）。因此，从特定磁盘设备发出的总I/O（应用程序可通过IOCTL_DISK_PERFORMANCE控制代码获得该值）减去这个全局计数器的值，即可得到与任何特定进程无关的I/O数量（如已修改页面写入器发出的分页I/O，或微型过滤器驱动程序内部执行的I/O）。</p>
+<p class="zw">这种新增的每进程磁盘计数器由NtQuerySystemInformation API使用的SystemProcessInformation信息类公开。任务管理器或Process Explorer等诊断工具也会采用这种方式精确查询与系统中当前运行的进程有关的I/O数据。</p>
+<p class="zwtsh">实验：统计磁盘I/O数</p>
+<p class="zwts1">借助性能监视器提供的不同计数器，我们可以看到整体系统I/O的精确计数。请打开性能监视器，并添加FileSystem Bytes Read和FileSystem Bytes Written这两个计数器，它们都位于FileSystem Disk Activity组中。此外，在本实验中，我们还需要添加Process组中的每进程磁盘I/O计数器：IO Read Bytes/sec和IO Write Bytes/sec。添加最后这两个计数器时，请务必在所选对象的实例选项下选中Explorer进程。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1001.png" style="width: 100%" />
+<p class="zwts1">随后通过复制一个大文件即可看到，属于Explorer进程的计数器会不断增大，直到与全局文件系统磁盘活动的数值相等。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":10,"parentId":"12f97583-be18-467a-a595-eb74d0d9db22","id":"aff236c5-fe28-4462-81e1-40c8d433d135"}</p>

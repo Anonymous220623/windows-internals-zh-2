@@ -1,0 +1,73 @@
+<h3 class="bt3" id="sigil_toc_id_141">10.3.2　统一后台进程管理器</h3>
+<p class="zw">以往，UBPM主要负责管理任务的生命周期和状态（启动、停止、启用/禁用等），并为通知和触发器提供支持。Windows 8.1引入了代理基础架构，将所有触发器和通知的管理工作转移给不同代理，这些代理可供现代应用程序和标准Win32应用程序使用。因此在Windows 10中，UBPM充当了标准Win32任务的触发器代理（Proxy），可将使用方发出的触发器请求转换为正确的代理（Broker）。UBPM依然负责为应用程序提供可用的COM API，并将其应用于以下几个方面。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 注册和取消注册触发器的使用方，以及打开和关闭相应句柄。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 生成通知或触发器。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 向触发器提供程序发出命令。</p>
+<p class="zw">与任务计划程序的架构类似，UBPM也包含多个内部组件：任务托管服务器和客户端、基于COM的任务托管库及事件管理器。</p>
+<h4 class="bt4 sigil_not_in_toc">任务宿主服务器</h4>
+<p class="zw">当系统代理发出一条由UBPM触发器使用方注册的事件（通过发布WNF状态变化做到）后，将执行UbpmTriggerArrived回调函数。UBPM会在内部列表中（根据WNF状态名）搜索已注册的任务触发器，如果找到正确的触发器，便会处理该任务的操作。在撰写这部分内容时，这种方式仅支持“启动可执行文件”操作。该操作可支持托管和非托管可执行文件。非托管可执行文件是指不直接与UBPM交互的常规Win32可执行文件，托管可执行文件是指直接与UBPM交互且需要由任务托管客户端进程托管的COM类。基于托管的可执行文件（taskhostw.exe）启动后，即可根据相应令牌托管不同任务（基于托管的可执行文件类似于共享的Svchost服务）。</p>
+<p class="zw">与SCM类似，UBPM支持为任务的托管进程使用不同类型的登录安全令牌。UbpmTokenGetTokenForTask函数可以根据任务描述符中存储的账户信息创建新令牌，而UBPM为任务生成的安全令牌可应用于下列任何一个所有者：已注册的用户账户、虚拟服务账户、Network Service账户或Local Service账户。与SCM的不同之处在于，UBPM完全支持交互式令牌。UBPM可使用由用户管理器（Usermgr.dll）公开的服务枚举当前活跃的交互式会话。对于每个会话，它会对比任务描述符中指定的用户SID以及交互式会话的所有者。如果两者相符，则UBPM会复制附加到交互式会话的令牌，并用它来登录新的可执行文件。因此，交互式任务只能用标准用户账户运行（非交互式任务可以使用上文提到的任何一种类型账户来运行）。</p>
+<p class="zw">令牌生成后，UBPM会启动相应任务的托管进程。对于这些托管的COM任务，UbpmFindHost函数会在Taskhostw.exe（任务宿主客户端）进程实例内部的内部列表中进行搜索。如果找到有进程与新任务运行相同的安全上下文，那么将直接通过任务宿主本地RPC连接发送Start Task命令（包括COM任务的名称和CLSID），并等待第一个回应。任务宿主客户端进程和UBPM可通过一个静态RPC通道（名为ubpmtaskhostchannel）连接，并使用与SCM的实现中类似的连接协议。</p>
+<p class="zw">如果未找到兼容的客户端进程实例，或任务的宿主进程是常规的非COM可执行文件，UBPM会构建一个新的环境块，解析命令行，使用CreateProcessAsUser API以暂停状态新建一个进程。UBPM会在一个作业对象中运行每个任务的宿主进程，这样即可快速设置多个任务的状态，并优化后台任务的资源分配。UBPM会在一个内部列表中搜索作业对象，这些作业对象包含了属于相同会话ID的宿主进程和相同任务类型（常规、关键、基于COM、非托管）。如果找到兼容的作业，将直接向该作业分配新进程（通过使用AssignProcessToJobObject API）。如果未找到，则会新建一个作业并将其添加到自己的内部列表。</p>
+<p class="zw">作业对象创建完成后，任务就可以启动了：初始化进程的线程将被恢复运行。对于COM托管的任务，UBPM会等待来自任务宿主客户端的首次联系（客户端想要与UBPM建立RPC通信通道时会执行该操作，类似于服务控制应用程序打开到SCM的通道），并发送Start Task命令。UBPM最终会向任务的宿主进程注册一个等待回调，这样即可检测到任务宿主进程什么时候会意外终止。</p>
+<h4 class="bt4 sigil_not_in_toc">任务宿主客户端</h4>
+<p class="zw">任务宿主客户端进程会从任务计划程序服务中的UBPM（任务宿主服务器）实时接收命令。在初始化时，它会打开UBPM在初始化过程中创建的本地RPC接口并永远循环下去，等待通过该通道收到的命令。目前支持以下四种命令，这些命令都是通过TaskHostSendResponseReceiveCommand RPC API发出的。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 停止宿主。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 启动任务。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 停止任务。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 终止任务。</p>
+<p class="zw">所有基于任务的命令都是通过一个通用COM任务库实现的，本质上，这些任务会创建并销毁COM组件。尤其是托管任务，它们是一种自ITaskHandler接口继承而来的COM对象。该接口仅公开了四种必要的方法，分别对应任务的四种状态转换——Start、Stop、Pause和Resume。当UBPM向自己的客户端宿主进程发送命令以启动任务时，客户端宿主进程（Taskhostw.exe）会为该任务创建一个新线程。新的任务工作线程使用CoCreateInstance函数创建能表示该任务的ITaskHandler COM对象实例，随后调用自己的Start方法。UBPM可以准确得知特定任务的CLSID（类唯一ID）是什么：任务的CLSID由任务存储保存在该任务的配置中，并会在任务注册时指定。此外，托管任务使用由ITaskHandlerStatus COM接口公开的函数向UBPM告知自己的当前执行状态。该接口会使用RPC调用UbpmReportTaskStatus并将新状态反馈给UBPM。</p>
+<p class="zwtsh">实验：查看COM托管的任务</p>
+<p class="zwts1">在这个实验中，我们将观察到任务宿主客户端进程如何加载实现任务的COM服务器DLL。为完成本实验，需要在系统中安装调试工具（调试工具包含在Windows SDK中，下载地址为https://developer.microsoft.com/windows/downloads/windows-10-sdk/）。随后可通过下列步骤启用任务启动时的调试器断点。</p>
+<p class="zwts1">1）将Windbg设置为默认的后台调试器（如果已将内核调试器连接到目标系统，可跳过这一步）。为此，请用管理员身份打开命令提示符窗口，并运行下列命令：</p>
+<pre class="代码无行号"><code>cd "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64" 
+windbg.exe /I </code></pre>
+<p class="zwts1">请注意，调试工具路径为C:\Program Files (x86)\Windows Kits\10\Debuggers\x64，请根据调试器的版本和安装程序酌情调整上述命令。</p>
+<p class="zwts1">2）Windbg将运行并展示如下的消息界面，这证明操作已成功。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2415.png" style="width: 100%" />
+<p class="zwts1">3）点击OK按钮后，WinDbg将自动关闭。</p>
+<p class="zwts1">4）打开任务计划程序（在命令提示符下输入taskschd.msc）。</p>
+<p class="zwts1">5）请注意，除非附加了内核调试器，否则无法为非交互式任务启用初始任务的断点，进而无法与调试器窗口交互，此时会在另一个非交互式会话中打开调试器窗口。</p>
+<p class="zwts1">6）查看各种任务（可参阅上一个实验“查看任务的XML描述符”），应该可以在\Microsoft\Windows\Wininet路径下找到一个名为CacheTask的交互式COM任务。请注意，任务的“<strong style="color:#0092dd">操作</strong>”页面应显示“<strong style="color:#0092dd">自定义句柄</strong>”，否则这并不是COM任务。</p>
+<p class="zwts1">7）打开注册表编辑器（在命令提示符窗口中输入regedit），随后打开HKLM\ SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule注册表键。</p>
+<p class="zwts1">8）右击Schedule键，从“<strong style="color:#0092dd">新建</strong>”菜单中选择“<strong style="color:#0092dd">多字符串值</strong>”，新建一个注册表值。</p>
+<p class="zwts1">9）将新注册表值的名称设置为EnableDebuggerBreakForTaskStart。若启用初始任务断点，需要插入任务的完整路径。本例中的完整路径为\Microsoft\Windows\Wininet\ CacheTask。在上一个实验中，任务路径可通过任务的URI来引用。</p>
+<p class="zwts1">10）关闭注册表编辑器并切换到任务计划程序。</p>
+<p class="zwts1">11）右击CacheTask任务并选择“<strong style="color:#0092dd">运行</strong>”。</p>
+<p class="zwts1">12）如果系统配置一切无误，随后将出现一个新的WinDbg窗口。</p>
+<p class="zwts1">13）配置调试器使用的符号，为此请从“<strong style="color:#0092dd">文件</strong>”菜单选择“<strong style="color:#0092dd">符号文件路径</strong>”选项，并输入一个指向Windows符号服务器的有效路径（详见https://docs.microsoft.com/ windows-hardware/drivers/debugger/microsoft-public-symbols）。</p>
+<p class="zwts1">14）随后即可使用k命令查看Taskhostw.exe进程在中断之前的调用栈：</p>
+<pre class="代码无行号"><code>0:000&gt; k 
+ # Child-SP         RetAddr          Call Site 
+00 000000a7`01a7f610 00007ff6`0b0337a8 taskhostw!ComTaskMgrBase::[ComTaskMgr]::Sta
+rtComTask+0x2c4 
+01 000000a7`01a7f960 00007ff6`0b033621 taskhostw!StartComTask+0x58 
+02 000000a7`01a7f9d0 00007ff6`0b033191 taskhostw!UbpmTaskHostWaitForCommands+0x2d1
+03 000000a7`01a7fb00 00007ff6`0b035659 taskhostw!wWinMain+0xc1 
+04 000000a7`01a7fb60 00007ffa`39487bd4 taskhostw!__wmainCRTStartup+0x1c9 
+05 000000a7`01a7fc20 00007ffa`39aeced1 KERNEL32!BaseThreadInitThunk+0x14 
+06 000000a7`01a7fc50 00000000`00000000 ntdll!RtlUserThreadStart+0x21 </code></pre>
+<p class="zwts1">15）通过该堆栈可知：任务宿主客户端刚刚被UBPM创建，并收到了启动任务的Start命令。</p>
+<p class="zwts1">16）在Windbg控制台中输入“~.”命令并按下回车，随后即可看到当前执行线程的ID。</p>
+<p class="zwts1">17）到这里，我们可以在CoCreateInstance COM API上放置一个断点并恢复执行，为此请使用下列命令：</p>
+<pre class="代码无行号"><code>bp combase!CoCreateInstance 
+g </code></pre>
+<p class="zwts1">18）调试器中断后，再次在Windbg控制台中插入“~.”命令并按下回车，随后会看到线程ID已完全不同了。</p>
+<p class="zwts1">19）这证明了任务宿主客户端为任务入口点的执行创建了一个新线程。相关文档中介绍的CoCreateInstance函数可用于创建与特定CLSID相关的单一COM对象类，并将其指定为一个参数。这个实验中还有两个GUID比较有趣：表示任务的COM类GUID，以及COM对象实现的接口ID。</p>
+<p class="zwts1">20）在64位系统中，调用惯例定义了前四个函数参数是通过寄存器传递的，因此这些GUID很容易提取：</p>
+<pre class="代码无行号"><code>0:004&gt; dt combase!CLSID @rcx 
+ {0358b920-0ac7-461f-98f4-58e32cd89148} 
+   +0x000 Data1            : 0x358b920 
+   +0x004 Data2            : 0xac7 
+   +0x006 Data3            : 0x461f 
+   +0x008 Data4            : [8] "???" 
+0:004&gt; dt combase!IID @r9 
+ {839d7762-5121-4009-9234-4f0d19394f04} 
+   +0x000 Data1            : 0x839d7762 
+   +0x004 Data2            : 0x5121 
+   +0x006 Data3            : 0x4009 
+   +0x008 Data4            : [8] "???" </code></pre>
+<p class="zwts1">从上述输出结果中可以看到，COM服务器CLSID为{0358b920-0ac7-461f98f4- 58e32cd89148}。通过验证可知，它与CacheTask任务XML描述符中唯一的COM操作的GUID相符（详见上一个实验）。所请求的接口ID为{839d7762-5121-4009-9234- 4f0d19394f04}，这也与COM任务处理程序操作接口（ITaskHandler）的GUID相符。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"30d37bf5-6705-42ec-a13a-437f2515e861","id":"96852179-2c08-47af-97fd-cef82b68e2e7"}</p>

@@ -1,0 +1,98 @@
+<h3 class="bt3" id="sigil_toc_id_101">9.5.1　Trustlet的创建</h3>
+<p class="zw">上文曾多次提到，安全内核依赖NT内核执行多种操作，Trustlet的创建也是如此：这是一种由安全内核与NT内核共同管理的操作。在卷1第3章，我们介绍了Trustlet的结构及其签名要求，并介绍了重要的策略元数据。此外，我们还详细介绍了CreateProcess API的运行流程，Trustlet的创建也是从这里为起点开始的。</p>
+<p class="zw">为了正确创建Trustlet，应用程序在调用CreateProcess API时应指定CREATE_ SECURE_PROCESS创建标记。在内部，该标记会被转换为PS_CP_SECURE_PROCESS这个NT属性并传递给NtCreateUserProcess这个原生API。当NtCreateUserProcess成功打开要执行的映像后，会指定一个特殊的标记来创建映像的节对象，借此让内存管理器使用安全HVCI验证其内容。这样，安全内核即可创建SECURE_IMAGE数据结构，该数据结构可用于描述通过安全HVCI进行验证的PE映像。</p>
+<p class="zw">NT内核会像对待常规进程那样创建所需的进程数据结构和初始的VTL 0地址空间（页面目录、超空间、工作集），如果新进程是一个Trustlet，NT内核会发出CREATE_ PROCESS安全调用。这个安全调用将由安全内核来管理，为此，安全内核会创建安全进程对象和相关数据结构（名为EPROCESS）。随后，安全内核将常规进程对象（EPROCESS）与新建的安全进程对象链接在一起，并创建初始的安全地址空间，为此需要分配安全页表，并在安全页表的上半部分复制用于描述安全地址空间中内核部分的根项。</p>
+<p class="zw">NT内核完成空进程地址空间的设置，并将Ntdll库映射到其中（详见卷1第3章的“阶段3D”）。在为安全进程执行该操作时，NT内核会调用INITIALIZE_PROCESS安全调用以完成VTL 1中的设置。安全内核会将创建进程时指定的Trustlet标识和属性复制到新的安全进程，创建安全句柄表，并将安全共享页映射到地址空间中。</p>
+<p class="zw">安全进程创建工作的最后一步需要创建安全线程。初始线程对象的创建过程与NT内核中的常规进程类似：当NtCreateUserProcess调用PspInsertThread时，它已经分配了线程内核堆栈并插入了必要数据，这样既可从KiStartUserThread内核函数启动（详见卷1第3章的“阶段4”）。如果进程是一个Trustlet，NT内核会发出CREATE_THREAD安全调用以执行最终的安全线程创建工作。安全内核会附加到新安全进程的地址空间，分配并初始化安全线程数据结构、线程的安全TEB以及内核堆栈。安全内核会填充线程的内核堆栈，为此需要插入线程优先的初始内核例程SkpUserThreadStart。随后，安全内核会为安全线程初始化与计算机相关的硬件上下文，该上下文指定了实际的映像启动地址以及第一个用户模式例程的地址。最后，安全内核会将常规线程对象与新创建的安全线程对象联系起来，将线程插入安全线程列表，并将该线程标记为可运行。</p>
+<p class="zw">当NT内核调度器选择运行常规线程对象时，执行过程依然始于VTL 0下的KiStartUserThread函数。该函数可降低线程的IRQL并调用系统初始线程例程（PspUserThreadStartup）。在NT内核设置初始形式转换上下文之前，执行过程与常规线程无异。但在设置形式转换上下文之后，会调用VslpEnterIumSecureMode例程启动安全内核调度循环并指定RESUMETHREAD安全调用。该循环只有在线程被终止后才会退出。这个初始安全调用将由VTL 1下的常规调用调度程序循环来处理，借此确定“恢复线程”进入VTL 1的原因，附加到新进程的地址空间，并切换至新的安全线程堆栈。在这种情况下，安全内核并不调用IumInvokeSecureService调度程序函数，因为它知道初始线程函数已经位于堆栈中，因此只需要返回到堆栈中的地址，该地址指向了VTL 1安全初始例程SkpUserThreadStart。</p>
+<p class="zw">与标准VTL 0线程类似，SkpUserThreadStart会设置初始形式转换上下文，以运行映像加载器初始化例程（Ntdll.dll中的LdrInitializeThunk）以及整个系统范围内的线程启动存根（Ntdll.dll中的RtlUserThreadStart）。这些步骤是通过在原地编辑线程上下文并发出从系统服务中退出的操作来完成的，借此即可加载特制的用户上下文并返回到用户模式。新生的安全线程会像常规VTL 0线程那样进行初始化，由LdrInitializeThunk例程初始化加载器及所需的数据结构。该函数返回后，NtContinue会还原新的用户上下文。至此线程才真正开始执行：RtlUserThreadStart会使用实际映像入口点的地址和启动参数，并调用应用程序的入口点。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　细心的读者可能已经注意到，安全内核并未采取任何措施来保护新Trustlet的二进制映像。这是因为按照设计，描述Trustlet基础二进制映像的共享内存依然可被VTL 0访问。</p> <p class="zwzy">假设一个Trustlet想要向映像的全局数据中写入私有数据。在映像全局数据中，映射可写数据节的PTE会被标记为“写入时复制”。因此处理器会生成访问故障。该故障属于用户模式的地址范围（别忘了，系统并不使用NAR来跟踪共享页）。安全内核页面故障处理程序（使用一个常规调用）将执行转向NT内核，借此分配一个新页面并将旧页面的内容复制进去，随后通过SLAT进行保护（使用受保护的复制操作，详见上文“安全内核内存管理器”一节）。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：调试Trustlet</p>
+<p class="zwts1">只有在Trustlet通过其元数据策略（存储在.tPolicy节下）明确允许的情况下，我们才可以通过用户模式调试器调试Trustlet。在这个实验中，我们将通过内核调试器调试一个Trustlet。我们需要将内核调试器连接至启用VBS的测试系统（也可以使用本地内核调试器），不过严格来说并不需要HVCI。</p>
+<p class="zwts1">首先，找到LsaIso.exe这个Trustlet：</p>
+<pre class="代码无行号"><code>lkd&gt; !process 0 0 lsaiso.exe 
+PROCESS ffff8904dfdaa080 
+    SessionId: 0 Cid: 02e8    Peb: 8074164000 ParentCid: 0250 
+    DirBase: 3e590002 ObjectTable: ffffb00d0f4dab00 HandleCount: 42. 
+    Image: LsaIso.exe </code></pre>
+<p class="zwts1">分析该进程的PEB可以发现，一些信息被设置为“0”或不可读：</p>
+<pre class="代码无行号"><code>lkd&gt; .process /P ffff8904dfdaa080 
+lkd&gt; !peb 8074164000 
+PEB at 0000008074164000 
+    InheritedAddressSpace:    No 
+    ReadImageFileExecOptions: No 
+    BeingDebugged:            No 
+    ImageBaseAddress:         00007ff708750000 
+    NtGlobalflag:             0 
+    NtGlobalflag2:            0 
+    Ldr                       0000000000000000 
+    *** unable to read Ldr table at 0000000000000000 
+    SubSystemData:     0000000000000000 
+    ProcessHeap:       0000000000000000 
+    ProcessParameters: 0000026b55a10000 
+    CurrentDirectory: 'C:\Windows\system32\' 
+    WindowTitle:  '&lt; Name not readable &gt;' 
+    ImageFile:    '\??\C:\Windows\system32\lsaiso.exe' 
+    CommandLine:  '\??\C:\Windows\system32\lsaiso.exe' 
+    DllPath:      '&lt; Name not readable &gt;'lkd </code></pre>
+<p class="zwts1">读取进程映像基址的操作可能会成功，但这取决于映射到VTL 0地址空间的LsaIso映像是否已经被访问。第一个页面通常都会是这样的情况（毕竟主映像的共享内存依然可在VTL 0下访问）。在我们的系统中，第一个页面已映射且有效，但第三个页面是无效的：</p>
+<pre class="代码无行号"><code>lkd&gt; db 0x7ff708750000 l20 
+00007ff7`08750000 4d 5a 90 00 03 00 00 00-04 00 00 00 ff 00 00 MZ.............
+00007ff7`08750010 b8 00 00 00 00 00 00 00-40 00 00 00 00 00 00 00 ......@.....
+lkd&gt; db (0x7ff708750000 + 2000) l20 
+00007ff7`08752000 ?? ?? ?? ?? ?? ?? ?? ??-?? ?? ?? ?? ?? ?? ?? ?? ????????????????
+00007ff7`08752010 ?? ?? ?? ?? ?? ?? ?? ??-?? ?? ?? ?? ?? ?? ?? ?? ????????????????
+lkd&gt; !pte (0x7ff708750000 + 2000) 
+1: kd&gt; !pte (0x7ff708750000 + 2000) 
+                                          VA 00007ff708752000 
+PXE at FFFFD5EAF57AB7F8   PPE at FFFFD5EAF56FFEE0   PDE at FFFFD5EADFFDC218 
+contains 0A0000003E58D867 contains 0A0000003E58E867 contains 0A0000003E58F867 
+pfn 3e58d     ---DA--UWEV pfn 3e58e     ---DA--UWEV pfn 3e58f     ---DA--UWEV 
+　
+PTE at FFFFD5BFFB843A90 
+contains 00000000000000 
+not valid </code></pre>
+<p class="zwts1">转储进程的线程可以发现一些重要信息，借此确认了我们上一节所讨论的内容：</p>
+<pre class="代码无行号"><code>!process ffff8904dfdaa080 2 
+PROCESS ffff8904dfdaa080 
+    SessionId: 0 Cid: 02e8    Peb: 8074164000 ParentCid: 0250 
+    DirBase: 3e590002 ObjectTable: ffffb00d0f4dab00 HandleCount: 42. 
+    Image: LsaIso.exe 
+ 
+        THREAD ffff8904dfdd9080 Cid 02e8.02f8 Teb: 0000008074165000 
+        Win32Thread: 0000000000000000 WAIT: (UserRequest) UserMode Non-Alertable
+            ffff8904dfdc5ca0 NotificationEvent 
+　
+        THREAD ffff8904e12ac040 Cid 02e8.0b84 Teb: 0000008074167000 
+        Win32Thread: 0000000000000000 WAIT: (WrQueue) UserMode Alertable 
+            ffff8904dfdd7440 QueueObject 
+　
+lkd&gt; .thread /p ffff8904e12ac040 
+Implicit thread is now ffff8904`e12ac040 
+Implicit process is now ffff8904`dfdaa080 
+.cache forcedecodeuser done 
+lkd&gt; k 
+  *** Stack trace for last set context - .thread/.cxr resets it 
+ # Child-SP          RetAddr           Call Site 
+00 ffffe009`1216c140 fffff801`27564e17 nt!KiSwapContext+0x76 
+01 ffffe009`1216c280 fffff801`27564989 nt!KiSwapThread+0x297 
+02 ffffe009`1216c340 fffff801`275681f9 nt!KiCommitThreadWait+0x549 
+03 ffffe009`1216c3e0 fffff801`27567369 nt!KeRemoveQueueEx+0xb59 
+04 ffffe009`1216c480 fffff801`27568e2a nt!IoRemoveIoCompletion+0x99 
+05 ffffe009`1216c5b0 fffff801`2764d504 nt!NtWaitForWorkViaWorkerFactory+0x99a 
+06 ffffe009`1216c7e0 fffff801`276db75f nt!VslpDispatchIumSyscall+0x34 
+07 ffffe009`1216c860 fffff801`27bab7e4 nt!VslpEnterIumSecureMode+0x12098b 
+08 ffffe009`1216c8d0 fffff801`276586cc nt!PspUserThreadStartup+0x178704 
+09 ffffe009`1216c9c0 fffff801`27658640 nt!KiStartUserThread+0x1c 
+0a ffffe009`1216cb00 00007fff`d06f7ab0 nt!KiStartUserThreadReturn 
+0b 00000080`7427fe18 00000000`00000000 ntdll!RtlUserThreadStart </code></pre>
+<p class="zwts1">通过这个堆栈我们可以清晰地看到：执行始于VTL 0下的KiStartUserThread例程。PspUserThreadStartup调用了安全调用调度循环，该循环永远不会结束，但被一个等待操作打断了。内核调试器无法显示安全内核的任何数据结构或Trustlet的私有数据。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"299b0677-b68d-4088-a559-555354991b32","id":"928aa8b7-c03b-46ca-b536-3302375eb193"}</p>

@@ -1,0 +1,50 @@
+<h3 class="bt3" id="sigil_toc_id_147">10.4.4　类关联</h3>
+<p class="zw">很多对象类型相互之间都以某种方式有所关联。例如，计算机对象有处理器、软件、操作系统、活跃进程等。WMI可以让提供程序通过构建关联类来表示不同类之间的逻辑关联。关联类可将一个类与另一个类关联在一起，因此这种类只有两个属性：类名称和Ref修改器（Ref modifier）。下列输出结果展示了一个关联，其中事件日志提供程序的MOF文件将Win32_NTLogEvent类与Win32_ComputerSystem类关联在一起。对于对象，管理应用程序可以查询相关联的对象，借此提供程序就定义了一种由对象组成的层级结构。</p>
+<pre class="代码无行号"><code>[dynamic: ToInstance, provider("MS_NT_EVENTLOG_PROVIDER"): ToInstance, EnumPrivileges{"SeSe 
+curityPrivilege"}: ToSubClass, Privileges{"SeSecurityPrivilege"}: ToSubClass, Lo-<br>cale(1033): 
+ToInstance, UUID("{8502C57F-5FBB-11D2-AAC1-006008C78BC7}"): ToInstance, Association: 
+DisableOverride ToInstance ToSubClass] 
+class Win32_NTLogEventComputer 
+{
+　
+    [key, read: ToSubClass] Win32_ComputerSystem ref Computer; 
+    [key, read: ToSubClass] Win32_NTLogEvent ref Record; 
+}; </code></pre>
+<p class="zw">图10-29展示了一个PowerShell窗口，其中显示了CIMV2命名空间中第一个Win32_ NTLogEventComputer类的实例。通过聚合类实例，可以查询相关的Win32_ComputerSystem对象实例WIN-46E4EFTBP6Q，它在应用程序日志文件中生成一个编号为1031的记录。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2710.png" style="width: 100%" />
+<p class="图题">图10-29　Win32_NTLogEventComputer聚合类</p>
+<p class="zwtsh">实验：使用WMI脚本管理系统</p>
+<p class="zwts1">WMI的一个强大之处在于可支持脚本语言。微软已为执行常用管理任务创建了数百个脚本，可借此管理用户账户、文件、注册表、进程及硬件设备。Microsoft TechNet脚本中心网站集中提供了微软创建的这些脚本。脚本中心的脚本使用起来就像从浏览器复制文字一样简单，只需将内容保存到.vbs扩展名的文件中，随后用cscript script.vbs命令运行即可，其中“Script”是要运行脚本的名称，Cscript是Windows脚本宿主（WSH）命令行接口。</p>
+<p class="zwts1">TechNet脚本的一个范例如下所示，经过注册，该脚本可在Win32_Process对象实例创建完成后（即新进程开始运行后）收到相关事件，随后会用一行输出内容显示该对象所表示的进程名称：</p>
+<pre class="代码无行号"><code>strComputer = "." 
+Set objWMIService = GetObject("winmgmts:" _ 
+    &amp; "{impersonationLevel=impersonate}!\\" &amp; strComputer &amp; "\root\cimv2") 
+Set colMonitoredProcesses = objWMIService. _ 
+    ExecNotificationQuery("SELECT * FROM __InstanceCreationEvent " _ 
+        &amp; " WITHIN 1 WHERE TargetInstance ISA 'Win32_Process'") 
+i = 0 
+Do While i = 0 
+    Set objLatestProcess = colMonitoredProcesses.NextEvent 
+    Wscript.Echo objLatestProcess.TargetInstance.Name 
+Loop </code></pre>
+<p class="zwts1">其中调用ExecNotificationQuery的那一行使用了包含一个Select语句的参数，这也凸显了WMI对ANSI标准结构化查询语言（SQL）只读子集（即WQL）的支持，借此可以让WMI使用方灵活地指定自己希望从WMI提供程序获取的信息。使用Cscript运行上述脚本，随后即可用记事本看到如下输出结果：</p>
+<pre class="代码无行号"><code>C:\&gt;cscript monproc.vbs 
+Microsoft (R) Windows Script Host Version 5.812 
+Copyright (C) Microsoft Corporation. All rights reserved. 
+　
+NOTEPAD.EXE </code></pre>
+<p class="zwts1">PowerShell也可通过Register-WmiEvent和Get-Event命令支持相同的功能：</p>
+<pre class="代码无行号"><code>PS C:\&gt; Register-WmiEvent -Query “SELECT * FROM __InstanceCreationEvent WITHIN 1 WHERE 
+TargetInstance ISA 'Win32_Process'” -SourceIdentifier “TestWmiRegistration” 
+　
+PS C:\&gt; (Get-Event)[0].SourceEventArgs.NewEvent.TargetInstance | Select-Object -Property 
+ProcessId, ExecutablePath 
+　
+ProcessId ExecutablePath 
+--------- --------------
+    76016 C:\WINDOWS\system32\notepad.exe 
+　
+PS C:\&gt; Unregister-Event -SourceIdentifier "TestWmiRegistration" </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"ec163a78-fcab-4693-8b52-1929b927085a","id":"3cc183ef-c713-4c45-aeab-273ce332b443"}</p>

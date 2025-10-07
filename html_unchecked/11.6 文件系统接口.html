@@ -1,0 +1,14 @@
+<h2 class="bt2" id="sigil_toc_id_191"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 11.6　文件系统接口</h2>
+<p class="zw">当文件数据被首次执行缓存读取或写入操作时，需由文件系统驱动程序负责判断文件的部分内容是否已映射至系统缓存。如果还未映射，那么文件系统驱动程序必须调用CcInitializeCacheMap函数来设置上文介绍的每文件数据结构。</p>
+<p class="zw">一旦文件设置好缓存访问，文件系统驱动程序就将调用多种函数中的一种来访问文件数据。缓存的数据主要可通过三种方法访问，每种方法适合不同的情况。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 复制方法可在系统空间的缓存缓冲区和用户空间的进程缓冲区之间复制数据。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 映射和固定方法可使用虚拟地址直接向缓存缓冲区读/写数据。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 物理内存访问方法可使用物理地址直接向缓存缓冲区读/写数据。</p>
+<p class="zw">文件系统驱动程序必须提供两个版本的文件读取操作：缓存的（Cached）和未缓存的（Noncached），这是为了防止内存管理器在处理页面错误时陷入无限循环。当内存管理器调用文件系统（通过设备驱动程序）从文件获取数据以解决页面错误时，必须在IRP中设置“未缓存”和“分页IO”标记，以此指定这是一次分页读取操作。</p>
+<p class="zw">图&nbsp;11-11&nbsp;展示了缓存管理器、内存管理器以及文件系统驱动程序为响应用户的文件读取或写入I/O而进行的典型交互。文件系统会通过复制接口（CcCopyRead和CcCopyWrite路径）来调用缓存管理器。例如，为了处理CcFastCopyRead或CcCopyRead读取，缓存管理器会在缓存中创建视图，以此对文件中被读取的部分进行映射，并通过从视图中复制的方式将文件数据读入用户缓冲区。复制操作在访问视图中每个原本无效的页面时会产生页面错误，作为回应，内存管理器会向文件系统驱动程序发起未缓存I/O，借此获取映射到出错页面的文件部分所对应的数据。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx687.png" style="width: 100%" />
+<p class="图题">图11-11　缓存管理器和内存管理器之间的文件系统交互</p>
+<p class="zw">随后的三节内容将介绍这些缓存机制，以及它们的用途和使用方式。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"12042f06-13bb-4487-b2cc-12b9114bd68f","id":"b7204c60-a482-40f3-b450-11354c2fbbd3"}</p>

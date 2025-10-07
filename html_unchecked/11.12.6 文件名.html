@@ -1,0 +1,89 @@
+<h3 class="bt3" id="sigil_toc_id_257">11.12.6　文件名</h3>
+<p class="zw">NTFS和FAT都允许路径中的每个文件名最长达到255个字符。文件名可以包含Unicode字符以及多个句点和嵌入的空格。然而，MS-DOS提供的FAT文件系统文件名被限制为8个（非Unicode）字符，后跟一个句点以及三个字符的扩展。图11-35直观演示了Windows可支持的不同文件命名空间以及它们的交叉情况。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2075.png" style="width: 100%" />
+<p class="图题">图11-35　Windows文件命名空间</p>
+<p class="zw">在Windows可支持的所有应用程序执行环境中，Windows Subsystem for Linux（WSL）需要最大的命名空间，因此NTFS命名空间等同于WSL命名空间。WSL可以创建对Windows和MS-DOS应用程序不可见的名称，包括尾部带有句点和空格的名称。通常来说，使用更大的POSIX命名空间创建文件并不会造成什么问题，因为只有当我们需要让WSL应用程序使用这种文件时才会这样做。</p>
+<p class="zw">然而，32位Windows应用程序与MS-DOS和16位Windows应用程序之间的关系更密切。图11-35中的Windows区域代表Windows子系统可以在NTFS卷上创建，但MS-DOS和16位Windows应用程序不可见的文件名。这一组中包含比MS-DOS的8.3格式名称更长的文件名，包含Unicode（国际）字符的名称、多个句点或在开头处使用句点的名称，以及嵌入空格的名称。出于兼容性考虑，使用这样的名称创建文件时，NTFS会自动为该文件生成一个替代的、MS-DOS风格的文件名。如果为dir命令使用/x选项，Windows就会显示这种短名称。</p>
+<p class="zw">MS-DOS文件名是NTFS文件的全功能别名，与长文件名存储在同一个目录下。图11-36显示了一个具备自动生成的MS-DOS文件名属性的MFT文件记录。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2084.png" style="width: 100%" />
+<p class="图题">图11-36　具备自动生成的MS-DOS文件名属性的MFT文件记录</p>
+<p class="zw">NTFS名称和生成的MS-DOS名称存储在同一个文件记录中，因此可以代表同一个文件。MS-DOS名称可用于打开、读取、写入或复制文件。如果用户使用长文件名或短文件名对文件执行更名操作，那么新名称将同时替代长短两个原有名称。如果新名称不是有效的MS-DOS名称，则NTFS会为文件生成另一个MS-DOS名称（请注意，NTFS只为第一个文件名生成MS-DOS风格的文件名）。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　硬链接也是以类似方式实现的。当为一个文件创建硬链接时，NTFS会在文件的MFT文件记录中添加另一个文件名属性，并在新链接所在目录的索引分配特性中添加一个项。不过这两种情况在一方面有所差异：当用户删除一个有多个名称（硬链接）的文件时，文件记录和文件将保留在原位。只有在最后一个名称（硬链接）删除后，文件及其记录才会被删除。然而，如果文件同时具备NTFS名称和自动生成的MS-DOS名称，用户可以使用任何一个名称删除该文件。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">NTFS会使用下列算法从长文件名中生成MS-DOS名称。该算法实际上是在内核函数RtlGenerate8dot3Name中实现的，未来版本的Windows中可能出现变化。这个函数也可被其他驱动程序使用，如CDFS、FAT以及第三方文件系统。</p>
+<p class="zw">1）从长名称中删除对MS-DOS名称来说非法的所有字符，包括空格和Unicode字符。删除开头和结尾的句点。删除嵌入的所有其他句点，但最后一个句点除外。</p>
+<p class="zw">2）将句点（如果存在）之前的字符串截断为6个字符（可能已经是6个或更少的字符了，因为当名称中存在任何MS-DOS非法字符时都会使用该算法）。如果剩下2个或更少的字符，则生成并连接一个4字符的十六进制校验字符串。附加字符串~n（其中n是一个从1开始的数字，用于区分截断后依然同名的多个文件）。将句点（如果存在）之后的字符截断为3个字符。</p>
+<p class="zw">3）将结果转换为大写字母。MS-DOS是不区分大小写的，该步骤保证了NTFS不会生成一个和旧名称只有字母大小写这唯一差异的新名称。</p>
+<p class="zw">4）如果生成的名称与目录中原有的名称重复，则会增大~n字符串。如果n大于4并且还没有连接校验值，则将句点前的字符串截断为2个字符，随后生成并连接一个4字符的十六进制校验字符串。</p>
+<p class="zw">表11-8列出了图11-35中的长Windows文件名以及相应的NTFS生成的MS-DOS版本名称。当前的算法和图11-35中列举的例子应该可以帮助大家概括了解NTFS生成的MS-DOS风格的文件名是什么样的。</p>
+<table width="99%"> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　从Windows 8.1开始，默认情况下，所有NTFS不可启动卷的短名称生成功能已被禁用。如果希望在老版本的Windows中禁用短名称的生成功能，可将注册表中HKLM\SYSTEM\ CurrentControlSet\Control\FileSystem\NtfsDisable8dot3NameCreation这个DWORD值的数据设置为1并重启系统。但这可能会破坏与老应用程序的兼容性。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="表题">表11-8　NTFS生成的文件名</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">Windows长名称</p> </th> 
+   <th> <p class="bt">NTFS生成的短名称</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">LongFileName</p> </td> 
+   <td> <p class="bg">LONGFI~1</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">UnicodeName.FDPL</p> </td> 
+   <td> <p class="bg">UNICOD~1</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">File.Name.With.Dots</p> </td> 
+   <td> <p class="bg">FILENA~1.DOT</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">File.Name2.With.Dots</p> </td> 
+   <td> <p class="bg">FILENA~2.DOT</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">File.Name3.With.Dots</p> </td> 
+   <td> <p class="bg">FILENA~3.DOT</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">File.Name4.With.Dots</p> </td> 
+   <td> <p class="bg">FILENA~4.DOT</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">File.Name5.With.Dots</p> </td> 
+   <td> <p class="bg">FIF596~1.DOT</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Name With Embedded Spaces</p> </td> 
+   <td> <p class="bg">NAMEWI~1</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">.BeginningDot</p> </td> 
+   <td> <p class="bg">BEGINN~1</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">25¢.two characters</p> </td> 
+   <td> <p class="bg">255440~1.TWO</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">©</p> </td> 
+   <td> <p class="bg">6E2D~1</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"c674e551-993b-403e-9d97-83132037c061"}</p>

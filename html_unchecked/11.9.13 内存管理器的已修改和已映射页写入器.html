@@ -1,0 +1,4 @@
+<h3 class="bt3" id="sigil_toc_id_221">11.9.13　内存管理器的已修改和已映射页写入器</h3>
+<p class="zw">内存管理器的已修改和已映射页写入器线程会被定期唤醒（以及在可用内存不足时被唤醒），并将已修改页面刷新到磁盘的后备存储中。这些线程会调用IoAsynchronousPageWrite来创建类型为IRP_MJ_WRITE的IRP，并将页面写入分页文件，或写入映射后已被修改的文件。与MiDispatchFault创建的IRP类似，这些IRP都会被标记为未缓存和分页I/O，因此，FSD可以绕过文件系统缓存直接向存储驱动程序发出IRP，进而将内存写入磁盘。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":12,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"fb24c9fa-061b-4976-aa68-eaf7cb30f402"}</p>

@@ -1,0 +1,7 @@
+<h3 class="bt3" id="sigil_toc_id_241">11.10.12　压缩和稀疏文件</h3>
+<p class="zw">NTFS支持文件数据压缩。NTFS会以透明的方式执行压缩和解压缩，应用程序无须任何改动即可使用该功能。目录也可以压缩，这样，以后在目录中创建的任何文件都会被压缩。</p>
+<p class="zw">为了压缩和解压缩文件，应用程序可向DeviceIoControl传递文件系统控制代码FSCTL_SET_COMPRESSION。该控制代码可利用文件系统控制代码FSCTL_GET_ COMPRESSION查询文件或目录的压缩状态。被压缩的文件或目录会在属性中设置FILE_ATTRIBUTE_COMPRESSED标记，因此，应用程序也可以使用GetFileAttributes来确定文件或目录的压缩状态。</p>
+<p class="zw">第二类压缩称为稀疏文件（sparse file）。如果文件被标记为稀疏，则NTFS将不为文件中被应用程序指定为空的区域在卷上分配空间。当应用程序从稀疏文件的空区域中读取时，NTFS将返回用0填充的缓冲区。此类压缩很适合通过实施循环缓冲区来记录日志的客户端/服务器应用程序，这种情况下，服务器会将信息记录到一个文件中，客户端以异步方式读取日志信息。由于服务器写入的信息在客户端读取之后不再需要，因此无须将信息存储在文件中。通过让这种文件成为稀疏文件，客户端可将自己从文件中读取过的部分指定为“空”，这样即可释放卷的空间。服务器可以继续向文件中追加新信息，而不用担心文件增长过大消耗了卷上的所有可用空间。</p>
+<p class="zw">与压缩文件类似，NTFS会以透明的方式管理稀疏文件。应用程序通过向DeviceIoControl传递文件系统控制代码FSCTL_SET_SPARSE来指定一个文件的稀疏状态。要将文件的范围设置为空，应用程序可以使用FSCTL_SET_ZERO_DATA代码，并可使用控制代码FSCTL_QUERY_ALLOCATED_RANGES向NTFS要求描述文件中的哪些部分是稀疏的。下文即将介绍的NTFS变更日志就是稀疏文件的一种应用。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":11,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"5c83e8da-649d-4024-bb0e-7c01733188e1"}</p>

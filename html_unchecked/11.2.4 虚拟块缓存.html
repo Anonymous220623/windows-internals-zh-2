@@ -1,0 +1,7 @@
+<h3 class="bt3" id="sigil_toc_id_178">11.2.4　虚拟块缓存</h3>
+<p class="zw">Windows缓存管理器使用了一种称为虚拟块缓存（virtual block caching）的方法，缓存管理器可以通过这种方法跟踪哪些文件的哪些部分位于缓存中。缓存管理器还可以使用位于内存管理器中的特殊系统缓存例程，将文件的256&nbsp;KB视图映射到系统虚拟地址空间，以此监控文件中被缓存的部分。这种方法可以实现多种好处。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 为智能预读取（read-ahead）提供了可能，因为缓存可以跟踪哪些文件的哪些部分位于缓存中，进而预测调用方接下来可能会访问什么。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 可以让I/O系统绕过文件系统直接请求已经位于缓存中的数据（快速I/O）。因为缓存管理器知道哪些文件的哪些部分已经位于缓存中，所以可以直接返回已缓存数据的地址来满足I/O请求，而无须调用文件系统。</p>
+<p class="zw">有关智能预读取和快速I/O工作原理的详细介绍请参阅下文“快速I/O”和“预读取和延后写入”中的内容。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"3ad34383-9660-4e89-b628-a8cbdfed9828","id":"6f4b1048-bc4b-4cb8-adca-cb26f9db616a"}</p>

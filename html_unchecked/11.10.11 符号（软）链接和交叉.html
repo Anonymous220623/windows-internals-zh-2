@@ -1,0 +1,36 @@
+<h3 class="bt3" id="sigil_toc_id_240">11.10.11　符号（软）链接和交叉</h3>
+<p class="zw">除了硬链接，NTFS还支持另一类文件名别名，即符号链接（symbolic link）或软链接（soft link）。与硬链接不同，符号链接是一种动态解释的字符串，可包含相对路经或绝对路径，指向任意存储设备上的位置（包括不同的本地卷，甚至包括另一个系统中的共享）。这意味着符号链接并不会让原始文件的引用计数增加，因而删除原始文件将导致数据丢失，最终只能留下一个指向不存在的文件的符号链接。最后，与硬链接不同，符号链接不仅可以指向文件，还可以指向目录，这又带来了一些额外的优势。</p>
+<p class="zw">举例来说，如果路径C:\Drivers是一个重定向至%SystemRoot%\System32\Drivers的目录符号链接，应用程序读取&nbsp;C:\Drivers\Ntfs.sys时，实际上是在读取%SystemRoot%\ System\Drivers\Ntfs.sys。目录符号链接可以将一些原本处于较深层级中的目录“提升”到更易用的深度，同时不破坏原始目录树的结构或内容。上面这个例子就将Drivers目录提升到了卷根目录下，借此在通过目录符号链接访问时，即可将Ntfs.sys的目录深度从三层减少到一层。文件符号链接的工作方式类似，我们可以将其看成一种快捷方式，只不过它们是在文件系统上实现的，而不只是由Windows资源管理器所管理的.lnk文件。与硬链接类似，符号链接可以使用mklink工具（不使用/H选项）或CreateSymbolicLink API创建。</p>
+<p class="zw">由于一些老旧的应用程序在遇到符号链接的情况下可能表现得不够安全，跨越计算机使用时尤其如此，因此符号链接的创建需要具备SeCreateSymbolicLink特权，该特权通常只授予Administrators组的成员。从Windows 10开始，并且在启用了开发者模式（Developer Mode）的情况下，CreateSymbolicLink API的调用方还可以额外指定SYMBOLIC_LINK_ FLAG_ALLOW_UNPRIVILEGED_CREATE标记来打破这个局限（让标准用户也能通过命令提示符窗口创建符号链接）。文件系统还提供了一个名为SymLinkEvaluation的行为选项，可通过下列命令配置：</p>
+<pre class="代码无行号"><code>fsutil behavior set SymLinkEvaluation </code></pre>
+<p class="zw">默认情况下，Windows的默认符号链接评估策略只允许“本地到本地”和“本地到远程”的符号链接，不允许相反的情况，如下所示：</p>
+<pre class="代码无行号"><code>D:\&gt;fsutil behavior query SymLinkEvaluation 
+Local to local symbolic links are enabled 
+Local to remote symbolic links are enabled. 
+Remote to local symbolic links are disabled. 
+Remote to Remote symbolic links are disabled. </code></pre>
+<p class="zw">符号链接是通过NTFS中一种名为重分析点的机制实现的（重分析点的详细信息请参阅下文“重分析点”一节）。重分析点是一个文件或目录，其中关联了一个名为“重分析数据”的数据块。重分析数据是用户定义的，关于文件或目录的数据，例如其状态或位置，可由创建数据的应用程序、文件系统过滤器驱动程序或I/O管理器通过重分析点读取。在NTFS在查找文件或目录过程中遇到重分析点后，将会返回STATUS_ REPARSE状态代码，该代码向附加到卷的文件系统过滤器驱动程序以及I/O管理器发送信号，以便检查重分析数据。每个重分析点类型都有唯一的重分析标签。这些重分析标签可以让负责解读重分析数据的组件在无须检查重分析数据的情况下识别重分析点。重分析标签的所有者（无论是文件系统过滤器驱动程序或是I/O管理器）在识别重分析数据时可选择下列一个选项。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 重分析标记的所有者可以操作跨越重分析点的文件I/O操作中指定的路径名称，并让I/O操作以更改后的路径名重新发出。例如，交叉（Junction，下文很快会介绍）就通过这种方式对目录查找进行重定向。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 重分析标记的所有者可以从文件中移除重分析点，以某种方式修改文件，随后重新发出文件I/O操作通知。</p>
+<p class="zw">Windows未提供创建重分析点的函数。进程必须将FSCTL_SET_REPARSE_POINT文件系统控制代码与Windows的DeviceIoControl函数配合使用。进程可以使用FSCTL_GET_REPARSE_POINT文件系统控制代码来查询重分析点的内容。重分析点的文件属性中可设置FILE_ATTRIBUTE_REPARSE_POINT标记，这样应用程序就可以使用Windows的GetFileAttributes函数检查重分析点。</p>
+<p class="zw">NTFS支持的另一类重分析点称为交叉（也称卷挂载点）。交叉是NTFS中一个比较老的概念，工作方式几乎与目录符号链接完全相同，唯一的区别在于交叉只能在卷本地使用。相对于目录符号链接，交叉并未提供任何额外优势，只不过交叉可以兼容较老版本的Windows，而目录符号链接并不能兼容。</p>
+<p class="zw">如上文所述，现代版本的Windows已经可以创建指向非空目录的重分析点。系统行为（可通过微过滤器驱动程序控制）取决于重分析点在目标文件完整路径中的位置。过滤器管理器、NTFS以及ReFS文件系统驱动程序均可使用导出的FsRtlIsNonEmptyDirectoryReparsePointAllowed API来检测是否允许在非空目录上使用重分析点的类型。</p>
+<p class="zwtsh">实验：创建符号链接</p>
+<p class="zwts1">本实验将展示符号链接和硬链接之间的主要差异（即便是在处理同一个卷上的文件时）。创建一个名为soft.txt的符号链接，将其指向上一个实验中创建的test.txt文件：</p>
+<pre class="代码无行号"><code>C:\&gt;mklink soft.txt test.txt 
+symbolic link created for soft.txt &lt;&lt;===&gt;&gt; test.txt </code></pre>
+<p class="zwts1">显示目录内容会发现，该符号链接不显示文件大小，并标识为&lt;SYMLINK&gt;类型。此外还会看到，创建时间对应于符号链接，而非目标文件的创建时间。符号链接还可以使用与目标文件不同的安全权限。</p>
+<pre class="代码无行号"><code>C:\&gt;dir *.txt 
+ Volume in drive C is OS 
+ Volume Serial Number is 38D4-EA71 
+　
+ Directory of C:\ 
+　
+05/12/2012 11:55 PM                 8 hard.txt 
+05/13/2012 12:28 AM    &lt;SYMLINK&gt;      soft.txt [test.txt] 
+05/12/2012 11:55 PM                 8 test.txt 
+              3 File(s)             16 bytes 
+              0 Dir(s)  10,636,480,512 bytes free </code></pre>
+<p class="zwts1">最后，如果删除了源文件test.txt，则可以看到硬链接和符号链接都还存在，但符号链接已经不再指向有效的文件，而硬链接依然指向文件数据。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":10,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"6ecfa1e1-b7c3-44a6-9109-7d3398197003"}</p>

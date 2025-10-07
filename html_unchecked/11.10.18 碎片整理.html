@@ -1,0 +1,53 @@
+<h3 class="bt3" id="sigil_toc_id_247">11.10.18　碎片整理</h3>
+<p class="zw">虽然NTFS在分配块进而扩展文件时会尽可能地保持文件的连续，但随着时间的推移，卷上的文件不可避免地会变得碎片化，尤其是当文件被多次扩展或可用空间较为有限时。如果一个文件的数据占据了不连续的簇，那么该文件就是碎片化的。例如，图11-26展示了一个包含五个片段的碎片化文件。不过与大部分文件系统（包括Windows中的FAT）一样，除了为主文件表（MFT）预留一块名为MFT的磁盘空间区域外，NTFS在保持文件连续性方面并没有做太多的工作（而是由系统自带的碎片整理工具负责）（卷的可用空间不足时，NTFS可以让其他文件从MFT区域分配空间）。为MFT保留可用区域有助于让它保持连续，但MFT依然不可避免地会变得碎片化（有关MFT的详细信息请参阅下文“主文件表”一节）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1632.png" style="width: 100%" />
+<p class="图题">图11-26　碎片化文件和连续文件</p>
+<p class="zw">为了促进第三方磁盘碎片整理工具的开发，Windows提供了碎片整理API，此类工具可通过这些API移动文件数据，并让文件分布在连续的簇上。该API由文件系统控件组成，可让应用程序获得卷的可用和已用簇分布图（FSCTL_GET_VOLUME_BITMAP），获得文件的簇使用情况图（FSCTL_GET_RETRIEVAL_POINTERS），并移动文件（FSCTL_ MOVE_FILE）。</p>
+<p class="zw">Windows自带一个碎片整理工具，可通过驱动器优化工具（%SystemRoot%\System32\ Dfrgui.exe）访问，如图11-27所示；该工具提供了命令行接口（%SystemRoot%\System32\ Defrag.exe），这样即可以非交互式方式或计划方式运行，但命令行接口无法提供丰富的报告或控制选项（例如排除某些文件或目录）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1645.png" style="width: 100%" />
+<p class="图题">图11-27　驱动器优化工具</p>
+<p class="zw">NTFS中实现的碎片整理机制唯一的局限在于：无法整理分页文件和NTFS日志文件的碎片。驱动器优化工具是磁盘碎片整理工具的改进版本，最早出现在Windows 7中。该工具通过更新，已经可以支持分层卷、SMR磁盘以及SSD固态硬盘。其优化引擎实现于驱动器优化服务（Defragsvc.dll）中，公开了图形化工具和命令行接口所用的IDefragEngine COM接口。</p>
+<p class="zw">对于固态硬盘，该工具也实现了重新修剪（Retrim）操作。为了理解重新修剪操作，首先需要简要介绍固态硬盘的结构。固态硬盘将数据存储在闪存单元中，这些闪存单元被分组为4&nbsp;KB～16&nbsp;KB的页，通常每128～512个页组合成一个块。只有空的闪存单元可被直接写入。如果其中包含数据，则必须先清除现有数据才能执行写入操作。固态硬盘的写入操作可以在单个页上进行，但由于硬件本身的限制，清除命令将作用于整个块。因此，向固态硬盘的空页中写入数据是一种很快速的操作，但如果要向已经包含内容的页写入新数据，速度将变得非常慢（这种情况下，需要首先将整个块的内容存储到缓存中，随后将整个块的内容清除，被覆盖的页被写入缓存的块中，最终将更新后的整个块重新写入闪存介质）。为了解决此问题，NTFS文件系统驱动程序会在每次删除磁盘簇（这些簇可能部分属于或完全属于同一个文件）时向SSD控制器发送TRIM命令。作为对TRIM命令的回应，SSD会在可能的情况下开始异步清除整个块。值得注意的是，如果被删除的区域只对应了块中的部分页，那么SSD控制器将无法执行任何操作。</p>
+<p class="zw">重新修剪操作会分析固态硬盘并开始向可用空间中的每个簇发送TRIM命令（以1&nbsp;MB大小的块为单位）。这样做的背后有不同的动机。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> TRIM命令并非总能成功发出（文件系统对修剪的要求并不是非常严格）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> NTFS文件系统会对页（而非SSD块）发送TRIM命令。磁盘优化工具在执行重新修剪操作时，会搜索碎片化的块。对于这些块，首先会将有效数据移动到一些临时块中，对原始块进行碎片整理甚至插入属于其他碎片化块的偶数页，并最终针对清理后的原始块发送TRIM命令。</p>
+<table width="99%"> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　磁盘优化工具对可用空间发送TRIM命令的方式有些巧妙：磁盘优化工具会分配一个空的稀疏文件并搜索一块可用空间（大小在128&nbsp;KB～1&nbsp;GB之间）。随后它会通过FSCTL_ MOVE_FILE控制代码调用文件系统，并将数据从稀疏文件（大小为1&nbsp;GB，但实际上不包含任何有效数据）移动到空区域。底层文件系统实际上会清除一个或多个SSD块的内容（不包含有效数据的稀疏文件在读取时会产生归零的数据块）。这就是SSD固件中实现的TRIM命令。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">对于分层磁盘和SMR磁盘，驱动器优化工具支持两个补充操作：Slabify（也叫Slab合并）和分层优化（Tier Optimization）。存储在分层卷上的大文件可由位于不同层的区域（Extent）组成。Slab合并操作不仅可对文件的区域表（Extent Table）整理碎片（这个过程称为合并），而且可将文件内容移动到叠合的Slab中（Slab是精简配置磁盘中的分配单位，详见下文“存储空间”一节）。Slab的最终目标是让文件使用较少数量的Slab。分层优化可将频繁访问的文件（包括已被明确固定的文件）从容量层移动到性能层，以及将不频繁访问的数据从性能层移动到容量层。为此，优化引擎需要查询分层引擎，分层引擎会根据用户访问每个文件的热度图，告诉优化引擎该将哪些文件区域移动到容量层，以及将哪些移动到性能层。</p>
+<table width="99%"> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　分层磁盘和分层引擎将在下文中详细介绍。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：重新修剪SSD卷</p>
+<p class="zwts1">我们可以使用defrag.exe /L命令针对高速SSD或NVMe的卷执行重新修剪：</p>
+<pre class="代码无行号"><code>D:\&gt;defrag /L c: 
+Microsoft Drive Optimizer 
+Copyright (c) Microsoft Corp. 
+　
+Invoking retrim on (C:)... 
+　
+The operation completed successfully. 
+　
+Post Defragmentation Report:
+　
+        Volume Information: 
+               Volume size              = 475.87 GB 
+                Free space              = 343.80 GB
+　
+        Retrim: 
+                 Total space trimmed      = 341.05 GB </code></pre>
+<p class="zwts1">在上述例子中，卷的大小为475.87GB，可用空间343.80GB，仅341GB被擦除和修剪了。很明显，如果对传统机械硬盘上的卷执行上述命令将会收到错误信息（备份卷的硬件不支持请求的操作）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":17,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"d10b66d8-2822-4cab-b1d1-59a6c7e85096"}</p>

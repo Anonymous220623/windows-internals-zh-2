@@ -1,0 +1,38 @@
+<h3 class="bt3" id="sigil_toc_id_170">10.9.3　驱动程序填充码</h3>
+<p class="zw">NT内存管理器使用KseDriverLoadImage函数来决定是否在加载时为内核驱动程序应用填充码（引导加载的驱动程序是由I/O管理器处理的，详见第12章）。该例程会在内核模块生命周期的正确时间调用，并会在运行驱动程序验证器、导入优化和应用Kernel Patch保护之前进行调用（这个顺序很重要，否则系统会进入错误检查状态）。目前已经应用填充码的内核模块列表存储在一个全局变量中。KsepGetShimsForDriver例程会检查列表中是否有与已加载模块具备相同基址的模块。如果有，则意味着目标模块已经应用了填充码，因此后续过程可以忽略。否则需要决定是否为新模块应用填充码，该例程会从两个不同的来源进行检查。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 查询HKLM\System\CurrentControlSet\Control\Compatibility\Driver根键下，与被加载模块同名的注册表键的“Shims”多字符串值。该注册表值包含了需要为目标模块应用的由填充码的名称组成的数组。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果目标模块的上述注册表值不存在，则会解析驱动程序兼容性数据库文件，查找KDRIVER标签（由INDEX块建立了索引），该标签应该会与被加载的模块同名。如果在SDB文件中找到了驱动程序，NT内核会对比驱动程序版本（KDRIVER根标签下存储的TAG_SOURCE_OS）、文件名、路径（如果SDB中存在相对标签），以及引擎初始化过程中收集的底层系统信息（借此判断驱动程序是否兼容系统）。如果上述任何一类信息不匹配，驱动程序将会被跳过，不会应用任何填充码。否则将从KSHIM_REF底层标签（根KDRIVER的一部分）获取填充码名称列表。这些标签是对SDB数据库块中KSHIM的引用。</p>
+<p class="zw">如果通过上述两个来源之一获得了要应用给目标驱动程序的一个或多个填充码名称，那么随后将再次解析SDB文件，这次的目的是验证是否存在有效的KSHIM描述符。如果特定填充码名称没有相关标签（意味着数据库中不存在填充码描述符），则该过程将被中断（借此防止管理员为驱动程序应用随机的非微软填充码）。如果找到相关的标签，则会向KsepGetShimsForDriver返回一个KSE_SHIM_INFO数据结构数组。</p>
+<p class="zw">接下来需要判断描述符所描述的填充码是否已在系统中注册。为此，填充码引擎会搜索已注册填充码的全局链表（每当注册新填充码后，都会填写该链表，详见上文“填充码引擎初始化”一节）。如果填充码尚未注册，则填充码引擎会试图加载提供该填充码的驱动程序（驱动程序名称存储在根KSHIM项的MODULE子标签中），随后会再次重试。当填充码首次应用时，填充码引擎会解析已注册填充码（KSE_SHIM数据结构）包含的KSE_HOOK_COLLECTION数据结构数组描述的所有挂钩的指针。填充码引擎会分配并填写一个KSE_SHIMMED_MODULE数据结构，该数据结构代表了要被应用填充码的目标模块（及其基址），并将其添加到最开始检查的全局列表中。</p>
+<p class="zw">至此，填充码引擎即可使用内部例程KsepApplyShimsToDriver为目标模块应用填充码。该例程会在KSE_HOOK_COLLECTION数组描述的每个挂钩中循环，修补目标模块的导入地址表（IAT），用新的挂钩（由挂钩集描述）替换挂钩函数的原始地址。请注意，在这个阶段并不处理驱动程序的对象回调函数（IRP处理程序），这些函数稍后会在调用目标驱动程序的DriverInit例程之前被I/O管理器修改。原始驱动程序的IRP回调例程会保存在目标驱动程序的驱动程序扩展（driver extension）中。这样，挂钩函数在需要时就可以通过简单的方式重新调用到原来的函数中。</p>
+<p class="zwtsh">实验：查看驱动程序填充码的作用</p>
+<p class="zwts1">虽然使用Windows评估和部署工具包发布的官方微软应用程序兼容性工具包可供我们打开、修改、创建填充码数据库文件，但无法借此操作系统数据库文件（可通过内部GUID识别不同的数据库文件），因此，也就无法借助该工具解析drvmain.sdb数据库描述的所有内核填充码。不过有很多第三方SDB解析程序。例如，一款名为SDB Explorer的工具就可以在这里免费下载：https://ericzimmerman.github.io/。</p>
+<p class="zwts1">这个实验将查看drvmain系统数据库文件的内容，并向本书随附资源中包含的测试驱动程序ShimDriver应用内核填充码。为了完成该实验，我们需要启用测试签名（ShimDriver使用自签名测试证书签名）。</p>
+<p class="zwts1">1）以管理员身份打开命令提示符窗口，并运行下列命令：</p>
+<pre class="代码无行号"><code>bcdedit /set testsigning on </code></pre>
+<p class="zwts1">2）重启计算机，通过上述链接下载并运行SDB Explorer，打开%SystemRoot%\ apppatch下的drvmain.sdb数据库文件。</p>
+<p class="zwts1">3）在SDB Explorer主窗口中，我们可以浏览整个数据库文件，该文件分为Indexes、Databases以及String表三个主要的块。请展开DATABASES根块并向下滚动，找到KSHIM列表（应该在KDEVICE后面）。随后应该能看到类似下图所示的窗口。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx4054.png" style="width: 100%" />
+<p class="zwts1">4）我们需要向测试驱动程序应用一个Version lie填充码。首先请将ShimDriver复制到%SystemRoot%\System32\Drivers，随后在管理员身份启动的命令提示符窗口中运行下列命令安装该驱动程序（假设系统是64位的）。</p>
+<pre class="代码无行号"><code>sc create ShimDriver type= kernel start= demand error= normal binPath= c:\ Windows\System32\ShimDriver64.sys </code></pre>
+<p class="zwts1">5）在启动测试驱动程序前，需要从Sysinternals网站下载并运行DebugView工具（https://docs.microsoft.com/sysinternals/downloads/debugview）。这一步是必需的，因为ShimDriver会输出一些调试信息。</p>
+<p class="zwts1">6）使用下列命令启动ShimDriver：</p>
+<pre class="代码无行号"><code>sc start shimdriver </code></pre>
+<p class="zwts1">7）检查DebugView工具的输出结果。应该可以看到类似下图所示的消息。实际看到的内容取决于运行该驱动程序的Windows版本。在本例中，我们在Insider版的Windows Server 2022上运行了该驱动程序。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx4061.png" style="width: 100%" />
+<p class="zwts1">8）此时即可停止驱动程序并启用SDB数据库中的填充码。在本例中，我们将使用一个Version lie填充码。停止目标驱动程序并使用下列命令安装填充码（其中ShimDriver64.sys是上一步安装的驱动程序的文件名）：</p>
+<pre class="代码无行号"><code>sc stop shimdriver 
+reg add "HKLM\System\CurrentControlSet\Control\Compatibility\Driver\
+    ShimDriver64.sys" /v Shims /t REG_MULTI_SZ /d
+KmWin81VersionLie /f /reg:64 </code></pre>
+<p class="zwts1">9）上述命令会添加Windows 8.1的Version lie填充码，但我们也可以随意选择其他版本。</p>
+<p class="zwts1">10）随后如果重新启动该驱动程序，将能看到DebugView工具显示了不同的输出结果，类似下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx4069.png" style="width: 100%" />
+<p class="zwts1">11）这是因为填充码引擎为获取操作系统版本信息的NT API正确地应用了挂钩（驱动程序也能检测到填充码）。我们也可以使用其他填充码重复该实验，例如使用SkipDriverUnload或KernelPadSectionsOverride填充码，借此可以让驱动程序卸载例程归零，或阻止目标驱动程序加载，效果如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx4079.png" style="width: 100%" />
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"89b4888a-9a39-47e4-a3ef-e6e0929c62be","id":"668ee0ab-da39-4145-84c1-dc8b6f92f6b9"}</p>

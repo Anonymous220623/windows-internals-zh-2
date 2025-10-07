@@ -1,0 +1,67 @@
+<h3 class="bt3" id="sigil_toc_id_214">11.9.6　NTFS</h3>
+<p class="zw">正如本章开篇所述，NTFS是Windows的原生文件系统格式之一。NTFS使用64位簇编号。这使得NTFS可以寻址最多16百亿亿（10<sup>18</sup>）个簇。但是Windows将NTFS卷的大小限制在32位簇的可寻址范围内，也就是略低于8&nbsp;PB（使用2&nbsp;MB的簇）。表11-5列出了NTFS卷的默认簇大小（格式化NTFS卷时可更改这些设置）。每个NTFS卷最多可保存2<sup>32</sup>–1个文件。NTFS格式最大支持大小为16&nbsp;EB的文件，但具体实现中将最大文件的大小限制为16&nbsp;TB。</p>
+<p class="表题">表11-5　NTFS卷的默认簇大小</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">卷大小</p> </th> 
+   <th> <p class="bt">默认簇大小</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">&lt;7&nbsp;MB</p> </td> 
+   <td> <p class="bg">不支持</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">7&nbsp;MB～16&nbsp;TB</p> </td> 
+   <td> <p class="bg">4&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">16&nbsp;TB～32&nbsp;TB</p> </td> 
+   <td> <p class="bg">8&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">32&nbsp;TB～64&nbsp;TB</p> </td> 
+   <td> <p class="bg">16&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">64&nbsp;TB～128&nbsp;TB</p> </td> 
+   <td> <p class="bg">32&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">128&nbsp;TB～256&nbsp;TB</p> </td> 
+   <td> <p class="bg">64&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">256&nbsp;TB～512&nbsp;TB</p> </td> 
+   <td> <p class="bg">128&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">512&nbsp;TB～1024&nbsp;TB</p> </td> 
+   <td> <p class="bg">256&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">1&nbsp;PB～2&nbsp;PB</p> </td> 
+   <td> <p class="bg">512&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">2&nbsp;PB～4&nbsp;PB</p> </td> 
+   <td> <p class="bg">1&nbsp;MB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">4&nbsp;PB～8&nbsp;PB</p> </td> 
+   <td> <p class="bg">2&nbsp;MB</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">NTFS包含很多高级功能，例如文件和目录安全性、备用数据流、磁盘配额、稀疏文件、文件压缩、符号（软）链接和硬链接、支持事务型语义、交接点以及加密。其重要功能之一是可恢复性。如果系统意外停止，FAT卷的元数据可能处于不一致状态，导致大量文件和目录数据损坏。NTFS以事务的方式记录对元数据进行的改动，因此文件系统结构可以修复到一致的状态，不会丢失文件或目录的结构信息（除非使用下文将要介绍的TxF，否则文件数据依然可能会丢失）。此外，Windows中的NTFS驱动程序还实现了自愈机制，通过这种机制无须重启系统，在Windows运行过程中对文件系统磁盘结构的大部分损坏执行细微的修复。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　截至撰写这部分内容，磁盘设备的常见物理扇区大小为4&nbsp;KB。但这些磁盘设备，即便出于兼容性方面的考虑，存储堆栈暴露给文件系统驱动程序的逻辑扇区大小依然是512字节。NTFS驱动程序会通过计算确定正确的簇大小，该计算使用了逻辑扇区的大小，而非实际的物理大小。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">从Windows 10开始，NTFS原生支持DAX卷（DAX卷详见下文“DAX卷”一节）。NTFS驱动程序还支持使用大页面对此类卷发起I/O操作。使用大页面映射DAX卷中的文件，这是通过两种方式实现的：NTFS可以自动将文件与2&nbsp;MB的簇边界对齐，或可以使用2&nbsp;MB的簇大小对DAX卷进行格式化。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"efa7301e-bb36-484c-be4c-ac6af5343831"}</p>

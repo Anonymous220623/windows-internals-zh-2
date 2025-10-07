@@ -6,4 +6,4 @@
 
 最新 EPUB 下载：https://github.com/Anonymous220623/windows-internals-zh-2-source/releases/download/V0.0.1_EPUB/Windows.Internals.7th.Edition.2.v0.0.1.epub
 
-![封面](cover.jpg)
+![封面](assets/cover.jpg)

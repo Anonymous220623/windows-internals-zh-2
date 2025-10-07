@@ -1,0 +1,48 @@
+<h3 class="bt3" id="sigil_toc_id_71">9.1.2　虚拟机监控程序的启动</h3>
+<p class="zw">第12章将介绍UEFI工作站的启动方式，以及在加载和启动正确版本的虚拟机监控程序二进制文件过程中所涉及的全部组件。本节将简要讨论当HvLoader模块执行过程转移给虚拟机监控程序，并由它首次开始控制计算机之后，计算机内部所发生的事情。</p>
+<p class="zw">HvLoader负责（根据CPU制造商信息）加载正确版本的虚拟机监控程序二进制映像，并创建虚拟机监控程序加载器块。它会记录一个最小化的处理器上下文，这是虚拟机监控程序启动第一个虚拟处理器所必需的。随后，HvLoader会切换至一个刚创建的全新地址空间，并调用虚拟机监控程序映像入口点KiSystemStartup，以此将执行转移给虚拟机监控程序映像，让处理器准备好运行虚拟机监控程序并初始化CPU_PLS数据结构。CPU_PLS代表物理处理器，可充当NT内核的PRCB数据结构，虚拟机监控程序可以使用GS段对其进行快速寻址。但与NT内核不同的是，KiSystemStartup只对启动处理器进行调用（应用程序处理器的启动顺序将在“应用程序处理器启动”中进行介绍），因此这会将真正的初始化工作推给另一个函数：BmpInitBootProcessor。</p>
+<p class="zw">BmpInitBootProcessor会启动复杂的初始化序列。该函数将检查系统并查询CPU可支持的所有虚拟化功能（如EPT和VPID，可查询的功能与平台密切相关，并会因Intel、AMD或ARM版本的虚拟机监控程序而异）。随后，该函数会确定虚拟机监控程序调度器，由该调度器管理虚拟机监控程序调度虚拟处理器的方式。对于Intel和AMD服务器系统，默认调度器为核心调度器，而所有客户端系统（包括ARM64）的默认调度器是根调度器。调度器类型可通过BCD的hypervisorschedulertype选项手动调整（下文将详细介绍不同的虚拟机监控程序调度器）。</p>
+<p class="zw">随后会初始化嵌套的启发。嵌套的启发可以让虚拟机监控程序以嵌套的配置来执行，其中根虚拟机监控程序（也叫L0虚拟机监控程序）管理真实硬件，另一个虚拟机监控程序（也叫L1虚拟机监控程序）负责在虚拟机中执行。这一阶段完成后，BmpInitBootProcessor例程将执行下列组件的初始化工作：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 内存管理器（初始化PFN数据库和根隔间）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 虚拟机监控程序的硬件抽象层（HAL）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 虚拟机监控程序的进程和线程子系统（取决于所选调度器的类型）。此时将创建系统进程及其初始线程。这是一个特殊进程，不会与任何分区绑定，其中承载了执行虚拟机监控程序代码的线程。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> VMX虚拟化抽象层（VAL）。VAL的用途是对所有可支持的硬件虚拟化扩展（Intel、AMD以及ARM64）之间的差异进行抽象。其中包含的代码还负责实现虚拟机监控程序中所使用的计算机虚拟化技术与特定平台有关的功能（例如在Intel平台上，VAL层负责管理对“不受限客户机”的支持，以及EPT、SGX、MBEC等功能）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 综合中断控制器（Synthetic Interrupt Controller，SynIC）以及I/O内存管理单元（I/O Memory Management Unit，IOMMU）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 地址管理器（Address Manager，AM），这个组件负责管理分配给分区的物理内存（也叫作客户机物理内存，即GPA）以及这种内存与真实物理内存（也叫作系统物理内存）之间的转换。虽然Hyper-V的第一代实现可支持影子页表（一种用于地址转换的软件技术），但自从Windows 8.1开始，可由地址管理器使用与特定平台相关的代码配置硬件所提供的虚拟机监控程序地址转换机制（Intel平台中称“可扩展页表”，AMD平台中称“嵌套页表”）。在虚拟机监控程序的语境中，分区的物理地址空间也称地址域（address domain）。与具体平台无关的物理地址空间转换通常也称二级地址转换（Second Layer Address Translation，SLAT）。该术语实际上是指Intel的EPT、AMD的NPT或ARM的二级地址转换机制。</p>
+<p class="zw">至此，虚拟机监控程序已经可以通过分配初始的、依赖于特定硬件的虚拟机控制结构（Intel为VMCS，AMD为VMCB），并通过第一个VMXON操作启用虚拟化，成功完成与启动处理器相关的CPU_PLS数据结构的构建。最终，还会对每个处理器的中断映射数据结构进行初始化。</p>
+<p class="zwtsh">实验：连接虚拟机监控程序调试器</p>
+<p class="zwts1">在这个实验中，我们将连接到虚拟机监控程序调试器，进而分析上文介绍过的虚拟机监控程序启动序列。虚拟机监控程序调试器只支持串口或网络传输，只能使用物理计算机调试虚拟机监控程序，或者在启用“嵌套虚拟化”（详见“嵌套虚拟化”一节）的情况下进行调试。如果使用嵌套虚拟化，将只能为L1虚拟化的虚拟机监控程序启用串口调试。</p>
+<p class="zwts1">在这个实验中，我们需要单独准备一台支持虚拟化扩展、安装并启用了Hyper-V角色的物理计算机。我们需要使用该计算机作为被调试的系统，将其连接到运行了调试工具（充当调试器）的宿主机系统。或者通过另一种方式，如果不想使用另外一台物理计算机，也可以使用嵌套的虚拟机，具体做法详见下文的“在Hyper-V上启用嵌套虚拟化”实验。</p>
+<p class="zwts1">首先我们需要在宿主机系统中下载并安装Windows调试工具，该工具已包含在Windows SDK（或WDK）中，可在https://developer.microsoft.com/windows/downloads/ windows-10-sdk下载。或者也可以在本实验中使用WinDbgX。截至撰写这段内容时，可在Windows应用商店搜索“WinDbg Preview”安装该工具。</p>
+<p class="zwts1">本次实验中被调试的系统必须禁用“安全启动”（secure boot）。虚拟机监控程序调试功能无法兼容安全启动。有关禁用安全启动功能的具体做法请参考计算机的说明书（通常需要在UEFI Bios中调整Secure Boot设置）。若要在被调试的系统中启用虚拟机监控程序调试器，首先需要以管理员身份启动命令提示符窗口（在搜索框中输入<strong>cmd</strong>，选择“<strong style="color:#0092dd">以管理员身份运行<span style="font-family: Times New Roman，楷体_GB2312">”</span></strong>）。</p>
+<p class="zwts1">如果要通过网卡调试虚拟机监控程序，则需要输入下列命令，将&lt;HostIp&gt;替换为宿主机系统的IP地址，将&lt;HostPort&gt;替换为宿主机上一个有效的端口（始于49152），将&lt;NetCardBusParams&gt;替换为被调试系统的网卡总线参数，该参数需要以XX.YY.ZZ的格式指定（其中XX是总线编号，YY是设备编号，ZZ是功能编号）。我们可以使用设备管理器或Windows SDK中提供的KDNET.exe工具查看网卡的总线参数：</p>
+<pre class="代码无行号"><code>bcdedit /hypervisorsettings net hostip:&lt;<em>HostIp</em>&gt; port:&lt;<em>HostPort</em>&gt; 
+bcdedit /set {hypervisorsettings} hypervisordebugpages 1000 
+bcdedit /set {hypervisorsettings} hypervisorbusparams &lt;<em>NetCardBusParams</em>&gt; 
+bcdedit /set hypervisordebug on </code></pre>
+<p class="zwts1">下图展示了一个范例系统，其中用于对虚拟机监控程序进行调试的网络接口位于0.25.0总线参数，调试器的调试目标为IP地址192.168.0.56、端口58010的宿主机系统。</p>
+<p class="图"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx610.png" style="">请记录返回的调试键。在重启动被调试的系统后，需要在宿主机中使用下列命令运行Windbg：</p>
+<pre class="代码无行号"><code>windbg.exe -d -k net:port=&lt;HostPort&gt;,key=&lt;DebuggingKey&gt; </code></pre>
+<p class="zwts1">这样即可对虚拟机监控程序进行调试并查看其启动序列，不过微软可能不会公开虚拟机监控程序主模块的符号。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx619.png" style="width: 100%" />
+<p class="zwts1">在启用嵌套虚拟化的虚拟机中，可使用下列命令在被调试的系统中启用L1虚拟机监控程序调试器的串口调试：</p>
+<pre class="代码无行号"><code>bcdedit /hypervisorsettings SERIAL DEBUGPORT:1 BAUDRATE:115200 </code></pre>
+<h4 class="bt4 sigil_not_in_toc">创建根分区和启动虚拟处理器</h4>
+<p class="zw">虚拟机监控程序完整初始化过程的第一步需要创建根分区和用于启动系统的第一个虚拟处理器（也叫BSP VP）。根分区与子分区的创建几乎遵循完全相同的规则，如此循序渐进地对每一层分区进行初始化。尤其是：</p>
+<p class="zw">1）虚拟机层初始化可允许的最大数量VTL级别，并根据分区类型设置分区特权（详情请参阅上一节）。此外，虚拟机层还将根据特定分区的兼容性级别确定分区可允许的功能。根分区可支持最多数量的可允许功能。</p>
+<p class="zw">2）虚拟处理器层初始化虚拟化的CPUID数据，当客户机操作系统请求CPUID时，分区的所有虚拟处理器都将使用此数据。虚拟处理器层还会创建虚拟机监控程序进程，以此为分区提供支撑。</p>
+<p class="zw">3）地址管理器（AM）使用与计算机平台相关的代码构建分区的初始物理地址空间（Intel的EPT或AMD的NPT）。所构建的物理地址空间取决于分区类型。根分区会使用标识映射，这意味着所有客户机物理内存都会与系统物理内存相对应（更多信息详见“分区的物理地址空间”一节）。</p>
+<p class="zw">在为分区正确配置了SynIC、IOMMU以及拦截器的共享页面后，虚拟机监控程序会为根分区创建并启动BSP虚拟处理器，这是用于重新执行启动过程的唯一虚拟处理器。</p>
+<p class="zw">虚拟机监控程序虚拟处理器（VP）可由图9-6所示的大型数据结构（VM_VP）来表示。VM_VP数据结构维护了跟踪虚拟处理器状态所需的全部数据：平台相关寄存器状态（如常规用途、调试、XSAVE区域、栈）及其数据、虚拟处理器的私有地址空间，以及VM_VPLC数据结构数组，该数组可用于跟踪虚拟处理器的每个虚拟信任级别（Virtual Trust Level，VTL）状态。VM_VP还包含一个指向虚拟处理器支撑线程的指针，以及一个指向目前执行虚拟处理器的物理处理器的指针。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx697.png" style="width: 100%" />
+<p class="图题">图9-6　代表一个虚拟处理器的VM_VP数据结构</p>
+<p class="zw">对于分区，BSP虚拟处理器的创建过程与普通虚拟处理器的过程类似。由VmAllocateVp函数负责从分区的隔间中分配并初始化所需内存，借此存储VM_VP数据结构和分区中与平台相关的部分，并存储VM_VPLC数组（支持的每个VTL对应一个数组）。启动时，虚拟机监控程序会将HvLoader指定的初始处理器上下文复制到VM_VP结构，随后创建虚拟处理器的私有地址空间并进行附加（只有在启用了地址空间隔离功能后才需要这样做）。最后，还需要创建虚拟处理器的支撑线程。这是一个重要步骤：虚拟处理器的构建工作还会在自己的支撑线程的上下文中继续进行。在这一阶段，虚拟机监控程序的主系统线程还会继续等待，直到新的BSP VP初始化完成。等待过程中，虚拟机监控程序调度器会选择新创建的线程并执行ObConstructVp例程，借此在新的支撑线程的上下文中构建虚拟处理器。</p>
+<p class="zw">ObConstructVp会通过类似于分区的方式构建并初始化虚拟处理器的每一层，尤其会执行下列操作：</p>
+<p class="zw">1）虚拟化管理器（VM）层将物理处理器数据结构（CPU_PLS）附加至虚拟处理器并将VTL 0设置为活跃。</p>
+<p class="zw">2）VAL层初始化虚拟处理器中与平台相关的部分，如寄存器、XSAVE区域、栈以及调试数据。此外，对于可支持的每个VTL，还需要分配并初始化VMCS数据结构（AMD系统则为VMCB），该数据结构将被硬件用于跟踪虚拟机状态以及VTL的SLAT页表，后者使得每个VTL可以相互隔离（有关VTL的详情请参阅下文“虚拟信任级别（VTL）和虚拟安全模式（VSM）”一节）。最后，VAL层启用VTL 0并将其设置为活跃。特定于平台的VMCS（或AMD系统的VMCB）将被完全编译，VTL 0的SLAT表会被设置为活跃，实模式模拟器初始化完成。VMCS中与主机状态有关的部分会被设置为以虚拟机监控程序VAL分发循环为目标。该例程是虚拟机监控程序中最重要的部分，它管理着每个客户机生成的所有VMEXIT事件。</p>
+<p class="zw">3）虚拟处理器层分配虚拟处理器的虚拟化调用页，并为每个VTL分配辅助和拦截消息页。这些页面将被虚拟机监控程序用于与客户机操作系统共享代码或数据。</p>
+<p class="zw">当ObConstructVp完成自己的工作后，虚拟处理器的调度线程会激活该虚拟处理器及其综合中断控制器（SynIC）。如果这是根分区的第一个虚拟处理器，则调度线程会还原存储在VM_VP数据结构中的初始虚拟处理器上下文，为此需要在与平台相关的VMCS（或VMCB）处理器区域中写入所捕获的每个寄存器（该上下文已被HvLoader在启动过程的早期阶段指定）。调度线程最终会发出代表虚拟处理器初始化工作完成的信号（随后主系统线程将进入闲置循环状态），并进入特定平台的VAL调度循环。VAL调度循环检测到这是一个新的虚拟处理器，开始为其首次执行做准备，随后将执行VMLAUNCH指令启动新虚拟机。新虚拟机会在HvLoader将执行转移至虚拟机监控程序的那一刻重新启动。后续的启动过程将照常进行，不过是在新的虚拟机监控程序分区上下文中进行。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"ea2ec385-5fa3-4b0f-b598-9bcb1e169157","id":"34caabf0-03da-4d98-b086-50824b4ee5c1"}</p>

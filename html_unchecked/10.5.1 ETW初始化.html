@@ -1,0 +1,19 @@
+<h3 class="bt3" id="sigil_toc_id_151">10.5.1　ETW初始化</h3>
+<p class="zw">ETW的初始化始于NT内核启动的早期阶段（有关NT内核初始化的详情请参阅第12章）。该过程由内部EtwInitialize函数分为三个阶段进行协调。NT内核初始化的阶段0，将调用EtwInitialize以正确地分配并初始化每Silo的ETW专用数据结构，该数据结构将用于存储代表全局ETW会话的记录器上下文数组（详见“ETW会话”一节）。全局会话数量最大值可通过查询HKLM\System\CurrentControlSet\Control\WMI\EtwMaxLoggers注册表值获知，具体数量应介于32和256之间（如果该注册表值不存在，则使用64作为默认值）。</p>
+<p class="zw">在NT内核启动过程中，阶段1的IoInitSystemPreDrivers例程继续进行ETW的初始化，并执行下列工作。</p>
+<p class="zw">1）获取系统启动时间和参考系统时间，并计算QPC频率。</p>
+<p class="zw">2）初始化ETW安全密钥，并读取默认会话和提供程序的安全描述符。</p>
+<p class="zw">3）初始化位于PRCB中的每处理器全局跟踪结构。</p>
+<p class="zw">4）创建实时ETW消费者对象类型（名为EtwConsumer），用户模式实时消费者进程可借此连接到主ETW记录器线程和ETW注册（内部称之为EtwRegistration）对象类型，进而可以从用户模式应用程序注册提供程序。</p>
+<p class="zw">5）注册ETW的错误检查回调，借此即可在错误检查转储过程中转储记录器会话数据。</p>
+<p class="zw">6）根据HKLM\System\CurrentControlSet\Control\WMI根键下的AutoLogger和GlobalLogger注册表值，初始化并启动全局记录器和自动记录器会话。</p>
+<p class="zw">7）使用EtwRegister内核API注册各种NT内核事件提供程序，例如内核事件跟踪、常规事件提供程序，以及进程、网络、磁盘、文件名、IO、内存提供程序等。</p>
+<p class="zw">8）发布ETW初始化后的WNF状态名，表明ETW子系统已完成初始化。</p>
+<p class="zw">9）将SystemStart事件同时写入全局跟踪日志和常规事件提供程序。该事件如图10-32所示，记录了操作系统的大致启动时间。</p>
+<p class="zw">10）如果需要，则可加载FileInfo驱动程序，该驱动程序向Superfetch（有关前瞻性内存管理的详细信息请参阅卷1第5章）提供了有关文件I/O的补充信息。</p>
+<p class="zw">在启动的早期阶段，Windows注册表和I/O子系统尚未完成初始化。因此，ETW无法直接写入日志文件。在启动过程的后续阶段，在会话管理器（SMSS.exe）正确初始化软件配置单元后，才会真正开始进行ETW初始化最后阶段的工作。该阶段的目的仅仅是通知每个已注册的全局ETW会话，告诉它们文件系统已就绪，随后它们就可以将ETW缓冲区中记录的事件全部刷新到日志文件中。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2816.png" style="width: 100%" />
+<p class="图题">图10-32　事件查看器中显示的SystemStart ETW事件</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"0a817dad-0fff-43aa-90f7-5114d262a9ee","id":"17b56451-0b10-4700-906a-74b44901ab00"}</p>

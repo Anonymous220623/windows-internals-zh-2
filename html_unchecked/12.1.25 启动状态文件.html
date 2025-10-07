@@ -1,0 +1,8 @@
+<h3 class="bt3" id="sigil_toc_id_353">12.1.25　启动状态文件</h3>
+<p class="zw">Windows使用启动状态文件（%SystemRoot%\Bootstat.dat）记录自己在系统生命周期各个阶段（包括启动和关机）的进展。这样，启动管理器、Windows以及启动修复工具就可以检测到异常关机或未能正常关机的情况，进而为用户提供启动恢复和诊断选项，例如Windows恢复环境。这个二进制文件包含大量信息，系统可通过这些信息了解生命周期内下列阶段的成功情况。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 启动。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 关机和混合关机。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 从睡眠或挂起状态恢复。</p>
+<p class="zw">启动状态文件还可以指出用户上次尝试启动操作系统时是否检测到问题，以及当时所显示的恢复选项，这意味着用户已经意识到问题并采取了一些措施。Ntdll.dll中的运行时库API（Rtl）包含了Windows用于从该文件中读取和写入的私有接口。与BCD一样，该文件也不允许用户编辑。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":24,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"dc26e813-c136-4ab5-bad5-433c6425818e"}</p>

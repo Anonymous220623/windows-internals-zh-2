@@ -1,0 +1,12 @@
+<h3 class="bt3" id="sigil_toc_id_128">10.2.6　延迟的自启动服务</h3>
+<p class="zw">延迟的自启动服务使得Windows可以更好地应对用户登录时需要启动的越来越多的服务，这类服务的增多会减慢系统启动速度，使得用户需要等待更长时间才能获得可快速响应的桌面。自启动服务这个概念的诞生最初是为了用于需要在系统启动过程的早期就启动的服务，因为其他服务的启动可能需要依赖此类服务，例如RPC服务，所有其他服务都依赖这个服务。该机制的另一个用途是启动无人值守的服务，例如Windows Update服务。因为很多自启动服务都属于第二类，因此将它们延迟启动即可让关键服务启动速度更快，让用户可以在系统启动完毕后立即获得可响应的桌面。此外，这些服务都运行在后台模式，因此可以使用更低优先级的线程、I/O和内存。将服务配置为延迟自启动需要调用ChangeServiceConfig2 API。我们可以使用sc.exe的qc选项检查服务的标记状态。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　如果非延迟的自启动服务依赖另一个延迟的自启动服务，那么延迟自启动标记将会被忽略，为满足依赖性，被依赖的服务会被立即启动。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"6ea14907-963f-4908-9e5d-39a5b2adf679"}</p>

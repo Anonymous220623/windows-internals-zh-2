@@ -1,0 +1,171 @@
+<h3 class="bt3" id="sigil_toc_id_124">10.2.2　服务账户</h3>
+<p class="zw">对服务开发者以及系统管理员来说，服务的安全上下文是一个重要的考虑因素，因为它决定了进程可以访问哪些资源。大部分内置服务运行在相应的服务账户安全上下文中（只具备有限的访问权，详见下文）。当服务安装程序或系统管理员创建服务时，通常会选择Local System账户（有时会显示为SYSTEM，有时则显示为LocalSystem）的安全上下文，这个账户非常强大。此外还有两个内置账户：Network Service账户和Local Service账户。从安全的角度来看，这些账户的能力低于Local System账户的。下文将介绍所有这些服务账户的特殊性。</p>
+<h4 class="bt4 sigil_not_in_toc">Local System账户</h4>
+<p class="zw">Local System账户也是核心Windows用户模式操作系统组件的运行账户，这些组件包括会话管理器（%SystemRoot%\System32\Smss.exe）、Windows子系统进程（Csrss.exe）、本地安全机构进程（%SystemRoot%\System32\Lsass.exe）以及登录进程（%SystemRoot%\ System32\Winlogon.exe）。有关这些进程的详细信息，请参阅卷1第7章。</p>
+<p class="zw">从安全的角度来看，Local System账户非常强大，在针对本地系统所能获得的安全能力方面，甚至远超任何本地或域账户。该账户具备下列特征。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 隶属于本地Administrators组。表10-9列出了Local System账户所属的组（有关组成员关系如何用于对象访问检查的详细信息，请参阅卷1第7章）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 有权启用所有特权（甚至包括通常不会提供给本地管理员账户的特权，如创建安全令牌）。表10-10列出了分配给Local System账户的所有特权（这些特权的使用请参阅卷1第7章）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 大部分文件和注册表键为Local System账户提供了完整的访问权限。即使没有提供完整的访问权限，使用Local System账户运行的进程也可以行使“所有权”特权来获得访问权。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 使用Local System账户运行的进程是通过默认用户配置文件（HKU\.DEFAULT）运行的，因此无法直接访问其他账户的用户配置文件中存储的配置信息（除非明确使用LoadUserProfile API）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 对于Windows域成员系统，Local System账户包含运行了服务进程的计算机的安全标识符（SID），因此，使用Local System账户运行的服务可以使用自己的计算机账户在同一个林（多个域可以组成一个森林）的其他计算机上自动完成身份验证。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 除非计算机账户被明确授予资源（如网络共享、命名管道等）访问权，否则进程可以访问允许空（Null）会话的网络资源，即无须凭据的连接。我们可在注册表HKLM\ SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters键下的NullSessionPipes和NullSessionShares值中指定特定计算机允许空会话的共享和管道。</p>
+<p class="表题">表10-9　服务账户组成员关系和完整性级别</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">Local System</p> </th> 
+   <th> <p class="bt">Network Service</p> </th> 
+   <th> <p class="bt">Local Service</p> </th> 
+   <th> <p class="bt">Service Account</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Administrators<br> Everyone<br> Authenticated users</p> </td> 
+   <td> <p class="bg">Everyone<br> Users<br> Authenticated users<br> Local<br> Network service<br> Console logon</p> </td> 
+   <td> <p class="bg">Everyone<br> Users<br> Authenticated users<br> Local<br> Local service<br> Console logon<br> UWP capabilities groups</p> </td> 
+   <td> <p class="bg">Everyone<br> Users<br> Authenticated users<br> Local<br> Local service<br> All services<br> Write restricted<br> Console logon</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">System完整性级别</p> </td> 
+   <td> <p class="bg">System完整性级别</p> </td> 
+   <td> <p class="bg">System完整性级别</p> </td> 
+   <td> <p class="bg">High完整性级别</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="表题">表10-10　服务账户的特权</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">Local System</p> </th> 
+   <th> <p class="bt">Local Service / Network Service</p> </th> 
+   <th> <p class="bt">Service Account</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SeAssignPrimaryTokenPrivilege<br> SeAuditPrivilege<br> SeBackupPrivilege<br> SeChangeNotifyPrivilege<br> SeCreateGlobalPrivilege<br> SeCreatePagefilePrivilege<br> SeCreatePermanentPrivilege<br> SeCreateSymbolicLinkPrivilege<br> SeCreateTokenPrivilege<br> SeDebugPrivilege<br> SeDelegateSessionUserImpersonatePrivilege<br> SeImpersonatePrivilege<br> SeIncreaseBasePriorityPrivilege<br> SeIncreaseQuotaPrivilege<br> SeIncreaseWorkingSetPrivilege<br> SeLoadDriverPrivilege<br> SeLockMemoryPrivilege<br> SeManageVolumePrivilege<br> SeProfileSingleProcessPrivilege<br> SeRestorePrivilege<br> SeSecurityPrivilege<br> SeShutdownPrivilege<br> SeSystemEnvironmentPrivilege<br> SeSystemProfilePrivilege<br> SeSystemtimePrivilege<br> SeTakeOwnershipPrivilege<br> SeTcbPrivilege<br> SeTimeZonePrivilege<br> SeTrustedCredManAccessPrivilege<br> SeRelabelPrivilege<br> SeUndockPrivilege（仅客户端）</p> </td> 
+   <td> <p class="bg">SeAssignPrimaryTokenPrivilege<br> SeAuditPrivilege<br> SeChangeNotifyPrivilege<br> SeCreateGlobalPrivilege<br> SeImpersonatePrivilege<br> SeIncreaseQuotaPrivilege<br> SeIncreaseWorkingSetPrivilege<br> SeShutdownPrivilege<br> SeSystemtimePrivilege<br> SeTimeZonePrivilege<br> SeUndockPrivilege（仅客户端）</p> </td> 
+   <td> <p class="bg">SeChangeNotifyPrivilege<br> SeCreateGlobalPrivilege<br> SeImpersonatePrivilege<br> SeIncreaseWorkingSetPrivilege<br> SeShutdownPrivilege<br> SeTimeZonePrivilege<br> SeUndockPrivilege</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">Network Service账户</h4>
+<p class="zw">Network Service账户可供需要使用计算机账户向网络上的其他计算机验证身份的服务使用，有些类似于Local System账户，但不具备Administrator组的成员关系，也无法使用分配给Local System账户的很多特权。由于Network Service账户不属于Administrators组，通过该账户运行的服务默认能访问的注册表键、文件系统文件夹以及文件要远少于使用Local System账户运行的服务。此外，因为分配的特权更少，也限制了Network Service进程被攻陷后的波及范围。例如，使用Network Service账户运行的进程无法加载设备驱动程序或打开任意进程。</p>
+<p class="zw">Network Service与Local System账户的另一个差别在于，Network Service账户运行的进程会使用Network Service账户的配置文件。Network Service配置文件的注册表组件位于&nbsp;HKU\S-1-5-20，而组成这些组件的文件和目录位于%SystemRoot%\ServiceProfiles\ NetworkService。</p>
+<p class="zw">通过Network Service账户运行的服务有很多，例如DNS客户端，负责解析DNS名称并定位域控制器。</p>
+<h4 class="bt4 sigil_not_in_toc">Local Service账户</h4>
+<p class="zw">Local Service账户与Network Service账户几乎完全相同，两者最大的差别在于，Local Service账户只能访问允许匿名访问的网络资源。如表10-10所示，Network Service账户与Local Service账户具备相同的特权，如表10-9所示，它们甚至属于相同的组，但唯一的例外是Local Service账户属于Local Service组，而非Network Service组。使用Local Service账户运行的进程所用配置文件为HKU\S-1-5-19，配置文件存储于%SystemRoot%\ ServiceProfiles\LocalService。</p>
+<p class="zw">使用Local Service账户运行的服务有很多，例如Remote Registry Service，可允许对本地系统的注册表进行远程访问；此外还有LmHosts服务，负责执行NetBIOS名称解析。</p>
+<h4 class="bt4 sigil_not_in_toc">用备选账户运行服务</h4>
+<p>由于上述限制，一些服务可能需要使用用户账户的安全凭据来运行。在创建服务时，我们可以配置服务用备选账户运行，或在“Windows服务”这个MMC管理单元中指定服务运行所用的账户和密码。在服务管理单元中，右击一个服务并选择“属性”，打开“登录”选项卡，选择“此账户”选项即可，如图10-10所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1403.png" style="width: 100%" />
+<p class="图题">图10-10 服务账户设置</p>
+<p class="zw">请注意，当需要启动时，使用备选账户运行的服务将始终使用备选账户的凭据来启动，哪怕所选账户当前并未登录。这意味着就算用户未登录，用户配置文件也会被加载。本章下文“用户服务”一节要介绍的用户服务（user service）就是为了解决这个问题而诞生的。用户服务只有在用户登录后才会加载。</p>
+<h4 class="bt4 sigil_not_in_toc">用最小特权运行</h4>
+<p class="zw">服务的进程通常受制于一种“全有或全无”的模型，这意味着运行服务进程的账户所拥有的全部特权，都适用于该进程中运行的服务，即使这些服务实际只需要其中的部分特权。为了更好地符合最小特权原则，也就是Windows只为服务分配必需的特权，开发者可以指定自己的服务所需的特权，而SCM可以创建只包含这些特权的安全令牌。</p>
+<p class="zw">服务开发者可以使用ChangeServiceConfig2 API（指定SERVICE_CONFIG_REQUIRED_ PRIVILEGES _INFO信息级别）来声明自己需要的特权列表。该API会将这些信息存储在注册表中根服务键的RequiredPrivileges值中（详见表10-7）。当服务启动时，SCM会读取该键并将其中指定的特权添加到运行服务的进程的令牌中。</p>
+<p class="zw">如果存在RequiredPrivileges值，并且服务是一个单独的服务（通过专用进程运行），那么SCM会创建一个只包含该服务所需特权的令牌。对于那些通过共享服务进程来运行的服务（Windows内置的很多服务都是如此），在指定了所需特权后，SCM会计算这些特权的联合后的特权，并将其添加到服务托管进程的令牌中。换句话说，同一个服务托管进程中，所有服务都未明确指定的特权将会被移除。如果不使用该注册表值，SCM将别无选择，只能假设服务不兼容最小特权原则，或需要所有特权才能运行。此时将创建包含所有特权的完整令牌，这种模式无法提供额外的安全性。为了尽可能剥离几乎所有特权，服务甚至可以只指定Change Notify特权。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　服务指定的特权必须是自己运行所用服务账户具备的特权的子集。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：查看服务所需的特权</p>
+<p class="zwts1">我们可以通过服务控制工具sc.exe以及qprivs选项来查看服务所需的特权。另外，我们也可以使用Process Explorer查看系统中任何服务的安全令牌信息，然后将sc.exe返回的信息与令牌中的特权信息进行对比。下列操作介绍了如何对系统中某些已经加固的服务查看并对比特权信息。</p>
+<p class="zwts1">1）使用sc.exe查看CryptSvc服务所需的特权，为此请运行下列命令：</p>
+<p class="代码行内倾斜"><em>sc&nbsp;qprivs&nbsp;cryptsvc&nbsp;</em></p>
+<p class="zwts1">应该可以看到三个特权：SeChangeNotifyPrivilege、SeCreateGlobalPrivilege和SeImpersonatePrivilege。</p>
+<p class="zwts1">2）以管理员身份运行Process Explorer并查看进程列表。</p>
+<p class="zwts1">应该可以看到有多个Svchost.exe进程托管了计算机中的多个服务（如果启用了Svchost拆分功能，还将显示更多Svchost实例）。Process Explorer会用粉红色强调显示这些进程。</p>
+<p class="zwts1">3）CryptSvc服务运行在共享的托管进程中。在Windows 10中，我们可以通过任务管理器轻松定位正确的进程实例。我们并不需要知道服务DLL的名称，它们都包含在HKLM\SYSTEM\CurrentControlSet\Services\CryptSvc\Parameters注册表键中。</p>
+<p class="zwts1">4）打开任务管理器的“服务”选项卡，应该可以轻松找到CryptSvc托管进程的PID。</p>
+<p class="zwts1">5）返回Process Explorer并双击任务管理器中找到的那个PID对应的Svchost.exe进程，打开Properties对话框。</p>
+<p class="zwts1">6）仔细检查Service选项卡是否包含CryptSvc服务。如果启用了服务拆分，这里应该只有一个服务，否则可能会包含多个服务。随后打开Security选项卡，应该可以看到类似下图所示的安全信息。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1450.png" style="width: 100%" />
+<p class="zwts1">请注意，虽然使用Local Service账户运行，但该服务对应的特权列表窗口中列出的特权远比表10-10中列出的Local Service账户应有的特权少。</p>
+<p class="zwts1">对于服务托管进程，令牌的特权部分是对所托管的所有服务需要的特权汇总在一起计算而来的，因此这一定意味着诸如DnsCache和LanmanWorkstation等服务并未请求Process Explorer所示之外的其他特权。为了确认这一点，我们也可以在这些服务上运行Sc.exe工具（首先需要禁用Svchost服务拆分）。</p>
+<h4 class="bt4 sigil_not_in_toc">服务隔离</h4>
+<p class="zw">虽然限制服务所能获得的特权有助于降低通过攻陷的服务进程危及其他进程的可能性，但在正常情况下，这并不能将服务与运行服务所用账户可以访问的资源隔离开。如上文所述，Local System账户可以完整访问关键的系统文件、注册表键以及系统中其他可保护的对象，因为访问控制列表（ACL）提供了相关权限。</p>
+<p class="zw">有时候，对于一个服务，访问某些资源是让其正常运行不可或缺的，但其他对象可能没必要允许该服务访问。以前，为避免让服务访问必需的资源而使用Local System账户，我们可以使用标准用户账户来运行服务，并且还可为系统对象添加ACL，但这大大增加了恶意代码攻击系统的风险。另一种做法是创建专用的服务账户并为每个账户设置特定的ACL（与服务相关联），但这种方式会造成巨大的管理负担。</p>
+<p class="zw">Windows现已将上述两种方式结合在一起，提供了一种更易于管理的解决方案：它允许服务用一个非特权账户运行，但依然可以访问指定的特权资源，同时不会降低这些对象的安全性。实际上，对象的ACL甚至可以直接为服务设置权限，而无须使用专用账户。此时Windows会生成一个能表示单个服务的服务SID，该SID可用于为注册表键和文件等资源设置权限。</p>
+<p class="zw">服务控制管理器会通过不同方式使用服务SID。如果服务被配置为使用NT SERVICE\域中的虚拟服务账户来启动，此时会生成一个服务SID并将其分配为新服务令牌的主用户。该令牌还会被包含在NT SERVICE\ALL SERVICES组中。系统会使用该组以允许任意服务访问可保护的对象。对于共享服务的情况，SCM会使用令牌创建服务托管进程（一种可包含多个服务的进程），该令牌包含隶属于同一个服务组的所有服务对应的服务SID，甚至其中可以包括尚未启动的服务（但令牌创建之后将无法添加新的SID）。受限和非受限服务（详见本节下文）始终会在托管进程的令牌中拥有一个服务SID。</p>
+<p class="zwtsh">实验：理解服务SID</p>
+<p class="zwts1">在第9章，我们通过“理解虚拟机工作进程和虚拟磁盘文件的安全性”这个实验介绍了系统如何为不同的虚拟机工作进程生成虚拟机SID。与虚拟机工作进程的情况类似，系统也会使用一种明确定义的算法来生成服务SID。本实验将使用Process Explorer展示服务SID，并介绍系统如何生成服务SID。</p>
+<p class="zwts1">首先，我们需要选择一个使用虚拟服务账户运行的服务，或使用受限/非受限访问令牌的服务。请打开注册表编辑器（在搜索框中输入Regedit），然后打开HKLM\ SYSTEM\CurrentControlSet\Services注册表键。接着从“<strong style="color:#0092dd">编辑</strong>”菜单选择“<strong style="color:#0092dd">查找</strong>”。根据本节上文的介绍，服务账户存储在ObjectName注册表值中。但是并没有太多服务是使用虚拟服务账户运行的（这些账户的名称以NT SERVICE\VirtualDomain开头），因此更好的方式是查看受限令牌（非受限令牌也可以）。请输入ServiceSidType（其值决定了服务应该用受限还是非受限令牌运行），然后点击“<strong style="color:#0092dd">查找下一个</strong>”按钮。</p>
+<p class="zwts1">在这个实验中我们要找一个受限服务账户（其ServiceSidType值应该设置为3），但非受限服务账户也是可以的（值为1）。如果所需的值不匹配，可以使用F3按钮查找下一个匹配的服务。在本实验中我们将使用BFE服务。</p>
+<p class="zwts1">打开Process Explorer，搜索BFE托管进程（可参阅上文的实验了解如何找到正确的进程），随后双击打开。打开“<strong style="color:#0092dd">安全</strong>”选项卡，并点击NT SERVICE\BFE Group（这是服务SID的易读标记），如果选择其他服务SID，则请根据实际情况点击对应的服务SID。请留意组列表尾部显示的扩展组SID（如果服务使用虚拟服务账户运行，服务SID则会被Process Explorer显示在“<strong style="color:#0092dd">安全</strong>”选项卡的第二行）：</p>
+<pre class="代码无行号"><code>S-1-5-80-1383147646-27650227-2710666058-1662982300-1023958487</code></pre>
+<p class="zwts1">NT Authority（ID 5）负责服务SID的生成，为此会用到服务的基准RID（80）以</p>
+<p class="zwts1">及服务名称的大写形态下UTF-16 Unicode字符串的SHA-1哈希值。SHA-1算法可以产生一个160位（20字节）的值。在Windows的安全世界中，这意味着SID可以有5个（4字节）子权威值。BFE服务名称的Unicode（UTF-16）SHA-1哈希值为：</p>
+<pre class="代码无行号"><code>7e 28 71 52 b3 e8 a5 01 4a 7b 91 a1 9c 18 1f 63 d7 5d 08 3d</code></pre>
+<p class="zwts1">如果将上述哈希值拆分为5组，每组包含8个十六进制数字，那么将会发现：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <span style="font-family: Times New Roman，楷体_GB2312">0x5271287E（第一个&nbsp;DWORD&nbsp;值），相当于十进制的&nbsp;1383147646（别忘了，Windows是小端序操作系统）。</span></p>
+<p class="zwd"><span style="color: #0092dd">●</span> <span style="font-family: Times New Roman，楷体_GB2312">0x01A5E8B3（第二个DWORD值），相当于十进制的27650227。</span></p>
+<p class="zwd"><span style="color: #0092dd">●</span> <span style="font-family: Times New Roman，楷体_GB2312">0xA1917B4A（第三个DWORD值），相当于十进制的2710666058。</span></p>
+<p class="zwd"><span style="color: #0092dd">●</span> <span style="font-family: Times New Roman，楷体_GB2312">0x631F189C（第四个DWORD值），相当于十进制的1662982300。</span></p>
+<p class="zwd"><span style="color: #0092dd">●</span> <span style="font-family: Times New Roman，楷体_GB2312">0x3D085DD7（第五个DWORD值），相当于十进制的1023958487。</span></p>
+<p class="zwts1">如果将上述数字与服务SID权威值以及第一个RID（S-1-5-80）相加，即可得到与Process Explorer中显示的相同SID。上述操作展示了系统生成服务SID的方式。</p>
+<p class="zw">每个服务都有一个SID的作用不仅仅在于获得为系统中不同对象添加ACL项和权限的能力，这样还可以对服务的访问进行更细化的控制。我们最初的讨论涵盖了这样一种情况：系统中某些能被特定账户访问的对象，必须通过保护防止其被通过该账户运行的服务所访问。如上文所述，如果用服务SID的方式解决这个问题，只能将拒绝该服务SID的ACL项配置给需要保护的每个对象，很明显，从管理的角度来说，这并不现实。</p>
+<p class="zw">为避免使用拒绝访问的访问控制项（Access Control Entry，ACE）来阻止服务访问运行自己的用户账户所能访问的资源，系统提供了两种类型的服务SID：受限服务&nbsp;SID（SERVICE_SID_TYPE_RESTRICTED）以及非受限服务SID（SERVICE_SID_TYPE_ UNRESTRICTED），后者是默认服务SID，截至目前讨论的情况就是如此。实际上这些名称有些误导性，服务SID始终是通过相同方式生成的（参见上一个实验），不同的处理方式其实要归功于托管进程生成的令牌。</p>
+<p class="zw">非受限服务SID会被创建为默认启用的组所有者SID，而进程令牌还为服务登录SID提供了一个全新的、能提供完整访问权限的ACE，这样服务就可以继续与SCM通信（这方面的一个主要用途是在服务启动或关闭期间，启用或禁用进程内部的服务SID）。通过SYSTEM账户运行的服务，如果使用非受限令牌启动，其效果甚至比标准的SYSTEM服务更强大。</p>
+<p class="zw">另外，受限服务SID可将服务托管进程的令牌变成一种写入受限的令牌。受限令牌（详见卷1第7章）在访问可保护对象时，通常需要系统进行两次访问检查：一次使用标准令牌的启用组SID列表，另一次使用受限SID的列表。对于标准的受限令牌，只有在两次访问检查都允许所请求的访问权限时，才会允许访问。另一方面，写入受限令牌（通常可为CreateRestrictedToken API指定WRITE_RESTRICTED标记来创建）只对写入请求执行两次访问检查：只读访问请求只使用令牌的启用组SID进行一次检查，这一点与普通令牌相同。</p>
+<p class="zw">无论用什么账户运行，使用写入受限令牌运行的服务托管进程只能写入明确为服务SID（以及下列三个为保持兼容性而添加的补充SID）授予写入访问权的对象。因此这种进程中运行的所有服务（属于同一个服务组）必须具备受限类型的SID，否则使用受限类型SID的服务将无法启动。一旦令牌变成写入受限的，为维持兼容性，还会添加下列三个SID。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 添加World SID是为了允许对通常可被任何人以任何方式访问的对象进行写入操作，其中最重要的是加载路径中的某些DLL。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 添加Service logon SID是为了允许服务与SCM通信。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 添加Write-restricted SID是为了让对象能明确允许任何写入受限服务对自己进行写入访问。例如ETW会对自己的对象使用该SID，以允许任何写入受限服务生成事件。</p>
+<p class="zw">图10-11展示了一个服务托管进程的例子，该进程中包含被标记为具有受限服务SID的服务。例如，Base Filtering Engine（BFE）服务负责应用Windows防火墙过滤规则，该服务就包含在这个托管进程中，因为这些规则都存储在注册表中，因此必须保护相应注册表键，防止被攻陷的服务通过写入访问恶意篡改防火墙的规则（例如，攻击者可以利用被攻陷的服务禁用防火墙的出站流量规则，或启用与攻击者的双向通信）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1464.png" style="width: 100%" />
+<p class="图题">图10-11　具备受限SID的服务</p>
+<p class="zw">通过阻止服务对原本自己（继承运行自己的账户所具备的权限而）可写入的对象进行写入访问，受限服务SID还解决了我们最初提出的那个问题的另一方面：因为用户无须做任何事就可以防止使用特权账户运行的服务对关键的系统文件、注册表键或其他对象执行写入访问，所以减小了被攻陷的服务可能的波及范围。</p>
+<p class="zw">表10-11中列出了三种行为，Windows还允许防火墙规则引用与其中任何一种行为相关的服务SID。</p>
+<p class="表题">表10-11　网络限制规则</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">场景</p> </th> 
+   <th> <p class="bt">范例</p> </th> 
+   <th> <p class="bt">限制</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">网络访问阻止</p> </td> 
+   <td> <p class="bg">Shell硬件检测服务（ShellHWDetection）</p> </td> 
+   <td> <p class="bg">阻止所有网络通信（入站和出站）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">网络访问静态端口限制</p> </td> 
+   <td> <p class="bg">在TCP和UDP 135端口运行的RPC服务（Rpcss）</p> </td> 
+   <td> <p class="bg">仅限特定的TCP或UDP端口的网络通信</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">网络访问动态端口限制</p> </td> 
+   <td> <p class="bg">在可变（UDP）端口监听的DNS服务（Dns）</p> </td> 
+   <td> <p class="bg">仅限可配置的TCP或UDP端口的网络通信</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">虚拟服务账户</h4>
+<p>如上文所述，服务SID也可以设置为以虚拟服务账户上下文运行的服务令牌的所有者。使用虚拟服务账户运行的服务将获得比LocalService或NetworkService类型的服务更少的特权（特权列表可参阅表10-10），并且无法获得通过网络进行身份验证所需的凭据。服务SID是令牌的所有者，令牌包含在Everyone、Users、Authenticated Users以及All Services组中。这意味着可以读取（或写入，除非服务使用了受限SID类型）属于标准用户，但不属于Administrators或System组高特权用户的对象。与其他类型不同，使用虚拟服务账户运行的服务有私有的配置文件，该配置文件由ProfSvc服务（Profsvc.dll）在服务登录期间加载，具体方式与常规服务类似（详见“服务登录”一节）。在服务首次登录期间，系统会使用%SystemRoot%\ServiceProfiles路径下一个与服务名称同名的文件夹创建配置文件。服务的配置文件载入后，其注册表配置单元会挂载到HKEY_USERS根键，一个以虚拟服务账户的易读SID（以S-1-5-80开头，详见“理解服务SID”实验）为名的键下。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1594.png" style="width: 100%" />
+<p class="图题">图10-12 一个文件（可保护对象）的ACE允许了TestService的完整访问</p>
+<p class="zw">用户可以轻松地为服务分配虚拟服务账户，为此只需要将登录账户设置为NT SERVICE\ &lt;ServiceName&gt;，其中&lt;ServiceName&gt;是服务的名称。登录时，服务控制管理器会识别出登录账户是一个虚拟服务账户（这要归功于NT SERVICE登录提供程序），并验证账户的名称与服务名称相符。服务不能使用隶属于其他服务的虚拟服务账户来启动，这是SCM的强制要求（通过内部的ScIsValidAccountName函数实现）。共享同一个托管进程的多个服务不能使用虚拟服务账户运行。</p>
+<p class="zw">在操作可保护的安全对象时，用户可以使用服务登录账户（以NT SERVICE\&lt;ServiceName的形式）向对象的ACL添加一个&nbsp;ACE，进而允许或拒绝访问虚拟服务。如图&nbsp;10-12&nbsp;所示，系统能够将虚拟服务账户的名称转换为正确的SID，借此即可对服务能访问的对象进行更细化的访问控制（这也适用于使用非系统账户运行的常规服务，详见上文）。</p>
+<h4 class="bt4 sigil_not_in_toc">交互式服务和会话0隔离</h4>
+<p class="zw">对于通过恰当的服务账户（Local System、Local Service以及Network Service账户）运行的服务来说，Windows中一直存在一项限制：这些服务无法在交互式用户桌面显示对话框或窗口。造成这种限制的直接原因并非使用了这些特殊账户来运行服务，而是Windows子系统将服务进程分配给窗口站（window station）的方式所造成的。这种限制还被用户会话中一种名为会话0隔离（session 0 isolation）的机制进一步加强，导致服务无法直接与用户桌面交互。</p>
+<p class="zw">Windows子系统会将每个Windows进程关联到一个窗口站。窗口站中包含桌面，而桌面又可以包含很多窗口。同一时间只有一个窗口站可见并能接收用户的鼠标和键盘输入。在终端服务环境中，每个会话有一个窗口站可见，但所有服务都在隐藏的会话0中运行。Windows会将可见窗口站称为WinSta0，所有交互式进程都可以访问WinSta0。</p>
+<p class="zw">除非另有指示，否则Windows子系统会将使用恰当服务账户或Local System账户运行的服务与一个名为Service-0x03e7$的不可见窗口站关联在一起，所有非交互式服务都共享这个窗口站。名称中的“3e7”这个数字代表登录会话标识符，本地安全机构进程（LSASS）会将该标识符分配给登录会话，供SCM提供给Local System账户运行的非交互式服务使用。通过Local Service账户运行的服务也会借助类似的方式关联到登录会话3e5生成的窗口站，而通过Network Service账户运行的服务会关联到登录会话3e4生成的窗口站。</p>
+<p class="zw">配置为通过用户账户运行的服务（即未使用Local System账户）会在另一个不可见窗口站中运行，该窗口站使用为服务的登录会话分配的LSASS登录标识符作为名称。图10-13展示了Sysinternals WinObj工具显示的一个范例，其中展示了Windows保存窗口站对象的对象管理器目录。可以看到一个交互式窗口站（WinSta0）以及三个非交互式服务窗口站。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1602.png" style="width: 100%" />
+<p class="图题">图10-13　窗口站列表</p>
+<p class="zw">无论是否通过用户账户、Local System账户、Local Network账户或Network Service账户运行，未在可见窗口站中运行的服务都无法接收用户的输入或显示可见窗口。实际上，如果服务需要使用模式（modal）对话框<br> <sup>[3]</sup>，此时该服务看起来似乎会处于挂起状态，因为任何用户都看不到这样的对话框，当然也就无法通过用户的键盘或鼠标提供输入来解除对话框，以便让服务能够继续运行。</p>
+<p class="footnote">[3]当一个应用程序显示了模式对话框后，用户必须完成与该对话框的交互并将其关闭，应用程序才能继续运行。也就是说，这种对话框要求用户必须对某些情况做出响应才能继续；与之相对的是无模式（modaless）对话框，在应用程序显示这种对话框的过程中，就算不将其关闭，用户也依然可以与应用程序本身进行交互。——译者注</p>
+<p class="zw">服务若要与用户通过对话框或窗口进行交互，必须提供有效的理由。如果一个服务在注册表键的Type参数中配置了SERVICE_INTERACTIVE_PROCESS标记，那么在启动时会通过托管进程连接到交互式WinSta0窗口站（请注意，通过用户账户运行的服务无法标记为可交互的）。如果用户进程与服务在同一个会话中运行，那么这个到WinSta0的连接就可以让服务显示对话框和窗口，并允许这些窗口响应用户输入，因为它们与交互式服务共享了同一个窗口站。然而，只有系统拥有的进程和Windows服务可以运行在会话0中，所有其他登录会话，包括控制台用户，都运行在不同会话中。因此，在会话0中显示的任何窗口都无法被用户看到。</p>
+<p class="zw">这个额外的边界有助于防止Shatter攻击，即低权限应用程序向同一窗口站中的可见窗口发送窗口消息，借此利用拥有该窗口的高权限进程中存在的Bug在高权限进程中执行代码。在过去，Windows还提供了交互式服务检测（interactive services detection）服务（UI0Detect），当服务在会话0的WinSta0窗口站主桌面上显示了窗口后，该服务会向用户发出通知。这样用户即可切换到会话0的窗口站，进而让交互式服务可以正常运行。不过出于安全方面的考虑，该功能首先被禁用，并从Windows 10的2018年4月更新（RS4）后被彻底移除。</p>
+<p class="zw">因此，即便服务控制管理器依然支持交互式服务（只需将HKLM\SYSTEM\ CurrentControlSet\Control\Windows\ NoInteractiveServices注册表值设置为0），会话0依然是不可访问的。任何服务都已经无法再显示任何窗口了（除非使用一些未记载的“破解”方法）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"989f8904-8466-4b33-9ea6-7a3ab7009791"}</p>

@@ -1,0 +1,56 @@
+<h3 class="bt3" id="sigil_toc_id_104">9.5.4　系统防护运行时认证</h3>
+<p class="zw">系统防护运行时认证（System Guard Runtime Attestation，SGRA）是一种操作系统完整性组件，可将上文介绍的VBS隔区与远程认证服务组件配合使用，为执行环境提供强有力的保障。该环境可用于在运行时认证敏感的系统属性，并让依赖方了解系统提供的安全承诺是否存在违反情况。这项新技术的首个实现是由Windows 10于2018年4月的更新（RS4）引入的。</p>
+<p class="zw">SGRA允许应用程序查看有关设备安全态势的声明。该声明包含以下三部分内容。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个会话报告，其中包含的安全级别描述了设备启动时可认证的属性。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个运行时报告，描述了设备的运行时状态。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个签名会话证书，可用于验证报告的真伪。</p>
+<p class="zw">SGRA服务（SgrmBroker.exe）承载了一个组件（SgrmEnclave_secure.dll），该组件以VBS隔区的形式运行在VTL 1中，可持续认证系统在运行过程中出现的安全功能违背情况。这些认证会包含在运行时报告中，而该报告可由依赖方在后端进行验证。由于这个认证过程在一个单独的信任域中进行，因此很难直接对运行时报告内容发起攻击。</p>
+<h4 class="bt4 sigil_not_in_toc">SGRA内部原理</h4>
+<p class="zw">图9-41从较高的角度展示了Windows Defender System Guard运行时认证的架构概况，其中包含下列客户端组件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> VTL-1认证引擎：SgrmEnclave_secure.dll。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个VTL-0内核模式代理：SgrmAgent.sys。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个承载了认证引擎的VTL-0 WinTCB受保护代理进程：SgrmBroker.exe。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个供WinTCBPP代理进程与网络堆栈交互的VTL-0 LPAC进程：SgrmLpac.exe。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2737.png" style="width: 100%" />
+<p class="图题">图9-41　Windows Defender System Guard运行时认证机制的架构</p>
+<p class="zw">为了快速应对威胁，SGRA通过一种动态脚本引擎（Lua）构建了核心认证机制，该引擎在VTL 1隔区中运行，这样即可频繁地更新认证逻辑。</p>
+<p class="zw">由于VBS隔区提供了隔离能力，所以VTL 1中执行的线程在访问VTL 0 NT API时会遇到各种限制。因此为了让SGRA的运行时组件能执行更有意义的工作，还需要通过某种方式应对VBS隔区给API带来的限制。</p>
+<p class="zw">系统实现了一种基于代理的方法，可将VTL 0设施公开给运行在VTL 1下的逻辑，这些设施称为辅助（assist），由SgrmBroker用户模式组件或运行在VTL 0内核模式下的代理驱动程序（SgrmAgent.sys）提供服务。隔区中运行的VTL 1逻辑可调用这些VTL 0组件，借此请求辅助提供一系列设施，包括NT内核同步基元、页面映射能力等。</p>
+<p class="zw">举例来说，该机制的工作原理如下：SGRA允许VTL 1认证引擎直接读取VTL 0拥有的物理页面。隔区可通过辅助请求对任意的页进行映射，随后该页会被锁定并映射至SgrmBroker的VTL 0地址空间（并常驻）。由于VBS隔区可以直接访问宿主进程的地址空间，所以安全逻辑可以直接从映射的虚拟地址读取。这些读取操作必须与VTL 0内核本身同步。VTL 0常驻代理（SgrmAgent.sys启动程序）也经常用于执行同步。</p>
+<h4 class="bt4 sigil_not_in_toc">认证逻辑</h4>
+<p class="zw">如上文所述，SGRA可认证系统运行时的安全属性。这些认证是在VBS隔区所承载的认证引擎中进行的。系统启动期间，会向认证引擎提供描述认证逻辑的带签名Lua字节码。</p>
+<p class="zw">认证会定期进行。当发现违背所认证属性的情况（即认证“失败”）时，“失败”会被记录并存储到隔区中。该“失败”会通过运行时报告公开给依赖方，这个报告同样会在隔区中生成并使用会话证书签名。</p>
+<p class="zw">例如，SGRA提供的一种认证能力可以认证与执行体进程对象有关的各种属性，如运行中进程的定期枚举，以及进程保护位（负责管理受保护进程策略）的状态认证。</p>
+<p class="zw">认证引擎执行检查的流程可概括总结为下列几个步骤。</p>
+<p class="zw">1）VTL 1下运行的认证引擎调用自己的VTL 0托管进程（SgrmBroker），请求内核引用一个执行体进程对象。</p>
+<p class="zw">2）Broker进程将该请求转发给内核模式代理（SgrmAgent），后者获取请求执行体进程对象的引用来提供服务。</p>
+<p class="zw">3）内核模式代理（Agent）向Broker发出通知，告知请求已获得服务，并将必要的元数据传递给Broker。</p>
+<p class="zw">4）Broker将响应转发给发出请求的VTL 1认证逻辑。</p>
+<p class="zw">5）随后该逻辑可以选择将支持引用执行体进程对象的物理页面锁定，并映射至自己可访问的地址空间，这是通过类似上述步骤1～4的流程调用隔区实现的。</p>
+<p class="zw">6）页面被映射后，VTL 1引擎可直接读取并根据内部持有的上下文检查执行体进程对象的保护位。</p>
+<p class="zw">7）VTL 1逻辑再次调用到VTL 0，解除页面映射和内核对象的引用。</p>
+<h4 class="bt4 sigil_not_in_toc">报告和信任的建立</h4>
+<p class="zw">为了让依赖方获取SGRA会话证书并为会话和运行时报告签名，系统暴露了一个基于WinRT的API。该API并未公开，仅供参与Microsoft Virus Initiative计划的供应商在签署保密协议后索取（请注意，目前只有Microsoft Defender Advanced Threat Protection可通过该API与SGRA直接交互）。</p>
+<p class="zw">通过SGRA获取信任声明的流程如下。</p>
+<p class="zw">1）依赖方和SGRA之间建立一个会话。该会话的建立需要具备网络连接。SgrmEnclave认证引擎（运行在VTL 1下）生成一个公私密钥对，受保护进程SgrmBroker检索TCG日志和VBS认证报告，将其与上一步生成的密钥的公开部分一起发送给微软的System Guard认证服务。</p>
+<p class="zw">2）认证服务验证TCG日志（来自TPM）和VBS认证报告（认证了该逻辑运行在VBS隔区中），并生成一个会话报告，通过该报告描述被认证设备在启动时的属性。该服务会使用SGRA认证服务中间密钥对公钥签名，借此创建出验证运行时报告所需的证书。</p>
+<p class="zw">3）会话报告和证书返回给依赖方。随后，依赖方即可验证会话报告和运行时证书的有效性。</p>
+<p class="zw">4）依赖方可以借助已建立的会话定期从SGRA请求运行时报告：SgrmEnclave认证引擎会生成一份运行时报告，借此描述已运行认证的状态。该报告会使用会话创建过程中生成的配对私钥进行签名并返回给依赖方（私钥永远不会离开隔区）。</p>
+<p class="zw">5）依赖方可通过先前获得的运行时证书验证运行时报告，并根据会话报告内容（启动时认证的状态）以及运行时报告（认证的状态）做出策略决定。</p>
+<p class="zw">依赖方可以使用SGRA提供的一些API来认证设备在某个时间点时的状态。该API会返回一份运行时报告，其中详细列出了Windows Defender System Guard在运行时针对系统整体安全态势给出的意见。这些意见也包括认证，即对系统运行过程中某些敏感属性测量得到的结果。例如，应用程序可以要求Windows Defender System Guard从硬件支持的隔区测量系统安全性并提供报告，随后该应用即可使用报告提供的详细信息来决定是否可以执行敏感的金融交易或展示个人信息。</p>
+<p class="zw">如上文所述，VBS隔区也可以提供使用VBS特定签名密钥签名的隔区认证报告。如果Windows Defender System Guard可以获得证据，认证主机系统是在启用了VSM的情况下运行的，那么即可使用该证据和带签名的会话报告保证特定隔区正在运行。因此，为了建立必要的信任，以保证运行时报告的真实性，必须做到以下几点。</p>
+<p class="zw">1）认证计算机的启动状态：操作系统、虚拟机监控程序、安全内核（SK）二进制文件必须具备微软数字签名，并根据安全策略进行必要的配置。</p>
+<p class="zw">2）要在TPM和虚拟机监控程序的运行状况之间建立信任关系，从而信任测量启动日志（measured boot log）。</p>
+<p class="zw">3）从测量启动日志中提取所需密钥（VSM IDK），用这些密钥验证VBS隔区签名（详见第12章）。</p>
+<p class="zw">4）使用受信任的证书颁发机构对隔区中生成的临时密钥对的公共部分进行签名，以便颁发会话证书。</p>
+<p class="zw">5）使用临时私钥对运行时报告签名。</p>
+<p class="zw">隔区和Windows Defender System Guard认证服务之间的网络调用是在VTL 0下进行的，不过认证协议的设计保证了即使使用不可信任的传输机制，也可以有效防范篡改。</p>
+<p class="zw">在充分建立上述信任链之前，还需要具备很多底层技术。为了让依赖方了解能对特定配置下的运行时报告产生的信任程度，Windows Defender System Guard认证服务所签署的每一份会话报告都会被分配一个安全级别。这个安全级别体现了平台上启用的底层技术，以及根据平台能力分配的可信度级别。微软正在将各种安全技术的启用与否映射为不同的安全级别，并会在将相关的API发布给第三方使用时公布相关信息。最高级别的可信度很可能至少需要具备下列功能。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 硬件和OEM配置均可支持VBS。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 启动时的动态信任根测量。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 通过安全启动验证虚拟机监控程序、NT以及安全内核映像。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 通过安全策略保证虚拟机监控程序实施的代码完整性（HVCI）和内核模式代码完整性（KMCI）均已启用，测试签名被禁用，并且内核调试被禁用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 具备ELAM驱动程序。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"299b0677-b68d-4088-a559-555354991b32","id":"e36bf5c7-3149-47c6-b2f8-23b85a347767"}</p>

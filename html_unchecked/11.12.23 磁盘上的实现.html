@@ -1,0 +1,41 @@
+<h3 class="bt3" id="sigil_toc_id_274">11.12.23　磁盘上的实现</h3>
+<p class="zw">如表11-7所示，TxF使用$LOGGED_UTILITY_STREAM特性类型来存储事务中当前或曾经涉及的文件和目录的额外数据。该属性也叫$TXF_DATA，其中包含的重要信息可供TxF为与事务相关的文件保存活跃的脱机数据。该特性会永久保存在MFT中，也就是说，即使文件不再与事务相关，数据流依然会存在，具体原因见下文。该属性的主要组件如图11-55所示。</p>
+<p class="zw">图11-55所示的第一个字段是资源管理器根的文件记录号，主要负责与文件有关的事务。默认资源管理器的文件记录号为5，这也是MFT中根目录（\）的文件记录号，如图11-31所示。TxF在为文件创建FCB时需要这些信息，这样才可以将其与正确的资源管理器链接在一起；NTFS收到事务文件请求时，也需要为事务创建登记（Enlistment）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2567.png" style="width: 100%" />
+<p class="图题">图11-55 $TXF_DATA属性</p>
+<p class="zw">$TXF_DATA属性中存储的另一个重要数据是TxF文件的ID，即TxID，这也解释了为何$TXF_DATA属性永远不会被删除。因为NTFS在写入事务日志时会将文件名写入记录，因此需要通过一种具备唯一性的方式来识别同一目录下可能使用相同名称的文件。举例来说，如果在一个事务中从某个目录里删除了sample.txt，随后在同一个目录中创建了一个同名的新文件（都在同一个事务中进行），TxF就需要通过某种具备唯一性的方式区分sample.txt的两个实例。这种区分由一个64位的唯一数字（TxID）实现，当新文件（或文件的一个实例）关联事务之后，TxF会增大这个数字。由于永远不能重复使用，所以TxID具备永久性，$TXF_DATA属性永远不会从文件中移除。</p>
+<p class="zw">同样重要的是，事务涉及的每个文件都会存储三个CLFS（Common Logging File System，通用日志文件系统）LSN。每当事务被激活（如创建、更名或写入操作过程中）时，TxF会向其CLFS日志写入一条日志记录，每条记录都会分配一个LSN，而该LSN会被写入$TXF_DATA属性的相应字段。第一个LSN所存储的日志记录可标识出与该文件有关的NTFS元数据变化。举例来说，如果事务操作改变了文件的标准属性，TxF必须更新相关的MFT文件记录，并存储用于描述该变化的日志记录的LSN。在文件的数据被修改后，TxF将使用第二个LSN。最后，当目录的文件名索引需要更改文件所涉及的事务，或参与事务的目录收到TxID时，TxF将使用第三个LSN。</p>
+<p class="zw">$TXF_DATA属性还存储了内部标记，借此向TxF以及提交时应用到文件的USN记录描述状态信息。一个TxF事务可以跨越多个USN记录，这些记录的部分内容可能已经被NTFS的恢复机制（见下文）更新了，因此，索引可以告诉TxF在恢复之后还需要应用多少个USN记录。</p>
+<p class="zw">TxF会对每个卷使用默认资源管理器来跟踪其事务状态，不过TxF也支持额外的资源管理器（名为辅助资源管理器）。这些资源管理器可由应用程序写入者定义，可将元数据保存在应用程序选择的任何目录中，并为撤销、备份、还原和重做操作定义自己的事务工作单元。默认资源管理器和辅助资源管理器均可包含一定数量的元数据文件和目录，借此描述自己的当前状态。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> $Txf目录，位于$Extend\$RmMetadata目录下，文件被事务操作删除或覆盖写入后，会在这里进行链接。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> $Tops，即TxF Old Page Stream（TOPS，TxF旧页流）文件，其中包含默认数据流和一个名为$T的备用数据流。TOPS文件的默认流包含与资源管理器有关的元数据，如GUID、CLFS日志策略以及恢复工作起始位置的LSN。$T流包含部分被事务写入器覆盖写入的文件数据（而非完整覆盖写入，完整覆盖写入会将文件移动至$Txf目录）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> TxF日志文件，即存储事务记录的CLFS日志文件。对于默认资源管理器，这些文件是$TxfLog目录的一部分，但辅助资源管理器可将其存储在任何位置。TxF使用了一种名为$TxfLog.blf的复用基础日志文件。文件\$Extend\$RmMetadata\ $TxfLog\$TxfLog包含两个流：用于保存内核事务管理器元数据记录的KtmLog流，以及保存TxF日志记录的TxfLog流。</p>
+<p class="zwtsh">实验：查询资源管理器信息</p>
+<p class="zwts1">我们可以使用系统自带的Fsutil.exe命令行工具查询与默认资源管理器有关的信息，或借此创建、启动和停止辅助资源管理器，并配置其日志策略和行为。下列命令可查询根目录（\）的默认资源管理器的相关信息：</p>
+<pre class="代码无行号"><code>d:\&gt;fsutil resource info \ 
+Resource Manager Identifier :     81E83020-E6FB-11E8-B862-D89EF33A38A7 
+KTM Log Path for RM: \Device\HarddiskVolume8\$Extend\$RmMetadata\$TxfLog\$TxfLog::
+  KtmLog 
+Space used by TOPS:   1 Mb 
+TOPS free space:      100% 
+RM State:             Active 
+Running transactions: 0 
+One phase commits:    0 
+Two phase commits:    0 
+System initiated rollbacks: 0 
+Age of oldest transaction: 00:00:00 
+Logging Mode:         Simple 
+Number of containers: 2 
+Container size:       10 Mb
+Total log capacity:   20 Mb
+Total free log space: 19 Mb
+Minimum containers:   2
+Maximum containers:   20
+Log growth increment: 2 container(s)
+Auto shrink:          Not enabled
+　
+RM prefers availability over consistency.</code></pre>
+<p class="zwts1">如上文所述，fsutil resource命令针对Txf资源管理器提供了多种配置选项，甚至可以在我们自选的任意目录下创建辅助资源管理器。例如，可以使用fsutil resource create c:\rmtest命令在Rmtest目录下创建辅助资源管理器，随后使用fsutil resource start c:\rmtest命令将其启动。请注意，随后该文件夹下会出现$Tops&nbsp;和$TxfLogContainer*文件，以及TxfLog和$Txf目录。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":22,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"491fc0e3-f00d-41ad-b54f-1899ae4615ca"}</p>

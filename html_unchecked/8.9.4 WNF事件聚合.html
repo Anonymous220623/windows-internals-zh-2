@@ -1,0 +1,10 @@
+<h3 class="bt3" id="sigil_toc_id_53">8.9.4　WNF事件聚合</h3>
+<p class="zw">尽管WNF本身已经为客户端和服务提供了一种交换状态信息并将状态通知给对方的强大方法，但一些情况下特定客户端/订阅方可能会对不止一个WNF状态名称感兴趣。</p>
+<p class="zw">例如，可能有一个WNF状态名称会在屏幕背光关闭后发布，另一个则会在无线网卡被关闭后发布，还有一个会在用户离开设备后发布。可能会有一个订阅方希望在上述任何一个WNF状态名称发布之后收到通知，但另一个订阅方可能希望前两个或最后一个名称发布之后收到通知。</p>
+<p class="zw">然而，Ntdll.dll提供给用户模式客户端的WNF系统调用和基础架构（以及内核所提供的API表面）只能针对单个WNF状态名称执行操作。因此，上述例子需要通过每个订阅方自行实现的状态机手动处理。</p>
+<p class="zw">为了向这种常见需求提供方便，用户模式以及内核模式都有一个组件可以处理此类状态机的复杂性，并暴露出一个简单的API：Common Event Aggregator（CEA，通用事件聚合器），内核模式调用方是在CEA.SYS中实现的，用户模式调用方则是在EventAggregation.dll中实现的。这些库可导出一组API（例如EaCreateAggregatedEvent和EaSignalAggregatedEvent），借此实现中断那样的行为（WNF状态为True时启动回调，WNF状态为False时停止回调），并能使用诸如AND、OR和NOT等运算符对条件进行组合。</p>
+<p class="zw">CEA的用户包括USB栈以及Windows Driver Foundation（WDF），它为WNF状态名称的变化暴露了一种框架回调。此外，Power Delivery Coordinator（Pdc.sys）也会使用CEA构建类似本节开头提到的那种电源状态机。第9章将要介绍的统一后台进程管理器（Unified Background Process Manager，UBPM）也依赖CEA来实现一些功能，例如，根据低功耗或闲置等情况启动和停止服务。</p>
+<p class="zw">WNF还是系统事件代理（System Event Broker，SEB）服务的组成部分，该服务在SystemEventsBroker.dll中实现，其客户端库位于SystemEventsBrokerClient.dll中。后者可导出诸如SebRegisterPrivateEvent、SebQueryEventData以及SebSignalEvent等API，随后这些API可通过RPC接口传递给服务。在用户模式下，SEB是通用Windows平台（Universal Windows Platform，UWP）、用于问询系统状态的各类API，以及根据WNF暴露的某些状态的变化自我触发的服务必不可少的基础。特别是在OneCore衍生的各类系统，例如Windows Phone和Xbox（上文曾经提到，系统本身就用到了数百个众所周知的WNF状态名称）中，SEB已成为系统通知功能的核心驱动力，取代了窗口管理器（window manager）通过诸如WM_DEVICEARRIVAL、WM_SESSIONENDCHANGE、WM_POWER等消息提供的遗留角色。</p>
+<p class="zw">SEB可通过管道进入UWP应用程序所使用的代理基础架构（Broker Infrastructure，BI），可供应用程序（即使运行在AppContainer中）访问映射至全系统状态的WNF事件。此外，对于WinRT应用程序，Windows.ApplicationModel.Background命名空间暴露了一个SystemTrigger类，进而实现了IBackgroundTrigger，借此可通过管道进入SEB的RPC服务和C++ API，对于某些众所周知的系统事件，最终还可转换为WNF_SEB_XXX这样的事件状态名称。这是一个非常完美的例子，证明了像WNF这样很少有公开文档介绍的内部机制，最终也可以成为现代UWP应用程序开发过程中公开的高级API的核心。SEB只是UWP暴露的众多代理之一，本章末尾还将详细介绍后台任务和代理基础架构。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"97a97022-321b-4466-8ae6-32bec914067f","id":"108345e8-76e3-4ec8-b384-73c4f6319b02"}</p>

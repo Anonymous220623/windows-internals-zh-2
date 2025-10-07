@@ -1,0 +1,29 @@
+<h3 class="bt3" id="sigil_toc_id_153">10.5.3　ETW提供程序</h3>
+<p class="zw">如上文所述，提供程序是一种产生事件的组件（而包含提供程序的应用程序通常也包含了事件跟踪检测机制）。ETW支持不同类型的提供程序，它们有着类似的编程模型（主要差异在于解码事件的方式）。提供程序必须首先向ETW注册，随后才能生成事件。通过类似的方式，控制器应用程序可以启用提供程序并将其与ETW会话关联，这样才能接收来自提供程序的事件。如果任何会话都未启动某个提供程序，那么这个提供程序将无法生成任何事件。何为启用，何为禁用，具体的解释是由提供程序定义的。一般来说，启用的提供程序可以生成事件，禁用的提供程序无法生成事件。</p>
+<h4 class="bt4 sigil_not_in_toc">提供程序的注册</h4>
+<p class="zw">不同类型的提供程序都有自己的API，需要通过提供程序应用程序（或驱动程序）调用该API才能注册提供程序。例如，基于清单的提供程序需要调用EventRegister API进行用户模式的注册，需要调用EtwRegister进行内核模式的注册。所有类型的提供程序最终都需要调用内部的EtwpRegisterProvider函数，由该函数执行实际的注册过程（并在NT内核和NTDLL中实现）。后者会分配并初始化一个ETW_GUID_ENTRY数据结构，该数据结构代表了提供程序（这个数据结构还会用于通知和特征）。该数据结构包含重要信息，如提供程序GUID、安全描述符、引用计数器、启用信息（每个启用了该提供程序的ETW会话），以及提供程序的注册列表。</p>
+<p class="zw">对于用户模式提供程序的注册，NT内核会针对调用方进程的令牌执行访问检查，并要求具有TRACELOG_REGISTER_GUIDS访问权限。如果检查成功，或如果注册请求源自内核代码，ETW会将新的ETW_GUID_ENTRY数据结构插入全局ETW每Silo数据结构的一个哈希表中，并以提供程序GUID的哈希值作为表键（这样即可快速查找系统中注册的所有提供程序）。如果哈希表中已经存在相同GUID的项，则ETW会复用现有项而不再新建。导致GUID已经存在于哈希表中的原因主要有以下两个。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 另一个驱动程序或应用程序在提供程序实际注册前就已启用该提供程序（详见下文“提供程序的启用”一节）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 该提供程序已经被注册了一次。系统支持同一个提供程序GUID的多次注册。</p>
+<p class="zw">在将提供程序成功加入全局列表后，ETW会创建并初始化一个ETW注册对象，该对象代表了具体的某一个注册。该对象中封装了一个ETW_REG_ENTRY数据结构，用于将提供程序与请求注册的进程和会话绑定（ETW也支持来自不同会话的注册）。该对象会被插入ETW_GUID_ENTRY（此前初始化ETW时，EtwRegistration对象类型已创建完成，并与NT对象管理器注册结束）内部的一个列表中。图10-34展示了这两个数据结构以及它们之间的相互关系。在图10-34中，两个提供程序的进程（会话4中的进程A，以及会话16中的进程B）已经向提供程序1进行了注册。因此，两个ETW_REG_ENTRY数据结构已创建，并链接到代表的提供程序1的ETW_GUID_ENTRY。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2839.png" style="width: 100%" />
+<p class="图题">图10-34　ETW_GUID_ENTRY数据结构和ETW_REG_ENTRY</p>
+<p class="zw">至此，提供程序已注册并已准备好在请求自己的会话中启用（通过EnableTrace API）。如果在注册前已经有至少一个会话启用了该提供程序，则ETW会直接启用（详见下一节）并调用Enablement回调，该回调可由启动注册过程的EventRegister（或EtwRegister）API的调用方指定。</p>
+<p class="zwtsh">实验：枚举ETW提供程序</p>
+<p class="zwts1">与ETW会话类似，XPERF亦可枚举当前已注册提供程序的列表（Windows自带的WEVTUTIL工具也可以做到）。以管理员身份打开一个命令提示符窗口，并进入Windows性能工具包安装路径。要枚举已注册的提供程序，请使用-providers命令行选项。该选项支持不同的标记。在本实验中，我们主要涉及I标记和R标记，这两个标记可以让XPERF枚举已安装或已注册的提供程序。正如下文“事件解码”一节所述，这两者的区别在于提供程序已注册（通过指定GUID），但未安装到HKLM\SOFTWARE\ Microsoft\Windows\CurrentVersion\WINEVT\Publishers注册表键下。这将阻止任何消费者使用TDH例程解码事件。下列命令：</p>
+<pre class="代码无行号"><code>cd /d "C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit" 
+xperf -providers R &gt; registered_providers.txt 
+xperf -providers I &gt; installed_providers.txt </code></pre>
+<p class="zwts1">会产生两个包含类似信息的文本文件。打开registered_providers.txt文件可以看到名称和GUID的组合。名称标识不仅已注册，同时也已安装到Publisher注册表键的提供程序，而GUID代表了只通过上文讨论的EventRegister API注册过的提供程序。这里出现的所有名称会与相应的GUID一起出现在installed_providers.txt文件中，但第一个文本文件中列出的GUID完全不会出现在第二个文本文件中。</p>
+<p class="zwts1">XPERF还支持使用K标记（K标记是KF标记和KG标记的超集）枚举系统记录器（详见下文“系统记录器”一节）所支持的全部内核标记和组。</p>
+<h4 class="bt4 sigil_not_in_toc">提供程序的启用</h4>
+<p class="zw">在提供程序生成事件之前，必须先与ETW会话关联。这个关联过程也叫提供程序启用，可通过两种方式实现：在提供程序注册前启用，或注册后启用。控制器应用程序可通过EnableTraceEx API为会话启用提供程序，该API可供我们指定一个关键字位掩码，用于确定会话想接收的事件分类。通过相同的方式，该API还支持对其他类型数据进行高级过滤，如生成事件的进程ID、程序包ID、可执行文件名等（详见https://docs.microsoft. com/windows/win32/api/evntprov/ns-evntprov-event_filter_descriptor）。</p>
+<p class="zw">提供程序的启用过程由ETW在内核模式下通过内部函数EtwpEnableGuid管理。对于用户模式的请求，该函数可针对会话和提供程序安全描述符执行访问检查，并代表调用方进程的令牌请求TRACELOG_GUID_ENABLE访问权限。如果记录器会话包含SECURITY_TRACE标记，则EtwpEnableGuid会要求调用进程必须为PPL（详见下文“ETW的安全性”一节）。如果检查成功，则该函数将执行一个与上文讨论的提供程序注册过程类似的任务。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 分配并初始化一个表示提供程序的ETW_GUID_ENTRY数据结构，如果提供程序已注册，则会使用已经链接的全局ETW每Silo数据结构。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在ETW_GUID_ENTRY中添加相关会话启用信息，借此将提供程序与记录器会话链接在一起。</p>
+<p class="zw">如果提供程序尚未注册，也就不存在链接至ETW_GUID_ENTRY数据结构的ETW注册对象，此时过程将终止（提供程序必须在首次注册后才能启用）。否则提供程序将成功启用。</p>
+<p class="zw">老旧的MOF提供程序和WPP提供程序一次只能在一个会话中启用。基于清单的提供程序和Tracelogging提供程序最多可以在8个会话中启用。如图10-32所示，ETW_ GUID_ENTRY数据结构包含每个可能启用了提供程序的ETW会话（最多8个）的启用信息。EtwpEnableGuid函数会根据启用的会话计算新的会话启用掩码，并将其存储在ETW_REG_ENTRY数据结构中（代表提供程序的注册）。该掩码非常重要，是生成事件的关键。当一个应用程序或驱动程序将事件写入提供程序时，还需要进行一项检查：启用掩码中的某位是否等于1。若等于1，则意味着该事件应被写入特定ETW会话维持的缓冲区中；若不等于1，则意味着会话会被跳过，事件不会被写入其缓冲区。</p>
+<p class="zw">请注意，对于安全会话，在更新提供程序注册所对应的会话启用掩码前，还需要进行一项补充检查。ETW会话的安全描述符应当允许调用方进程访问令牌的TRACELOG_ LOG_EVENT访问权限。否则启用掩码中的相关位将不会被设置为1（目标ETW会话将无法收到来自该提供程序注册所产生的任何事件）。有关安全会话的详细信息请参阅下文“安全记录器”一节。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"0a817dad-0fff-43aa-90f7-5114d262a9ee","id":"2afee3af-f760-4f9f-a4bd-3d2c8783cd78"}</p>

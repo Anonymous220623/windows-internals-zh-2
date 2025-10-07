@@ -1,0 +1,147 @@
+<h3 class="bt3" id="sigil_toc_id_342">12.1.14　初始化内核与执行体子系统</h3>
+<p class="zw">当Winload调用Ntoskrnl时，它会传递一种名为加载器参数块的数据结构。加载器参数块包含系统分区和启动分区路径、一个到内存表（由Winload生成，用于描述系统物理内存）的指针、一个物理硬件树（用于构建易失性的HARDWARE注册表配置单元）、一个SYSTEM注册表配置单元在内存中的副本，以及一个指向Winload已加载启动驱动程序列表的指针。此外还包含到目前为止执行过的所有与启动工作有关的其他信息。</p>
+<p class="zwtsh">实验：加载器参数块</p>
+<p class="zwts1">启动时，内核会在KeLoaderBlockvariable中保留一个指向加载器参数块的指针。内核会在启动过程的第一阶段丢弃该参数块，因此，查看该结构内容的唯一方法是在启动前连接内核调试器，并在最初的内核调试器断点处断开。如果可以做到这一点，那么可使用dt命令转储这个参数块，如下所示：</p>
+<pre class="代码无行号"><code>kd&gt; dt poi(nt!KeLoaderBlock) nt!LOADER_PARAMETER_BLOCK 
+   +0x000 OsMajorVersion   : 0xa 
+   +0x004 OsMinorVersion   : 0 
+   +0x008 Size             : 0x160 
+   +0x00c OsLoaderSecurityVersion : 1 
+   +0x010 LoadOrderListHead : _LIST_ENTRY [ 0xfffff800`2278a230 - 0xfffff800`2288c150 ] 
+   +0x020 MemoryDescriptorListHead : _LIST_ENTRY [ 0xfffff800`22949000 - 0xfffff800<br>                                                                                `22949de8 ]
+   +0x030 BootDriverListHead : _LIST_ENTRY [ 0xfffff800`22840f50 - 0xfffff800`2283f3e0 ]
+   +0x040 EarlyLaunchListHead : _LIST_ENTRY [ 0xfffff800`228427f0 - 0xfffff800`228427f0 ]
+   +0x050 CoreDriverListHead : _LIST_ENTRY [ 0xfffff800`228429a0 - 0xfffff800`228405a0 ]
+   +0x060 CoreExtensionsDriverListHead : _LIST_ENTRY [ 0xfffff800`2283ff20 - 0xfffff800<br>                                                                                `22843090 ]
+   +0x070 TpmCoreDriverListHead : _LIST_ENTRY [ 0xfffff800`22831ad0 - 0xfffff800`22831ad0 ]
+   +0x080 KernelStack      : 0xfffff800`25f5e000 
+   +0x088 Prcb             : 0xfffff800`22acf180 
+   +0x090 Process          : 0xfffff800`23c819c0 
+   +0x098 Thread           : 0xfffff800`23c843c0 
+   +0x0a0 KernelStackSize  : 0x6000 
+   +0x0a4 RegistryLength   : 0xb80000 
+   +0x0a8 RegistryBase     : 0xfffff800`22b49000 Void 
+   +0x0b0 ConfigurationRoot : 0xfffff800`22783090 _CONFIGURATION_COMPONENT_DATA 
+   +0x0b8 ArcBootDeviceName : 0xfffff800`22785290 "multi(0)disk(0)rdisk(0)partition(4)" 
+   +0x0c0 ArcHalDeviceName : 0xfffff800`22785190 "multi(0)disk(0)rdisk(0)partition(2)"
+   +0x0c8 NtBootPathName   : 0xfffff800`22785250 "\WINDOWS\" 
+   +0x0d0 NtHalPathName    : 0xfffff800`22782bd0 "\" 
+   +0x0d8 LoadOptions      : 0xfffff800`22772c80 "KERNEL=NTKRNLMP.EXE NOEXECUTE=OPTIN 
+                                 HYPERVISORLAUNCHTYPE=AUTO DEBUG ENCRYPTION_KEY=**** 
+                                 DEBUGPORT=NET 
+                                 HOST_IP=192.168.18.48 HOST_PORT=50000 NOVGA" 
+   +0x0e0 NlsData          : 0xfffff800`2277a450 _NLS_DATA_BLOCK 
+   +0x0e8 ArcDiskInformation : 0xfffff800`22785e30 _ARC_DISK_INFORMATION 
+   +0x0f0 Extension        : 0xfffff800`2275cf90 _LOADER_PARAMETER_EXTENSION 
+   +0x0f8 u                : &lt;unnamed-tag&gt; 
+   +0x108 FirmwareInformation : _FIRMWARE_INFORMATION_LOADER_BLOCK 
+   +0x148 OsBootstatPathName : (null) 
+   +0x150 ArcOSDataDeviceName : (null) 
+   +0x158 ArcWindowsSysPartName : (null) </code></pre>
+<p class="zwts1">此外，也可以针对MemoryDescriptorListHead字段使用!loadermemorylist命令来转</p>
+<p class="zwts1">储物理内存范围：</p>
+<pre class="代码无行号"><code>kd&gt; !loadermemorylist 0xfffff800`22949000 
+Base        Length      Type 
+0000000001  0000000005 (26) HALCachedMemory      ( 20 Kb ) 
+0000000006  000000009a ( 5) FirmwareTemporary    ( 616 Kb ) 
+... 
+0000001304  0000000001 ( 7) OsloaderHeap         ( 4 Kb ) 
+0000001305  0000000081 ( 5) FirmwareTemporary    ( 516 Kb ) 
+0000001386  000000001c (20) MemoryData           ( 112 Kb ) 
+... 
+0000001800  0000000b80 (19) RegistryData         ( 11 Mb 512 Kb ) 
+0000002380  00000009fe ( 9) SystemCode           ( 9 Mb 1016 Kb ) 
+0000002d7e  0000000282 ( 2) Free                 ( 2 Mb 520 Kb ) 
+0000003000  0000000391 ( 9) SystemCode           ( 3 Mb 580 Kb ) 
+0000003391  0000000068 (11) BootDriver           ( 416 Kb ) 
+00000033f9  0000000257 ( 2) Free                 ( 2 Mb 348 Kb ) 
+0000003650  00000008d2 ( 5) FirmwareTemporary    ( 8 Mb 840 Kb ) 
+000007ffc9  0000000026 (31) FirmwareData         ( 152 Kb ) 
+000007ffef  0000000004 (32) FirmwareReserved     ( 16 Kb ) 
+000007fff3  000000000c ( 6) FirmwarePermanent    ( 48 Kb ) 
+000007ffff  0000000001 ( 5) FirmwareTemporary    ( 4 Kb ) 
+NumberOfDescriptors: 90 
+　
+Summary 
+Memory Type         Pages 
+Free                000007a89c  (     501916)   ( 1 Gb 936 Mb 624 Kb ) 
+LoadedProgram       0000000370  (        880)   ( 3 Mb 448 Kb ) 
+FirmwareTemporary   0000001fd4  (       8148)   ( 31 Mb 848 Kb ) 
+FirmwarePermanent   000000030e  (        782)   ( 3 Mb 56 Kb ) 
+OsloaderHeap        0000000275  (        629)   ( 2 Mb 468 Kb ) 
+SystemCode          0000001019  (       4121)   ( 16 Mb 100 Kb ) 
+BootDriver          000000115a  (       4442)   ( 17 Mb 360 Kb ) 
+RegistryData        0000000b88  (       2952)   ( 11 Mb 544 Kb ) 
+MemoryData          0000000098  (        152)   ( 608 Kb ) 
+NlsData             0000000023  (         35)   ( 140 Kb ) 
+HALCachedMemory     0000000005  (          5)   ( 20 Kb ) 
+FirmwareCode        0000000008  (          8)   ( 32 Kb ) 
+FirmwareData        0000000075  (        117)   ( 468 Kb ) 
+FirmwareReserved    0000000044  (         68)   ( 272 Kb ) 
+                    ========== ========== 
+Total               000007FFDF  (     524255) = ( ~2047 Mb ) </code></pre>
+<p class="zwts1">加载器参数扩展可以显示系统硬件、CPU功能以及启动类型等实用信息：</p>
+<pre class="代码无行号"><code>kd&gt; dt poi(nt!KeLoaderBlock) nt!LOADER_PARAMETER_BLOCK Extension 
+   +0x0f0 Extension : 0xfffff800`2275cf90 _LOADER_PARAMETER_EXTENSION 
+kd&gt; dt 0xfffff800`2275cf90 _LOADER_PARAMETER_EXTENSION 
+nt!_LOADER_PARAMETER_EXTENSION 
+   +0x000 Size             : 0xc48 
+   +0x004 Profile          : _PROFILE_PARAMETER_BLOCK 
+   +0x018 EmInfFileImage   : 0xfffff800`25f2d000 Void 
+   ... 
+   +0x068 AcpiTable        : (null) 
+   +0x070 AcpiTableSize    : 0 
+  +0x074 LastBootSucceeded : 0y1 
+   +0x074 LastBootShutdown : 0y1 
+   +0x074 IoPortAccessSupported : 0y1 
+   +0x074 BootDebuggerActive : 0y0 
+   +0x074 StrongCodeGuarantees : 0y0 
+   +0x074 HardStrongCodeGuarantees : 0y0 
+   +0x074 SidSharingDisabled : 0y0 
+   +0x074 TpmInitialized   : 0y0 
+   +0x074 VsmConfigured    : 0y0 
+   +0x074 IumEnabled       : 0y0 
+   +0x074 IsSmbboot        : 0y0 
+   +0x074 BootLogEnabled   : 0y0 
+   +0x074 FeatureSettings  : 0y0000000 (0) 
+   +0x074 FeatureSimulations : 0y000000 (0) 
+   +0x074 MicrocodeSelfHosting : 0y0 
+   ... 
+   +0x900 Bootflags        : 0 
+   +0x900 DbgMenuOsSelection : 0y0 
+   +0x900 DbgHiberBoot     : 0y1 
+   +0x900 DbgSoftRestart   : 0y0 
+   +0x908 InternalBootflags : 2 
+   +0x908 DbgUtcBootTime   : 0y0 
+   +0x908 DbgRtcBootTime   : 0y1 
+   +0x908 DbgNoLegacyServices : 0y0 </code></pre>
+<p class="zw">Ntoskrnl开始执行阶段0，它的初始化过程分为两个阶段，这是第一个阶段（阶段1是第二个阶段）。大部分执行体子系统都有一个初始化函数，可以通过接收参数来识别当前正在执行的阶段。</p>
+<p class="zw">阶段0期间，中断会被禁用。这个阶段的作用是建立所需的基本结构，以便让阶段1所需要的服务能被调用。Ntoskrnl的启动函数KiSystemStartup会在每个系统处理器的上下文中被调用（详见下文“内核初始化阶段1”一节）。该函数负责初始化处理器的启动结构并设置全局描述符表（Global Descriptor Table，GDT）和中断描述符表（Interrupt Descriptor Table，IDT）。如果从启动处理器调用，启动例程还将初始化控制流防护（Control Flow Guard，CFG）检查功能，并与内存管理器协调以初始化KASLR。KASLR的初始化应当在系统启动的早期阶段完成，这样内核才能为各种虚拟内存区域（如PFN数据库和系统PTE区域，有关KASLR的详细信息请参阅卷1第5章）分配随机VA范围。KiSystemStartup将初始化内核调试器、XSAVE处理器区域，并在需要时初始化KVA影子，随后它会调用KiInitializeKernel。如果KiInitializeKernel在启动CPU上运行，则会执行系统级的内核初始化任务，例如，初始化内部列表以及被所有CPU共享的其他数据结构。它还会构建并压缩系统服务描述符表（System Service Descriptor Table，SSDT）并为内部的KiWaitAlways和KiWaitNever计算随机值，这些值会被用于内核指针的编码中。另外，KiInitializeKernel还会检查虚拟化是否已启动，如果启动，则会映射虚拟化调用页面并开始处理器的启发（有关虚拟机监控程序的启发，请参阅第9章）。</p>
+<p class="zw">当使用兼容的处理器执行时，KiInitializeKernel还起到其他重要作用：初始化并启用控制强制技术（Control Enforcement Technology，CET）。这是一种相对较新的硬件功能，简单来说，可实现一种硬件影子栈，借此检测并阻止ROP攻击。该技术可保护用户模式应用程序及内核模式驱动程序（但前提是VSM可用）。KiInitializeKernel会初始化Idle进程和线程，并调用ExpInitializeExecutive。KiInitializeKernel和ExpInitializeExecutive通常会在每个系统处理器上执行。当由启动处理器执行时，ExpInitializeExecutive会依赖负责协调过程阶段0的InitBootProcessor函数，而后续处理器只需要调用InitOtherProcessors即可。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　ROP（Return-Oriented Programming，返回导向的编程）是一种可被攻击利用的技术，攻击者可获得对程序调用栈的控制，进而劫持程序的控制流，并执行精心选择的机器指令序列（名为“Gadget”，小工具），而这些机器指令已经存在于计算机内存中了。通过将多个这种“小工具”精心连接在一起，攻击者即可在计算机上执行任意操作。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">InitBootProcessor首先会验证启动加载器。如果用于运行Windows的启动加载器版本与正确的Windows内核不匹配，那么该函数会让系统崩溃并显示LOADER_BLOCK_ MISMATCH错误检查代码（0x100）。如果匹配，则该函数会初始化CPU的旁视指针（look-aside pointer）池，随后查询并遵守BCD的Burnmemory启动选项，抛弃这个选项值所指定数量的物理内存。该函数会对Winload所加载的NLS文件（详见上文）执行足够数量的初始化操作，进而让从Unicode到ANSI的转换以及其他OEM转换可以正常工作。接下来，该函数会继续初始化Windows硬件错误架构（Windows Hardware Error Architecture，WHEA）并调用HAL函数HalInitSystem，该函数为HAL提供了一个在Windows进一步执行重要的初始化任务之前获得系统控制权的机会。HalInitSystem负责初始化并启动HAL的不同组件，如ACPI表、调试器描述符、DMA、固件、I/O MMU、系统计时器、CPU拓扑、性能计数器及PCI总线。HalInitSystem的一个重要职责是让每个CPU中断控制器准备好接收中断，以及配置间隔时钟计时器中断，该中断主要用于CPU时间计量（有关CPU时间计量的详情，请参阅本书卷1第4章）。</p>
+<p class="zw">当HalInitSystem退出后，InitBootProcessor将接手并开始计算时钟计时器的倒数过期时间。在大部分现代处理器中，会使用这种倒数来优化除法计算，借此还可以更快速地执行乘法运算，并且因为Windows必须对当前的64位时间值进行除法运算才能找出即将过期的计时器，这种静态计算有助于减少时钟间隔激发时的中断延迟。InitBootProcessor使用了一个辅助例程CmInitSystem0，以从SYSTEM配置单元的控制向量中获取注册表值。这个数据结构包含超过150种内核调优选项，同时也是HKLM\SYSTEM\CurrentControlSet\ Control注册表键的一部分，其中甚至包含了当前安装系统的许可数据和版本信息等。所有这些信息都会预加载并存储在全局变量中。随后，InitBootProcessor会继续设置系统根路径，在内核映像中寻找要在蓝屏界面上显示的崩溃信息字符串，并将其位置缓存起来，以避免在出现崩溃时再进行查找，因为这种方式很危险并且不可靠。随后，InitBootProcessor会初始化计时器子系统以及共享的用户数据页。</p>
+<p class="zw">至此，InitBootProcessor已经准备好为执行体、驱动程序认证器以及内存管理器调用阶段0初始化例程。这些组件将执行下列初始化任务。</p>
+<p class="zw">1）执行体初始化各种内部锁、资源、列表及变量，并验证注册表中的产品套件类型是否有效，这是为了阻止随意修改注册表数据，以便“升级”为并未实际购买的Windows版本。这只是内核中执行的众多此类检查之一。</p>
+<p class="zw">2）如果被启用，驱动程序认证器会初始化各种设置，并根据系统的当前状态（如是否启用了安全模式）和认证选项执行不同的行为。它还会针对随机选择驱动程序的测试挑选要测试的目标驱动程序。</p>
+<p class="zw">3）内存管理器构建页表、PFN数据库和内部数据结构，这些都是提供基本内存服务所必需的。首先，它会强制执行物理内存最大支持量的限制，并为系统文件缓存构建预留一块区域。随后它会为分页和非分页内存池创建内存区域（详见本书卷1第5章）。其他执行体子系统、内核以及设备驱动程序会使用这两个内存池分配自己的数据结构。最后，它会创建UltraSpace，这是一个16&nbsp;TB的区域，能为不需要TLB刷新、快速且低开销的页面映射提供支持。</p>
+<p class="zw">接下来，InitBootProcessor会启用虚拟机监控程序CPU动态分区（如果已启用且具备适当许可），并调用HalInitializeBios，设置HAL中与传统BIOS模拟代码有关的部分。这些代码可用于允许访问（或模拟访问）16位实模式中断和内存，它们主要被Bootvid所使用（该驱动程序已被BGFX取代，但出于兼容性的目的而保留）。</p>
+<p class="zw">至此，InitBootProcessor枚举了Winload加载的启动时运行的驱动程序，并会调用DbgLoadImageSymbols以便让内核调试器（如果已连接）加载这些驱动程序的符号。如果主机调试器已经配置了符号加载时选项上的断点，那么这将是内核调试器能够获得系统控制权的第一个点。InitBootProcessor随后会调用HvlPhase1Initialize，由它来执行之前阶段尚未完成的剩余的HVL初始化工作。如果计算机配置为使用紧急管理服务（EMS），当该函数返回时，还会调用HeadlessInit以初始化串口控制台。</p>
+<p class="zw">InitBootProcessor还会构建启动过程稍后将会用到的版本信息，如构建编号、Service Pack版本、Beta版本状态等。随后，它会将Winload之前加载的NLS表载入分页池，重新进行初始化，并按照全局标记的指定创建内核栈跟踪数据库（有关全局标记的详细信息，请参阅本书卷1第6章）。</p>
+<p class="zw">最后，InitBootProcessor会调用对象管理器、安全引用监视器、进程管理器、用户模式调试框架以及即插即用管理器。这些组件将执行下列初始化工作。</p>
+<p class="zw">1）在对象管理器初始化过程中，将定义构建对象管理器命名空间所必需的对象，这样，其他子系统就可以向其中插入对象。此外还会创建系统进程和全局内核句柄表，这样就可以开始进行资源跟踪了。此时还会计算加密对象头所用的值，并创建Directory和SymbolicLink类型的对象。</p>
+<p class="zw">2）安全引用监视器会初始化与安全性有关的全局变量（如系统SID和特权LUID）和内存数据库，并创建Token类型的对象。随后它将创建并准备第一个Local System账户令牌，以便将其分配给初始进程（有关Local System账户的详细介绍请参阅本书卷1第7章）。</p>
+<p class="zw">3）进程管理器的大部分初始化工作都在阶段0进行：定义进程、线程、作业以及分区对象类型，设置列表以跟踪活动进程和线程。另外还会初始化系统级的进程缓解选项，并将其与HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Kernel\MitigationOptions注册表值指定的选项合并。随后，进程管理器会创建执行体系统分区对象（名为MemoryPartition0）。这个名称有些误导性，因为该对象实际上是一种执行体分区对象，这是一种新的Windows对象类型，其中封装了内存分区和缓存管理器分区（用于支持新的应用程序容器）。</p>
+<p class="zw">4）进程管理器会为初始化进程创建一个进程对象，并将其命名为Idle。作为最后一步，进程管理器会创建受保护的System进程和系统线程，以此执行Phase1Initialization例程。该线程并不会立即运行，因为此时中断依然被禁用。System进程是一种受保护进程，可防范用户模式的攻击，因为它的虚拟地址空间被用于映射系统和代码完整性驱动程序所使用的敏感数据。此外，System进程的句柄表还维护了内核句柄。</p>
+<p class="zw">5）用户模式调试框架创建了调试对象类型的定义，这类对象可用于将调试器连接到进程并接收调试器事件。有关用户模式调试的详细介绍请参阅第8章。</p>
+<p class="zw">6）将进行即插即用管理器的阶段0初始化，期间将初始化用于同步访问总线资源所需的执行体资源。</p>
+<p class="zw">当控制返回到KiInitializeKernel之后，还需要为当前处理器分配DPC栈，将IRQL提升至调度级别，并启用中断。随后控制将进入空闲循环，这会导致步骤4创建的系统线程开始执行阶段1（从属处理器开始等待自己的初始化，直到下文将要介绍的阶段1的步骤11）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":13,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"7ba5dfe1-1177-4346-8566-e3f2716f918a"}</p>

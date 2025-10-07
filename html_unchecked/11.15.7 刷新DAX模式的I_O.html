@@ -1,0 +1,7 @@
+<h3 class="bt3" id="sigil_toc_id_302">11.15.7　刷新DAX模式的I/O</h3>
+<p class="zw">传统硬盘（HDD、SSD、NVme）始终包含一个意在提高整体性能的缓存。当存储驱动程序发出写入I/O时，实际上首先会将数据传输到缓存中，随后才会被写入持久性介质。操作系统提供了正确的刷新机制，保证了数据最终能被写入存储设备，并通过时间顺序保证数据可以按照正确的顺序写入。对于常规的缓存I/O，应用程序可以调用FlushFileBuffers API来确保数据以可证明的方式存储到磁盘中（这将产生一个IRP，其主函数代码为NTFS驱动程序实现的IRP_MJ_FLUSH_BUFFERS）。未缓存I/O会被NTFS直接写入磁盘，因此无须考虑排序和刷新的问题。</p>
+<p class="zw">DAX模式的卷就无法做到上述这一切了。文件被映射到内存后，NTFS驱动程序对将要写入磁盘的数据一无所知。如果应用程序正在将一些关键数据结构写入DAX卷，但写入过程中断电了，那么应用程序将无法保证所有数据结构都能正确写入底层介质。此外，它也无法保证数据能够按照请求的顺序进行写入。这是因为从CPU的角度来看，PM存储被实现为一种经典的物理内存。处理器使用了CPU缓存机制，但在读/写DAX卷时使用了自己的缓存机制。</p>
+<p class="zw">因此新版Windows 10不得不为DAX映射区域引入新的刷新API，以便借此执行必要的工作优化从CPU缓存刷新PM内容的过程。这些API同时适用于用户模式的应用程序和内核模式的驱动程序，会根据CPU架构进行高度优化（例如标准x64系统会使用CLFLUSH和CLWB操作码）。希望对DAX卷执行I/O排序和刷新的应用程序，可以针对PM映射的区域调用RtlGetNonVolatileToken函数，该函数会返回一个非易失性令牌，随后即可配合RtlFlushNonVolatileMemory或RtlFlushNonVolatileMemoryRanges API使用。这些API将执行从CPU缓存到底层PM设备的实际数据刷新工作。</p>
+<p class="zw">内存复制操作将使用标准的操作系统函数来执行，默认将执行时间性复制（temporal copy）操作，这意味着数据总是会通过CPU缓存，并维持执行顺序。另外，非时间性复制操作会使用专门的处理器操作码（具体同样取决于CPU架构，x64 CPU使用MOVNTI操作码）来绕过&nbsp;CPU&nbsp;缓存。这种情况下将无法维持顺序，但执行速度更快。RtlWriteNonVolatileMemory可公开针对非易失性内存的双向内存复制操作。默认情况下，该API会执行传统的时间性复制操作，但应用程序可以通过WRITE_NV_MEMORY_ FLAG_NON_TEMPORAL标记请求执行非时间性复制操作，从而加快复制操作的速度。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":6,"parentId":"79bbbed1-3a35-4d22-b579-86536ea07e54","id":"fbf84f3c-5215-4d4d-9446-c6fbe24a5e06"}</p>

@@ -1,0 +1,13 @@
+<h3 class="bt3" id="sigil_toc_id_75">9.1.6　拦截</h3>
+<p class="zw">根分区应该能创建一种虚拟环境，进而让未经修改的（为了在物理硬件上运行而开发的）客户机操作系统能够在虚拟机监控程序的客户机分区中顺利运行。这种传统客户机可能会试图访问虚拟机监控程序分区中并不存在的物理设备（如访问某些I/O端口或写入特定MSR）。对于这种情况，虚拟机监控程序提供了主机拦截设施。当客户虚拟机的虚拟处理器执行某些指令或生成某些异常时，获得授权的根分区可以拦截这些事件，并改变被拦截指令的效果，对子分区来说，这种行为反映了自己对于物理硬件预期想要实现的行为。</p>
+<p class="zw">子分区发生拦截事件后，其虚拟处理器会被暂停，综合中断控制器（Synthetic Interrupt Controller，SynIC，详见下文）会从虚拟机监控程序向根分区发送拦截消息。该消息的成功接收离不开虚拟机监控程序的综合ISR（Interrupt Service Routine，中断服务例程），如果系统被启发并在虚拟机监控程序中运行，NT内核会在启动过程的阶段0安装该服务（详见第12章）。虚拟机监控程序的综合ISR（KiHvInterrupt）通常会安装在向量0x30处，可将其执行转换为外部回调，而VID驱动程序在启动时已注册完毕（通过暴露的NT内核API：HvlRegisterInterruptCallback）。</p>
+<p class="zw">VID驱动程序也是一种拦截驱动程序，这意味着它可以向虚拟机监控程序注册主机拦截，进而接收发生在子分区中的所有拦截事件。分区初始化完成后，虚拟机工作进程会为虚拟化栈的多种组件注册拦截（例如为虚拟机的每个虚拟COM端口注册虚拟主板寄存器I/O拦截）。它会向VID驱动程序发送一个IOCTL，借此使用HvInstallIntercept这个虚拟化调用为子分区安装拦截。当子分区产生拦截后，虚拟机监控程序会暂停虚拟处理器并向根分区注入一个综合中断，该中断由KiHvInterrupt这个ISR负责管理。后者会将执行转移到已注册的VID中断回调，这个回调则会管理事件，并清除被暂停虚拟处理器的中断暂停综合寄存器，借此重新启动虚拟处理器。</p>
+<p class="zw">虚拟机监控程序支持对子分区中的下列事件进行拦截。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 访问I/O端口（读取或写入）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 访问虚拟处理器的MSR（读取或写入）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 执行CPUID指令。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 异常。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 访问通用寄存器。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 虚拟化调用。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"ea2ec385-5fa3-4b0f-b598-9bcb1e169157","id":"7f1b6047-0b3e-4879-83f1-185666262150"}</p>

@@ -1,0 +1,6 @@
+<h3 class="bt3" id="sigil_toc_id_323">11.17.8　压缩和幻象</h3>
+<p class="zw">ReFS不支持原生文件系统压缩，但在分层卷上，文件系统可以通过容器压缩（compression）在慢速层中节省出更多的可用容器。每当ReFS执行容器压实时，都会将位于碎片化基础容器中的原始数据读入内存。此时，如果启用了压缩功能，则ReFS会压缩数据并将其写入压缩后的压实容器。ReFS支持四种压缩算法：LZNT1、LZX、XPRESS以及XPRESS_HUFF。</p>
+<p class="zw">很多分层存储管理（Hierarchical Storage Management，HMR）软件解决方案还支持幻象（Ghosted）文件的概念。产生这种状态文件的原因有很多。例如，当HSM将用户文件（或文件中的某些块）迁移到云服务时，用户随后通过其他设备修改了云中的文件副本，HSM过滤器驱动程序需要跟踪文件的哪些部分发生了变化，并需要为每个修改过的文件范围设置幻象状态。通常，HMR会通过自己的过滤器驱动程序跟踪幻象状态。在ReFS中则无须这样做，因为ReFS公开了一个新的I/O控制代码FSCTL_GHOST_FILE_EXTENTS。过滤器驱动程序可以向ReFS驱动程序发送该IOCTL，借此将文件的部分内容设置为幻象状态。此外，还可以通过I/O控制代码FSCTL_QUERY_GHOSTED_ FILE_EXTENTS查询文件处于幻象状态的范围。</p>
+<p class="zw">ReFS通过将新的状态信息直接存储在文件范围表中而实现了幻象文件，如上文所述，文件范围表是通过文件记录中嵌入的表实现的。过滤器驱动程序可以为文件的每个范围（必须与簇对齐）设置幻象状态。当ReFS驱动程序拦截了针对幻象范围的读取请求时，会向调用方返回错误代码STATUS_GHOSTED，随后过滤器驱动程序即可拦截读取操作，并将其重定向至适当的位置（如在上文的例子中，会被重定向至云服务）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"bfef1a76-a058-4e31-96a2-fa59897a014e","id":"ef9129c7-0b9b-42f0-821a-307acd7714c9"}</p>

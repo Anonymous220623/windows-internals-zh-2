@@ -1,0 +1,7 @@
+<h3 class="bt3" id="sigil_toc_id_126">10.2.4　服务控制程序</h3>
+<p class="zw">正如“服务应用程序”一节所述，服务控制程序（Service Control Program，SCP）是一种标准的Windows应用程序，它调用了SCM服务管理函数，包括CreateService、OpenService、StartService、ControlService、QueryServiceStatus以及DeleteService。要使用SCM函数，SCP必须首先打开到SCM的通信通道，为此需要调用OpenSCManager函数以指定自己要执行的操作类型。举例来说，如果一个SCP只是想要枚举并显示SCM数据库中存在的服务，即可在调用OpenSCManager时请求“枚举服务访问”。在初始化过程中，SCM会创建一个代表SCM数据库的内部对象，并使用Windows安全功能借助安全描述符保护该对象，安全描述符中指定了哪些账户能以怎样的权限打开该对象。例如，安全描述符可以指定：仅Authenticated Users组可以用“枚举服务访问”权限打开SCM对象。不过仅管理员可以用创建或删除服务的权限打开该对象。</p>
+<p class="zw">与在SCM数据库中的做法类似，SCM也为服务本身实现了安全性。当SCP使用CreateService函数创建服务时，会指定一个安全描述符，借此在内部将SCM与服务数据库中的服务项关联在一起。SCM会在服务的注册表键中使用Security值存储安全描述符，并会在初始化过程中扫描注册表的Services键时读取该值，这样即使系统重启动，也可以应用相同的安全设置。就像SCP必须在调用OpenSCManager时指定自己对SCM数据库进行何种类型的访问一样，SCP在调用OpenService时也必须告诉SCM自己想要如何访问服务。SCP可以请求的访问包括查询服务状态，以及配置、停止、启动服务。</p>
+<p class="zw">大家最熟悉的SCP可能就是Windows自带的“服务”MMC管理单元，该管理单元位于%SystemRoot%\System32\Filemgmt.dll中。Windows还提供了Sc.exe（服务控制工具），这个命令行版本的服务控制程序已经在上文中多次提到了。</p>
+<p class="zw">SCP有时会在SCM实现的基础上使用分层的服务策略。例如在服务以手动方式启动时，“服务”MMC管理单元所实现的超时机制。该管理单元会显示一个表示服务启动状态的进度条。当服务响应SCM命令（如启动命令）时，会设置能反映自己进度的配置状态，借此实现与SCP的间接交互。SCP可使用QueryServiceStatus函数查询该状态，借此即可确定一个服务是在积极更新自己的状态，还是已经挂起了，而SCM可以酌情采取措施通知用户一个服务当前正在做什么。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"257dab0f-4486-4637-8e52-20c15bba50f1"}</p>

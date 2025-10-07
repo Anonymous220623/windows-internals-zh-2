@@ -1,0 +1,5 @@
+<h2 class="bt2" id="sigil_toc_id_139"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 10.3　任务计划和UBPM</h2>
+<p class="zw">随着操作系统的功能逐渐复杂化，很多原本负责管理托管任务或后台任务的Windows组件（如上文介绍的服务控制管理器，以及DCOM服务器启动器和WMI提供程序）都开始负责执行进程外托管代码。虽然现代版本Windows会使用后台代理基础架构（background broker infrastructure）管理现代应用程序的大部分后台任务（详见第8章），但任务计划程序（task scheduler）依然是管理Win32任务的主要组件。Windows实现了一个统一后台进程管理器（Unified Background Process Manager，UBPM），由它处理任务计划程序所管理的任务。</p>
+<p class="zw">任务计划程序服务实现于Schedsvc.dll库中，通过一个共享的Svchost进程运行。任务计划程序服务维护了任务数据库并托管了UBPM，UBPM则负责启动和停止任务，并管理任务的操作和触发器。当生成了任务触发器后，UBPM可使用由桌面活动代理（Desktop Activity Broker，DAB）、系统事件代理（System Events Broker，SEB）以及资源管理器（resource manager）提供的服务接收相关通知（DAB和SEB都托管于系统事件代理服务中，而资源管理器托管于代理基础架构服务中）。任务计划程序和UBPM都通过RPC提供了公开的接口。外部应用程序可以使用COM对象附加至这些接口并与常规Win32任务交互。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"162693e7-e7e7-41c7-8477-5ccbc444fdec","id":"30d37bf5-6705-42ec-a13a-437f2515e861"}</p>

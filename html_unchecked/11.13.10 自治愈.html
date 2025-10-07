@@ -1,0 +1,35 @@
+<h3 class="bt3" id="sigil_toc_id_286">11.13.10　自治愈</h3>
+<p class="zw">面对如今容量高达数TB的存储设备，将卷脱机进行一致性检查可能会导致重要服务中断长达数小时。鉴于很多磁盘损坏仅局限于一个文件或元数据的一小部分，NTFS实现了一种自治愈功能，可以在卷保持联机的状态修复损坏。在NTFS检测到损坏后，会阻止访问已损坏的文件并创建一个系统工作线程，借此对损坏的数据结构执行类似Chkdsk的修复，并在修复完成后恢复文件的访问。在上述过程中，依然可以正常访问其他文件，借此最大限度避免服务中断。</p>
+<p class="zw">我们可以使用fsutil repair set命令查看并设置卷的修复选项，具体选项如表11-12所示。Fsutil工具使用FSCTL_SET_REPAIR文件系统控制代码设置这些选项，这些选项会保存在卷的VCB中。</p>
+<p class="表题">表11-12　NTFS自治愈行为</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">标记</p> </th> 
+   <th> <p class="bt">行为</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SET_REPAIR_ENABLED</p> </td> 
+   <td> <p class="bg">为卷启用自治愈</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SET_REPAIR_WARN_ABOUT_<br> DATA_LOSS</p> </td> 
+   <td> <p class="bg">如果自治愈过程无法完全恢复文件，则指定是否向用户展示可视化警报</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SET_REPAIR_DISABLED_AND _BUGCHECK_ON_CORRUPTION</p> </td> 
+   <td> <p class="bg">如果使用fsutil behavior set NtfsBugCheckOnCorrupt 1设置NTFS的NtfsBugCheckOnCorrupt注册表值，并且该标记已设置，系统将以STOP代码0x24崩溃，借此代表文件系统损坏。为避免陷入重启动循环，该设置会在系统启动时自动清除</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">在所有情况，包括可视化警报被禁用（默认设置）的情况下，NTFS会将自己执行的所有自治愈操作记录到System事件日志中。</p>
+<p class="zw">除了定期自动进行自治愈，NTFS还支持通过FSCTL_INITIATE_REPAIR和FSCTL_ WAIT_FOR_REPAIR控制代码手动发起自治愈过程（此类自治愈操作也叫主动自治愈），该过程可通过fsutil repair initiate命令和fsutil repair wait命令启动。这样，用户即可强制修复特定的文件，并等待文件修复操作执行完毕。</p>
+<p class="zw">要检查自治愈机制的状态，可使用FSCTL_QUERY_REPAIR控制代码或使用fsutil repair query命令：</p>
+<pre class="代码无行号"><code>C:\&gt;fsutil repair query c: 
+Self healing state on c: is: 0x9
+　
+ Values: 0x1 - Enable general repair. 
+         0x9 - Enable repair and warn about potential data loss. 
+        0x10 - Disable repair and bugcheck once on first corruption. </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":9,"parentId":"244f39ce-6f59-4168-9f84-d031b04d0916","id":"17dad3d3-ccd4-4c00-a0e4-4835deca34b7"}</p>

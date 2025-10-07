@@ -1,0 +1,10 @@
+<h3 class="bt3" id="sigil_toc_id_132">10.2.10　服务故障</h3>
+<p class="zw">服务的注册表键中可能包含可选的FailureActions值和FailureCommand值，SCM会在服务的启动过程中记录这些值。SCM会与系统注册，这样，当服务进程退出时，系统就会向SCM发出信号。当服务进程意外终止时，SCM会判断该进程中运行了哪些服务，并采取与故障相关的注册表值所指定的恢复步骤。此外，服务不仅会因为崩溃或意外终止而出现故障，其他问题（如内存泄漏）也可能导致服务出现故障。</p>
+<p class="zw">如果服务进入SERVICE_STOPPED状态并且返回给SCM的错误代码并非ERROR_ SUCCESS，SCM会检查该服务是否设置了FailureActionsOnNonCrashFailures标记，并会像服务崩溃后那样执行相同的恢复操作。为了使用该功能，必须通过ChangeServiceConfig2 API配置服务，系统管理员也可以使用Sc.exe工具配合Failureflag参数将FailureActionsOnNonCrashFailures设置为1。如果使用默认值0，SCM将继续为所有其他服务沿袭旧版本Windows中相同的行为。</p>
+<p class="zw">服务可以为SCM配置的操作包括重启动服务、运行某个程序、重启动计算机。此外，服务还可以分别为第一次、第二次和后续的失败指定不同的恢复操作。如果需要重启动服务，还可以让SCM在重启动之前等待一定的时间。我们可以在服务MMC控制台中使用服务“属性”对话框的“恢复”选项卡灵活设置恢复选项，如图10-21所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2046.png" style="width: 100%" />
+<p class="图题">图10-21　服务恢复选项</p>
+<p class="zw">请注意，如果下一个恢复操作是重启动计算机，那么在启动服务后，SCM会使用ProcessBreakOnTermination信息类调用NtSetInformationProcess原生API，将服务的托管进程标记为关键进程。如果关键进程意外终止，会导致系统崩溃并进行CRITICAL_PROCESS_ DIED这个Bug检查（详见卷1第2章）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":9,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"1436c0b0-14ff-4b91-a40e-604339aedbed"}</p>

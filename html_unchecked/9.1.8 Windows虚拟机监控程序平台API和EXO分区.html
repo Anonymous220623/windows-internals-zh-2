@@ -1,0 +1,34 @@
+<h3 class="bt3" id="sigil_toc_id_77">9.1.8　Windows虚拟机监控程序平台API和EXO分区</h3>
+<p class="zw">Windows正在越来越多地将Hyper-V虚拟机监控程序用在与传统的虚拟机运行无关的其他功能中。尤其是，正如本章第二部分将要讨论的那样，作为现代Windows版本中一个重要的安全组件，VSM就可以利用虚拟机监控程序，为提供关键系统服务或处理密码等机密信息的功能实现更高程度的隔离。若要启用这些功能，计算机上必须默认运行了虚拟机监控程序。</p>
+<p class="zw">外部的虚拟化产品（如VMware、Qemu、VirtualBox、Android Emulator等）使用硬件提供的虚拟化扩展构建了自己的虚拟机监控程序，这也是此类产品正常运行所必需的。但这些虚拟机监控程序并不能兼容Hyper-V，Hyper-V需要在根分区中的Windows内核启动前就启动自己的虚拟机监控程序（Windows虚拟机监控程序是一种原生的，或“裸机”形式的虚拟机监控程序）。</p>
+<p class="zw">与Hyper-V类似，外部虚拟化解决方案也由虚拟机监控程序和虚拟化栈组成，其中虚拟机监控程序为处理器的执行和虚拟机的内存管理提供底层抽象，虚拟化栈则包含虚拟化解决方案为虚拟机提供模拟环境所需的组件（如虚拟机的主板、固件、存储控制器、设备等）。</p>
+<p class="zw">Windows虚拟机监控程序平台API（详见https://docs.microsoft.com/virtualization/api/）的主要目标是在Windows虚拟机监控程序上运行第三方虚拟化解决方案。具体来说，第三方虚拟化产品应当能创建、删除、启动和停止虚拟机，而相关特征（固件、模拟设备、存储控制器）则由自己的虚拟化栈所定义。第三方虚拟化栈及其管理接口依然可以在根分区的Windows中运行，进而使其客户能照常使用自己的虚拟机。</p>
+<p class="zw">如图9-19所示，Windows虚拟机监控程序平台的所有API都运行在用户模式下，并通过WinHvPlatform.dll和WinHvEmulation.dll这两个库在VID与WinHvr驱动程序的基础上实现（后者实现了MMIO的指令模拟器）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1186.png" style="width: 100%" />
+<p class="图题">图9-19　Windows虚拟机监控程序平台API架构</p>
+<p class="zw">用户模式应用程序通常可按照下列流程创建虚拟机及相关的虚拟处理器。</p>
+<p class="zw">1）使用WHvCreatePartition API在VID库（Vid.dll）中创建分区。</p>
+<p class="zw">2）使用WHvSetPartitionProperty API配置各种内部分区属性（如虚拟处理器数量、APIC仿真模式、请求的VMEXIT种类等）。</p>
+<p class="zw">3）使用WHvSetupPartition API在VID驱动程序和虚拟机监控程序中创建分区（虚拟机监控程序中的此类分区也叫作EXO分区，下文很快将会介绍）。该API还可创建分区的虚拟处理器，创建的虚拟处理器将处于暂停状态。</p>
+<p class="zw">4）使用WHvCreateVirtualProcessor API在VID库中创建相应的虚拟处理器。这一步很重要，因为该API设置了一个消息缓冲区并将其映射到用户模式应用程序，借此才能在虚拟机监控程序与运行虚拟CPU的线程之间实现异步通信。</p>
+<p class="zw">5）通过经典的VirtualAlloc函数（详见本书卷1第5章）预留一个大范围的虚拟内存，借此分配分区所需的地址空间，该空间还会通过WHvMapGpaRange API在虚拟机监控程序中进行映射。在客户机虚拟地址空间中分配客户机物理内存时，可提交保留虚拟内存的不同范围，借此为客户机物理内存提供更细化的保护。</p>
+<p class="zw">6）创建页表并复制已提交内存中的初始固件代码。</p>
+<p class="zw">7）使用WHvSetVirtualProcessorRegisters API设置初始虚拟处理器的寄存器内容。</p>
+<p class="zw">8）调用WHvRunVirtualProcessor阻止API来运行虚拟处理器。只有当客户机代码执行的操作需要在虚拟化栈中处理时（虚拟机监控程序中的VMEXIT明确要求由第三方虚拟化栈来管理），或者出现了外部请求时（如销毁虚拟处理器），该函数才会返回。</p>
+<p class="zw">只有当注册表中的HKLM\System\CurrentControlSet\Services\Vid\Parameters\ ExoDeviceEnabled值被设置为1时，Windows虚拟机监控程序平台API通常才能向\Device\ VidExo设备对象（由VID驱动程序在初始化时创建）发送不同IOCTL，进而调用虚拟机监控程序的不同服务，否则系统不会启用对虚拟机监控程序API的支持。</p>
+<p class="zw">一些对性能敏感的虚拟机监控程序平台API（如WHvRun VirtualProcessor）甚至可以直接从用户模式调用虚拟机监控程序，这要归功于Doorbell页，这是一种特殊但无效的客户机物理页，访问这种页面时始终会导致VMEXIT。Windows虚拟机监控程序平台API可通过VID驱动程序获得Doorbell页的地址，并且每次从用户模式发起虚拟化调用时，还会写入Doorbell页。由于Doorbell页的物理地址会在SLAT页表中标记为“特殊”，因此所产生的错误能被虚拟机监控程序识别并准确处理。虚拟机监控程序可以像处理常规虚拟化调用那样，从虚拟处理器的寄存器中读取虚拟化调用的代码和参数，并最终将执行转移至虚拟化调用的处理例程。当后者执行完毕后，虚拟机监控程序最终会执行VMENTRY，并落在产生错误的指令之后。这样可以为支撑客户机虚拟处理器的线程节约大量时钟周期，因为不再需要进入内核来发出虚拟化调用。此外，VMCALL和类似的操作码始终需要内核特权才能执行。</p>
+<p class="zw">新的第三方虚拟机的虚拟处理器是通过根调度器调度的。如果根调度器被禁用，虚拟机监控程序平台API的任何功能都将无法运行。虚拟机监控程序中创建的分区属于EXO分区。EXO分区是一种最小化分区，其中不包含任何综合功能，并且具备一些非常适合用于创建第三方虚拟机的特征。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 总是由VA进行支持（有关VA支持的虚拟机，即微型虚拟机的详情请参阅本章下文“虚拟化栈”一节）。分区的内存承载进程是一种用户模式应用程序，创建的是虚拟机，而非VMMEM进程的新实例。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 它们不具备任何分区特权，也不支持0级之外的其他VTL（Virtual Trust Level，虚拟信任级别）。所有传统分区的特权都需要引用综合函数，这些函数通常由虚拟机监控程序暴露给Hyper-V虚拟化栈。EXO分区是供第三方虚拟化栈使用的，因此不需要传统分区特权所提供的任何函数。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 需要手动管理时间。虚拟机监控程序未向EXO分区提供任何虚拟时钟中断源，第三方虚拟化栈必须自行提供。这意味着每次试图读取虚拟处理器的时间戳计数器都会导致在虚拟机监控程序中产生VMEXIT，借此将拦截路由至运行该虚拟处理器的用户模式线程。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　与传统的虚拟机监控程序分区相比，EXO分区还包括一些细微差别。不过这些差别与我们讨论的内容无关，因此本书并未涉及。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"ea2ec385-5fa3-4b0f-b598-9bcb1e169157","id":"f6077836-851b-4d33-b57d-930f99b84d9c"}</p>

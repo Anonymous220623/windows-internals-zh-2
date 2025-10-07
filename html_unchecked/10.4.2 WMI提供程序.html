@@ -1,0 +1,39 @@
+<h3 class="bt3" id="sigil_toc_id_145">10.4.2　WMI提供程序</h3>
+<p class="zw">WBEM的核心是DMTF设计的CIM规范。CIM决定了管理系统如何从系统管理的角度呈现从计算机到应用程序，再到计算机上的设备等一切内容。提供程序的开发者可以使用CIM呈现想要管理的应用程序的组成部件。开发者可以使用托管对象格式（Managed Object Format，MOF）语言来实现CIM的呈现结果。</p>
+<p class="zw">除了定义表示对象的类外，提供程序还必须通过接口将WMI与对象连接起来。WMI根据所提供的功能对提供程序进行了分类。表10-14列出了WMI提供程序的不同类别。请注意，一个提供程序可以实现一个或多个功能，因此举例来说，提供程序既可以是类，也可以是事件提供程序。为了澄清表10-14定义的功能，一起先来看看一个实现了多个功能的提供程序。事件日志（event log）提供程序支持多种对象，包括Event Log Computer（事件日志计算机）、Event Log Record（事件日志记录），以及Event Log File（事件日志文件）。事件日志是一种实例提供程序，因为它可以为自己的多个类定义多个实例。例如Event Log File类（Win32_NTEventlogFile）就是事件日志提供程序定义的多种实例中的一个类；事件日志提供程序为系统的每个事件日志（即系统事件日志、应用程序事件日志以及安全事件日志）都定义了类的一个实例。</p>
+<p class="表题">表10-14　提供程序的分类</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">分类</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">类（Class）</p> </td> 
+   <td> <p class="bg">可提供、修改、删除、枚举一个提供程序特定的类，也可支持查询处理。活动目录是一种以服务作为类提供程序的罕见例子</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">实例（Instance）</p> </td> 
+   <td> <p class="bg">可提供、修改、删除、枚举系统和提供程序特定类的实例，实例代表一种托管对象，也可支持查询处理</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">属性（Property）</p> </td> 
+   <td> <p class="bg">可提供和修改个别的对象属性值</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">方法（Method）</p> </td> 
+   <td> <p class="bg">为提供程序特定的类提供了方法</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">事件（Event）</p> </td> 
+   <td> <p class="bg">生成事件通知</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">事件使用方（Event consumer）</p> </td> 
+   <td> <p class="bg">将物理使用方映射到逻辑使用方，为事件通知提供支持</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">事件日志提供程序定义了实例数据，并让管理应用程序能够枚举记录。为了让管理应用程序使用WMI备份并还原事件日志文件，事件日志提供程序为Event Log File对象实现了备份和还原方法。这样，事件日志提供程序就成了一种方法提供程序。最后，管理应用程序注册后，还可在事件日志中写入了新记录后收到通知。因此，当事件日志提供程序使用WMI事件通知的方式告知“WMI事件日志记录已抵达”时，它就成了一种事件提供程序。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"ec163a78-fcab-4693-8b52-1929b927085a","id":"a620967e-8c62-44d0-a0f2-ac0d33124b34"}</p>

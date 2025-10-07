@@ -1,0 +1,40 @@
+<h3 class="bt3" id="sigil_toc_id_156">10.5.6　事件的消费</h3>
+<p class="zw">ETW中的事件消费几乎完全是由用户模式下的消费者应用程序负责的，这其中也用到了Sechost.dll提供的服务。消费者应用程序会使用OpenTrace API打开主记录器线程生成的ETL日志文件，或通过该API与实时记录器建立连接。应用程序可指定事件回调函数，随后在ETW消费了一个事件后，都会调用该回调函数。此外，对于实时会话，应用程序还可以提供可选的缓冲区回调函数，该函数可在ETW每次刷新缓冲区后接收统计信息，并在每次有一个缓冲区被写满并交付给消费者时调用。</p>
+<p class="zw">实际的事件消费操作是由ProcessTrace API发起的。该API适用于标准会话和实时会话，具体模式取决于之前传递给OpenTrace的日志文件模式标记。</p>
+<p class="zw">对于实时会话，该API会使用内核模式服务（可通过NtTraceControl系统调用访问）验证ETW会话是实时会话。NT内核会验证ETW会话的安全描述符是否向调用方进程的令牌授予了TRACELOG_ACCESS_REALTIME访问权限。如果不具备这个权限，则该API将失败并向控制器应用程序报错。否则会分配一个临时的用户模式缓冲区和位图，借此接收事件并连接到主记录器线程（该线程创建了相关的EtwConsumer对象，详见上文“ETW记录器线程”一节）。连接建立后，该API会等待来自会话记录器线程的新数据。数据抵达后，该API会枚举每个事件并调用事件回调。</p>
+<p class="zw">对于常规的非实时ETW会话，将由ProcessTrace API执行类似的处理，但并不需要连接到记录器线程，只需要打开并解析ETL日志文件，逐个读取缓冲区并为找到的每个事件调用事件回调（事件会按时间先后顺序排序）。与每次只能消费一个事件的实时记录器不同，非实时情况下，API甚至可以与OpenTrace API创建的多个跟踪处理程序一同工作，这意味着可以解析来自不同ETL日志文件的事件。</p>
+<p class="zw">使用循环缓冲区的ETW会话所产生的事件并不使用上述方法处理（此时并不存在负责转储事件的记录器线程）。通常情况下，当控制器应用程序希望将配置为循环缓冲区的ETW会话的当前缓冲区快照转储为日志文件时，会使用FlushTrace API。该API可通过NtTraceControl系统调用来调用NT内核，借此定位ETW会话并验证其安全描述符为调用方进程的访问令牌授予了TRACELOG_CREATE_ONDISK访问权限。如果一切正常，并且控制器应用程序指定了有效的日志文件名，则NT内核会调用内部EtwpBufferingModeFlush例程，借此创建新的ETL文件，添加适当的文件头，并写入与该会话相关的所有缓冲区。随后消费者应用程序即可按照上文描述的方式，使用OpenTrace和ProcessTrace API解析新日志文件中写入的事件。</p>
+<h4 class="bt4 sigil_not_in_toc">事件解码</h4>
+<p class="zw">当ProcessTrace API检测到ETW缓冲区中出现新事件后，会调用通常位于消费者应用程序中的事件回调。为了正确处理事件，消费者应用程序还需要解码事件载荷。事件跟踪解码助手库（TDH.dll）为消费者应用程序提供了解码事件所需的一系列服务。如上文所述，提供程序（或驱动程序）应包含相关信息，这些信息描述了该如何解码已注册提供程序所生成的事件。</p>
+<p class="zw">根据提供程序类型的不同，这些信息的编码方式各异。例如，基于清单的提供程序会将事件的XML描述符编译为二进制文件，并将其存储在它们的提供程序（或驱动程序）的资源节中。在提供程序注册过程中，需要由安装程序在HKLM\SOFTWARE\Microsoft\ Windows\CurrentVersion\WINEVT\Publishers注册表键下注册提供程序的二进制文件。这对事件解码很重要，特别是出于下列原因。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 当系统需要将提供程序的名称解析为对应的GUID时，需要查询Publishers键（从ETW的角度来看，提供程序并不需要具备名称）。这样即可让Xperf之类的工具能够显示更易读的提供程序名称，而非GUID。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 跟踪解码助手库会查询该键以检索提供程序的二进制文件，解析其资源节，并读取事件描述符的二进制内容。</p>
+<p class="zw">在获得事件描述符后，跟踪解码助手库就通过解析二进制描述符获得了解码事件所需的全部信息，进而可以让消费者应用程序使用TdhGetEventInformation API获取事件载荷所包含的全部字段，并正确解读其中关联的所有数据。TDH为MOF和WPP提供程序采取了类似过程（TraceLogging会将所有解码数据纳入载荷中，并使用标准的二进制格式）。</p>
+<p class="zw">请注意，所有事件都会被ETW以原生形式存储在ETL日志文件中，该文件采用了一种明确定义的未压缩二进制格式，其中不包含事件解码信息。这意味着如果ETL文件被另一个未获得跟踪结果的系统打开，则很可能将无法解码事件。为解决这些问题，事件查看器使用了另一种二进制格式，即EVTX。该格式包含所有事件及其解码信息，可被其他应用程序更轻松地解析。应用程序可以使用EvtExportLog这个Windows事件日志API，将ETL文件中包含的事件及其解码信息保存为EVTX文件。</p>
+<p class="zwtsh">实验：解码ETL文件</p>
+<p class="zwts1">Windows自带的多个工具可使用EvtExportLog API自动转换ETL日志文件并包含所有解码信息。在这个实验中，我们将使用netsh.exe，但TraceRpt.exe也有类似功能。</p>
+<p class="zwts1">1）打开命令提示符窗口并进入上一个实验（“使用ETW列出进程活动”实验）生成的ETL文件所在目录，输入：</p>
+<pre class="代码无行号"><code>netsh trace convert input=process_trace.etl output=process_trace.txt dump=
+txt overwrite=yes </code></pre>
+<p class="zwts1">2）其中process_trace.etl是输入日志文件的名称，process_trace.txt是解码后的输出文件的名称。</p>
+<p class="zwts1">3）打开该文本文件即可看到解码后的事件（一行一个事件）及其描述，例如：</p>
+<pre class="代码无行号"><code>[2]1B0C.1154::2020-05-01 12:00:42.075601200 [Microsoft-Windows-Kernel-Process]
+Process 1808 started at time 2020 - 05 - 01T19:00:42.075562700Z by parent 6924 running
+in session 1 with name \Device\HarddiskVolume4\Windows\System32\notepad.exe. </code></pre>
+<p class="zwts1">4）从日志中可以看到，可能有少数事件不能完整解码或不包含任何描述。这是因为提供程序清单未包含所需信息（例如ThreadWorkOnBehalfUpdate事件）。为了排除这</p>
+<p class="zwts1">些事件，可以获取不包含响应关键字的跟踪。事件关键字存储在CSV或EVTX文件中。</p>
+<p class="zwts1">5）使用netsh.exe通过下列命令生成EVTX文件：</p>
+<pre class="代码无行号"><code>netsh trace convert input=process_trace.etl output=process_trace.evtx dump=evtx 
+overwrite=yes </code></pre>
+<p class="zwts1">6）打开事件查看器，在左侧的控制台树窗格中，右键点击“<strong style="color:#0092dd">事件查看器（本地）</strong>”根节点，选择“<strong style="color:#0092dd">打开保存的日志</strong>”，选择刚创建的process_trace.evtx文件并点击打开。</p>
+<p class="zwts1">7）在打开保存的日志窗口中为该日志设置一个名称，选择要显示到的文件夹（本例使用了默认名称process_trace以及默认的Saved Logs文件夹）。</p>
+<p class="zwts1">8）随后事件查看器应该会显示该日志文件中的每条事件。点击“<strong style="color:#0092dd">日期和时间</strong>”列可以按照日期和时间以降序排列所有事件（从最老的到最新的）。请使用Ctrl+F搜索ProcessStart，找到代表Notepad.exe进程成功创建的事件。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2853.png" style="width: 100%" />
+<p class="zwts1">9）ThreadWorkOnBehalfUpdate事件不包含人工易读的描述，因为噪声太多，因此可以将其从跟踪中排除。如果点击一个此类事件并打开“<strong style="color:#0092dd">详细信息</strong>”选项卡，随后在System节点下应该可以看到该事件属于WINEVENT_KEYWORD_WORK_ON_BEHALF类别，其关键字位掩码被设置为0x8000000000002000（请注意，关键字的最高16位是为微软定义的类别保留的）。64位0x8000000000002000值的Bitwise NOT（非）运算结果为0x7FFFFFFFFFFFDFFF。</p>
+<p class="zwts1">10）关闭事件查看器，通过XPERF使用下列命令捕获另一个跟踪：</p>
+<pre class="代码无行号"><code>xperf -start TestSession -on Microsoft-Windows-Kernel-Process:0x7FFFFFFFFFFFDFFF 
+-f c:\process_trace.etl </code></pre>
+<p class="zwts1">11）打开注册表或其他应用程序，随后停止跟踪，具体操作可参阅“使用ETW列出进程活动”实验。将ETL文件转换为EVTX。这次获得的解码后日志文件应该小很多，并且其中不包含ThreadWorkOnBehalfUpdate事件。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"0a817dad-0fff-43aa-90f7-5114d262a9ee","id":"99a430c0-4952-4873-a778-aeec5ed77f7d"}</p>

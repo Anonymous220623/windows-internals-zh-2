@@ -1,0 +1,46 @@
+<h2 class="bt2" id="sigil_toc_id_166"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 10.8　全局标记</h2>
+<p class="zw">Windows在NtGlobalFlag和NtGlobalFlag2这两个系统级全局变量中存储了一系列标记，这些标记可用于操作系统的内部调试、跟踪和验证支持等工作中。这两个系统变量是在系统启动过程中（NT内核初始化阶段0）通过注册表键HKLM\SYSTEM\CurrentControlSet\ Control\Session Manager下的GlobalFlag和GlobalFlag2值初始化而来的。默认情况下，这两个注册表值均为0，因此大家的系统很可能并未使用任何全局标记。此外，每个映像也有一组可用于开启内部跟踪和验证代码的全局标记（不过这些标记的位布局可能与系统级全局标记有些许差异）。</p>
+<p class="zw">幸好调试工具包含一个名为Gflags.exe的工具，我们可以用它来查看并更改系统全局标记（可在注册表或运行中的系统内更改）和映像全局标记。Gflags同时提供了命令行和GUI界面。要查看命令行标记，请运行gflags /?。如果在不指定任何开关的情况下运行该工具，则可以看到如图10-46所示的对话框。</p>
+<p class="zw">Windows全局标记中包含的标记可分为下列几个类别。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 内核标记，由NT内核的不同组件（堆管理器、异常、中断处理程序等）直接处理。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3966.png" style="width: 100%" />
+<p class="图题">图10-46　使用Gflags设置系统调试选项</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 用户标记，由用户模式应用程序中运行的组件（通常为Ntdll）处理。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 仅启动标记，只在系统启动过程中处理。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 每映像文件全局标记（与其他标记的含义略有差异），由加载器、WER以及用户模式的其他组件处理，主要取决于运行映像文件的用户模式进程上下文。</p>
+<p class="zw">Gflags工具显示的标签页名称有些误导性，每个标签页上的内核标记、仅启动标记以及用户标记都被混在一起显示了。这几个标签页的最大不同在于，System Registry页可供用户针对GlobalFlag和GlobalFlag2注册表值设置全局标记，这些标记会在系统启动时进行解析。这意味着只有在系统重启动后，最终的新标记才得以启用。Kernel Flags页虽然名字中带有“Kernel”字样，但并不允许对运行中的系统即时应用内核标记。只有某些用户模式标记可以在无须重启动系统的情况下设置或移除（例如Enable page heap标记）。Gflags工具会使用NtSetSystemInformation原生API（配合SystemFlagsInformation信息类）来设置这些标记。但只有用户模式标记可以这样设置。</p>
+<p class="zwtsh">实验：查看并设置全局标记</p>
+<p class="zwts1">我们可以使用内核调试器的!gflag命令查看并设置NtGlobalFlag内核变量的状态。!gflag命令可列出已启用的全部标记。我们可以使用!gflag -?获取可支持的全局标记完整列表。截至撰写这部分内容，!gflag扩展尚未进行更新，无法显示NtGlobalFlag2变量的内容。</p>
+<p class="zw">Image File页需要填写可执行映像文件的文件名。通过该选项即可有针对性地更改特定的映像（而非整个系统）的全局标记。该页内容如图10-47所示。请注意，这里显示的标记与图10-46所示的操作系统标记有所不同。Image File和Silent Process Exit页中提供的大部分标记和设置都是通过在HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ Image File Execution Options注册表键（也叫IFEO键）下一个与映像文件（例如图10-47中所示的notepad.exe）同名的子键中保存新的值来获得应用的。尤其是GlobalFlag（以及GlobalFlag2）的值，代表了所有可用每映像全局标记的位掩码。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3973.png" style="width: 100%" />
+<p class="图题">图10-47　使用Gflags设置每映像全局标记</p>
+<p class="zw">当加载器初始化先前创建的新进程并加载主要基本可执行文件依赖的所有库（关于进程的诞生，详见卷&nbsp;1&nbsp;第&nbsp;3&nbsp;章）时，系统就会处理每映像的全局标记。内部例程LdrpInitializeExecutionOptions会根据基本映像的名称打开IFEO注册表键，并解析所有每映像设置和标记。尤其是，在从注册表获取了每映像全局标记后，它们会被存储到进程PEB的NtGlobalFlag（和NtGlobalFlag2）字段中，以便被进程中映射的任何映像（包括Ntdll）轻松访问。</p>
+<p class="zw">大部分可用的全局标记都有相关文档，详见https://docs.microsoft.com/windows- hardware/drivers/debugger/gflags-flag-table。</p>
+<p class="zwtsh">实验：Windows加载器故障排错</p>
+<p class="zwts1">在卷1第3章的“观察映像加载器”实验中，我们使用Gflags工具查看了Windows加载器运行时的信息。那些信息可以帮助我们理解某个应用程序为何完全不启动（未返回任何有用的错误信息）。我们可以重命名%SystemRoot%\system32下的Msftedit.dll文件（富文本编辑控件库），然后针对mspaint.exe重新执行该实验。实际上，MSPaint是间接依赖这个DLL的。Msftedit库由MSCTF.dll以动态的方式加载（并非静态链接至MSPaint的可执行文件）。请以管理员身份打开命令提示符窗口并运行下列命令：</p>
+<pre class="代码无行号"><code>cd /d c:\windows\system32 
+takeown /f msftedit.dll 
+icacls msftedit.dll /grant Administrators:F 
+ren msftedit.dll msftedit.disabled </code></pre>
+<p class="zwts1">随后使用Gflags工具启用Loader snaps，具体方法请参阅“观察映像加载器”实验。随后使用Windbg启动mspaint.exe，Loader snaps几乎会立即强调显示出遇到的问题，并返回下列文本：</p>
+<pre class="代码无行号"><code>142c:1e18 @ 00056578 - LdrpInitializeNode - INFO: Calling init routine 00007FFC79258820 for
+DLL "C:\Windows\System32\MSCTF.dll"142c:133c @ 00229625 - LdrpResolveDllName - ENTER: DLL 
+name: .\MSFTEDIT.DLL 
+142c:133c @ 00229625 - LdrpResolveDllName - RETURN: Status: 0xc0000135 
+142c:133c @ 00229625 - LdrpResolveDllName - ENTER: DLL name: C:\Program Files\Debugging Tools 
+for Windows (x64)\MSFTEDIT.DLL 
+142c:133c @ 00229625 - LdrpResolveDllName - RETURN: Status: 0xc0000135 
+142c:133c @ 00229625 - LdrpResolveDllName - ENTER: DLL name: C:\Windows\<br>system32\MSFTEDIT.DLL 
+142c:133c @ 00229625 - LdrpResolveDllName - RETURN: Status: 0xc0000135 
+. . . 
+C:\Users\test\AppData\Local\Microsoft\WindowsApps\MSFTEDIT.DLL 
+142c:133c @ 00229625 - LdrpResolveDllName - RETURN: Status: 0xc0000135 
+142c:133c @ 00229625 - LdrpSearchPath - RETURN: Status: 0xc0000135 
+142c:133c @ 00229625 - LdrpProcessWork - ERROR: Unable to load DLL: "MSFTEDIT.DLL", Parent 
+Module: "(null)", Status: 0xc0000135 
+142c:133c @ 00229625 - LdrpLoadDllInternal - RETURN: Status: 0xc0000135 
+142c:133c @ 00229625 - LdrLoadDll - RETURN: Status: 0xc0000135 </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"162693e7-e7e7-41c7-8477-5ccbc444fdec","id":"759856de-d2a1-4097-b593-488b3d50bd2e"}</p>

@@ -1,0 +1,95 @@
+<h3 class="bt3" id="sigil_toc_id_103">9.5.3　基于VBS的隔区</h3>
+<p class="zw">在卷1第5章，我们介绍了软件防护扩展（Software Guard Extension，SGX），这项硬件技术创建受保护的内存隔区（enclave），这种进程地址空间中的安全区域可以通过硬件为代码和数据提供保护（加密），防止受到隔区外部代码的影响。这项技术最早出现在第6代Intel酷睿处理器（Skylake）上，但当时存在一些问题而无法被广泛采用（AMD也提供了一种名为安全加密虚拟化的类似技术，但该技术无法兼容SGX）。</p>
+<p class="zw">为了解决这些问题，微软发布了基于VBS的隔区，这种安全隔区的隔离能力由VSM基础架构来保证。基于VBS的隔区中的代码和数据仅限隔区自己和VSM安全内核查看，NT内核、VTL 0进程以及系统中运行的安全Trustlet均无法访问。</p>
+<p class="zw">基于VBS的安全隔区是通过在常规进程中建立虚拟地址范围的方式创建的。在代码和数据载入隔区后，系统会通过安全内核将控制转移至隔区的入口点，借此即可首次进入该隔区。随后，安全内核首先会为隔区映像使用映像签名的验证机制来验证所有代码和数据是否都是真实的，并获得可在隔区中运行的授权。如果签名检查通过，随后的执行控制会被转移给隔区的入口点，该入口点可以访问隔区中的所有代码和数据。默认情况下，系统只支持执行带有正确签名的隔区。这样排除了未签名恶意软件在反恶意软件无法监控的系统中执行的可能性，毕竟反恶意软件是无法访问任何隔区中的内容的。</p>
+<p class="zw">执行过程中，控制权可在隔区及包含隔区的进程间来回转移。隔区内部执行的代码可访问隔区虚拟地址范围内的所有数据，此外，它还可以读取并写入包含隔区的不安全进程地址空间。包含隔区的进程无法访问隔区虚拟地址范围内的所有内存。如果一个托管进程包含多个隔区，那么每个隔区都将只能访问自己的内存以及托管进程所能访问的内存。</p>
+<p class="zw">对于硬件隔区，当代码在隔区中运行时，将获得一份隔区密封报告，第三方实体可以使用该报告来验证代码确保是在VBS隔区的隔离保障之下运行的。该报告还可用于验证所运行代码的具体版本。该报告包含了与宿主系统、隔区本身，以及隔区中可能已加载的所有DLL有关的信息。此外，还能通过相关信息了解隔区是否在启用调试功能的情况下运行。</p>
+<p class="zw">基于VBS的隔区以符合下列特征的DLL形式发布。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 通过Authenticode签名方式添加签名，其叶证书（leaf certificate）包含有效EKU，这样的映像才能作为隔区运行。发出数字证书的根信任机构应该是微软，或是由微软副署（countersigned）的证书清单所涵盖的第三方签名机构。这意味着第三方公司可以签名并运行自己的隔区。在有效的数字签名EKU方面，Windows内部签名隔区为IUM EKU (1.3.6.1.4.1.311.10.3.37)，所有第三方隔区为Enclave EKU (1.3.6.1.4.1.311.10.3.42)。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 包含一个隔区配置节（由IMAGE_ENCLAVE_CONFIG数据结构表示），该节描述了有关隔区的信息，会链接到隔区映像的加载配置数据目录中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 包含正确的控制流防护（CFG）检测。</p>
+<p class="zw">隔区的配置节很重要，其中包含正确运行和密封隔区所需的重要信息：具备唯一性的族ID和映像ID，它们由隔区的创建者指定，用于识别隔区的二进制文件、安全版本号以及隔区的策略信息（例如预期虚拟大小、可运行的线程数量最大值、隔区的可调试性）。此外，隔区的配置节还包含隔区可导入的映像列表及其标识信息。隔区的导入模块可通过族ID和映像ID的组合来识别，或可通过所生成的唯一ID（从二进制文件的哈希值开始计算而来）以及作者ID（通过为隔区签名所用的证书派生而来）的组合来识别（这个组合可以代表创建该隔区的人的身份）。导入模块的标识符还必须包含最小的安全版本号。</p>
+<p class="zw">安全内核通过VBS隔区运行时DLL（Vertdll.dll）为隔区提供了一些基础的系统服务，该DLL会映射至隔区的地址空间。这些服务包括标准C运行时库的有限子集、在隔区地址范围内分配或释放安全内存的能力、同步服务、结构化异常处理支持、基础的密码学加密函数，以及密封数据的能力。</p>
+<p class="zwtsh">实验：转储隔区配置</p>
+<p class="zwts1">在这个实验中，我们将使用Windows SDK和WDK中提供的Microsoft Incremental linker（link.exe）工具转储软件隔区配置数据。这些软件包均可从网上下载。此外，我们也可以使用EWDK，其中已经包含所有必要的工具，并且无须安装。EWDK的下载地址：https://docs.microsoft.com/windows-hardware/drivers/download-the-wdk。</p>
+<p class="zwts1">请通过搜索框打开Visual Studio Developer Command Prompt，或执行EWDK的ISO映像中包含的LaunchBuildEnv.cmd脚本文件。我们将使用<strong>link.exe /dump/loadconfig</strong>命令分析System Guard Routine Attestation这个隔区的配置数据，如图9-40所示。下文还将详细介绍这些配置数据。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2610.png" style="width: 100%" />
+<p class="zwts1">上述命令的输出结果很长，因此在如图所示的范例中，我们已将输出结果重定向到SgrmEnclave_secure_loadconfig.txt文件中。打开新创建的输出文件后，可以看到该二进制映像包含一个CFG表以及一个有效的隔区配置指针，该指针指向了下列数据。</p>
+<pre class="代码无行号"><code>Enclave Configuration 
+　
+             00000050 size 
+             0000004C minimum required config size 
+             00000000 policy flags 
+             00000003 number of enclave import descriptors 
+             0004FA04 RVA to enclave import descriptors 
+             00000050 size of an enclave import descriptor 
+             00000001 image version 
+             00000001 security version 
+     0000000010000000 enclave size 
+             00000008 number of threads 
+             00000001 enclave flags 
+　
+             family ID : B1 35 7C 2B 69 9F 47 F9 BB C9 4F 44 F2 54 DB 9D 
+              image ID : 24 56 46 36 CD 4A D8 86 A2 F4 EC 25 A9 72 02 
+　
+ucrtbase_enclave.dll 
+　
+              0 minimum security version 
+              0 reserved 
+　
+                match type : image ID 
+                 family ID : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+                  image ID : F0 3C CD A7 E8 7B 46 EB AA E7 1F 13 D5 CD DE 5D 
+          unique/author ID : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+                             00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+　
+bcrypt.dll 
+                0 minimum security version 
+                0 reserved 
+　
+                  match type : image ID 
+                   family ID : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+                    image ID : 20 27 BD 68 75 59 49 B7 BE 06 34 50 E2 16 D7 ED
+            unique/author ID : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+                               00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+     ... </code></pre>
+<p class="zwts1">配置节包含了二进制映像的隔区数据（如族ID、映像ID以及安全版本号）和导入描述符数组，借此可向安全内核告知主隔区的二进制文件可以安全地依赖哪些库。我们可以对Vertdll.dll库以及从System Guard Routine Attestation隔区导入的所有二进制文件重做该实验。</p>
+<h4 class="bt4 sigil_not_in_toc">隔区生命周期</h4>
+<p class="zw">我们在卷&nbsp;1&nbsp;第&nbsp;5&nbsp;章讨论了硬件隔区（基于&nbsp;SGX）的生命周期。VBS&nbsp;隔区的生命周期与其类似，微软进一步增强了原有的隔区&nbsp;API，借此为基于&nbsp;VBS&nbsp;的新隔区类型提供支持。</p>
+<p class="zw"><strong style="color:#0092dd">步骤</strong>1：创建。应用程序通过向CreateEnclave API指定ENCLAVE_TYPE_VBS标记来创建基于VBS的隔区。调用方应当指定一个所有者ID以识别隔区所有者。隔区会像硬件隔区那样创建代码，最终调用内核中的NtCreateEnclave。后者会检查参数，复制传入的结构，并附加到目标进程（以防隔区被创建到不同于调用方的另一个进程中）。MiCreateEnclave函数分配一个隔区类型的VAD，借此描述隔区的虚拟内存范围并选择一个基准虚拟地址（如果调用方未指定）。内核分配内存管理器的VBS隔区数据结构和每处理器隔区哈希表，这些信息将用于快速查找以特定编号开始的隔区。如果这是进程中创建的第一个隔区，系统还会使用CREATE _PROCESS安全调用在VTL 1下创建一个充当隔区容器的空的安全进程（详见上文“Trustlet的创建”一节）。</p>
+<p class="zw">VTL 1中的CREATE_ENCLAVE安全调用处理程序将执行隔区创建的实际工作：分配安全隔区密钥数据结构（SKMI_ENCLAVE），设置对容器安全进程（之前由NT内核创建）的引用，并创建描述整个隔区虚拟地址空间的安全VAD（安全VAD包含与VTL 0中的等效项类似的信息）。该VAD会被插入包含进程的VAD树（而非隔区本身）。另外，还会像对待包含进程那样为隔区创建一个空的虚拟地址空间：页表根仅由系统项填充。</p>
+<p class="zw"><strong style="color:#0092dd">步骤</strong>2：将模块载入隔区。基于硬件的隔区中，父进程只能将模块（而非任意数据）载入隔区。这会导致映像的每个页面被复制到VTL 1中的地址空间。VTL 1隔区中每个映像的页面都是一个私有副本。隔区中需要加载至少一个模块（充当模块主映像），否则隔区将无法初始化。而VBS隔区创建完毕后，应用程序将调用LoadEnclaveImage API，指定隔区基址和必须载入隔区的模块名称。位于Ntdll.dll中的Windows加载器代码将搜索指定的DLL名称，打开并验证其二进制文件，创建一个在调用过程中以只读访问权限映射的节对象。</p>
+<p class="zw">加载器映射该节后，会解析映像的导入地址表，这是为了创建依赖模块（导入、延迟加载以及转发的模块）列表。对于找到的每个模块，加载器会检查隔区中是否有足够的空间来映射，并会计算正确的映像基址。如图9-40所示，该图展示了SGRA（System Guard Runtime Attestation）安全隔区，该隔区中的模块使用自上而下的策略进行映射。这意味着主映像会映射至尽可能高的虚拟地址上，所有依赖的模块会映射至彼此相邻的低位地址上。在这个阶段，Windows加载器还会为每个模块调用NtLoadEnclaveData内核API。</p>
+<p class="zw">为了在VBS隔区中加载特定映像，内核会执行一个复杂的过程，以便让节对象的共享页面可以复制到VTL 1中隔区的私有页面里。MiMapImageForEnclaveUse函数可以获得节对象的控制区域，并通过SKCI进行验证。如果验证失败，则过程会被中断并向调用方返回一个错误信息（如上文所述，隔区的所有模块都必须包含正确的签名）。如果成功，则系统会附加至安全系统进程，并将映像的节对象映射至VTL 0中的地址空间。此时，模块的共享页面可能是有效的，也可能是无效的，详见卷1第5章。随后会在包含进程中提交模块的虚拟地址空间，这样即可为需要零的PTE创建私有VTL 0分页数据结构，随后当映像载入VTL 1后，安全内核会填充该数据结构。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2620.png" style="width: 100%" />
+<p class="图题">图9-40　SGRA安全隔区（请注意隔区底部为空的空间）</p>
+<p class="zw">VTL 1中的LOAD_ENCLAVE_MODULE安全调用处理程序获得新模块（由SKCI创建）的SECURE_IMAGE，并验证该映像是否适合在VBS隔区中使用（通过验证数字签名特征）。随后它会附加到VTL 1中的安全系统进程，并将安全映像映射至与之前NT内核映射时相同的虚拟地址。这样即可共享来自VTL 0的原型PTE。随后，安全内核创建描述模块的安全VAD并将其插入隔区在VTL 1中的地址空间。最后，它会在每个模块的节原型PTE之间循环。对于每个不存在的原型PTE，它会附加在安全系统进程上，并使用GET_PHYSICAL_PAGE常规调用来调用NT页面错误处理程序（MmAccessFault），借此将共享页面带入内存。安全内核会对私有隔区页面执行类似的过程，这些页面之前已经由VTL 0中的NT内核为demand-zero的PTE提交过了。在这种情况下，NT页面错误处理程序会分配归零的页面。安全内核将每个共享物理页面的内容复制到每个新的私有页面，并在需要时应用必要的私有重定位。</p>
+<p class="zw">至此，VBS隔区中的模块加载工作已完成。安全内核会对隔区的私有页面应用SLAT保护（NT内核无法访问隔区中的映像代码和数据），从安全系统进程中解除对共享节的映射，并将执行交给NT内核。加载器可以继续处理下一个模块了。</p>
+<p class="zw"><strong style="color:#0092dd">步骤</strong>3：隔区初始化。所有模块被载入隔区后，应用程序将使用InitializeEnclave API来初始化隔区，并指定该隔区支持的线程数量最大值（这些线程将被绑定到能在包含进程中执行隔区调用的线程）。安全内核的INITIALIZE_ENCLAVE安全调用处理程序验证创建隔区过程中指定的策略可兼容主映像配置信息中表达的策略，验证隔区的平台库（Vertdll.dll）已加载，计算隔区最终的256位哈希值（用于生成隔区密封报告），并创建所有安全隔区线程。当执行控制权返回VTL 0中的Windows加载器代码后，系统会执行第一个隔区调用，由该调用执行平台DLL的初始化代码。</p>
+<p class="zw"><strong style="color:#0092dd">步骤&nbsp;</strong>4：隔区调用（入站和出站）。隔区成功初始化后，应用程序即可针对该隔区进行任意数量的调用。隔区中所有可调用的函数都需要被导出。应用程序可以调用标准的GetProcAddress API来获取隔区函数的地址，随后使用CallEnclave例程将执行控制权转移给安全隔区。这种入站调用的情况下，NtCallEnclave内核例程将执行线程选择算法，根据下列规则将发出调用的VTL 0线程绑定到隔区线程：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果常规线程之前未被隔区调用过（隔区支持嵌套调用），则将选择执行任意一个空闲隔区线程。如果没有可用的空闲隔区线程，则调用将被阻塞，直到有隔区线程变为可用（前提是调用方指定，未指定的调用会直接失败）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 如果隔区曾经调用过一个常规线程，那么对隔区的调用将在之前对宿主机发出调用的同一个隔区线程上进行。</p>
+<p class="zw">NT内核与安全内核一起维护了一个隔区线程描述符列表。当常规线程被绑定到隔区线程后，该隔区线程会被插入一个名为绑定线程列表（bound threads list）的列表。被该列表跟踪的隔区线程处于正在运行的状态，不再可用。</p>
+<p class="zw">线程选择算法成功后，NT内核会发出CALLENCLAVE安全调用。安全内核会为隔区新建一个堆栈帧并返回到用户模式。隔区上下文中执行的第一个用户模式函数是RtlEnclaveCallDispatcher。如果隔区调用是发出的第一个调用，那么该函数会将执行转移给VSM隔区运行时DLL（Vertdll.dll）的初始化例程，借此对CRT、加载器及提供给隔区的所有服务进行初始化。该例程最终会调用隔区主模块以及所有依赖映像的DllMain函数（会指定DLL_PROCESS_ATTACH作为原因）。</p>
+<p class="zw">正常情况下，如果隔区平台DLL已被初始化，隔区调度程序会通过指定DLL_THREAD_ATTACH原因调用每个模块的DllMain，验证目标隔区函数的特定地址是否有效，如果有效，则会最终调用目标函数。当目标隔区的例程执行完毕时，会回调包含进程借此返回VTL 0。为此依然需要依赖隔区平台DLL，平台DLL会再次调用NtCallEnclave内核例程。尽管后者在安全内核中的实现略为不同，但依然会采用类似的策略来返回VTL 0。隔区本身可以发出隔区调用，借此在不安全的包含进程上下文中执行某些函数。在这种情况（也叫出站调用）下，隔区代码会使用CallEnclave例程并指定包含进程主模块中导出函数的地址。</p>
+<p class="zw"><strong style="color:#0092dd">步骤</strong>5：终止和销毁。当通过TerminateEnclave API请求终止整个隔区时，隔区中的所有线程都会被迫返回VTL 0。一旦请求终止隔区，所有到隔区的后续调用都将失败。随着线程被终止，它们的VTL 1线程状态（包括线程堆栈）会被销毁。所有线程都停止执行后，隔区即可被销毁。在隔区被销毁后，依然与隔区关联的其余VTL 1状态也会被销毁（包括隔区的整个地址空间），所有页面会被释放回VTL 0。最后，隔区VAD会被删除，所有已提交隔区内存会被释放。当包含进程用隔区的基准地址范围调用VirtualFree时，便会触发销毁。除非隔区已终止或从未被初始化，否则无法进行销毁。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　如上文所述，映射到隔区地址空间的所有内存页都是私有的。这表示包含很多种含义。不过属于VTL 0中包含进程的任何内存页都不会映射到隔区地址空间（并且不存在描述包含进程分配情况的VAD），那么隔区如何访问包含进程的所有内存页？</p> <p class="zwzy">答案是安全内核页面错误处理程序（SkmmAccessFault）。在它的代码中，默认处理程序会检查出现错误的进程是否为隔区。如果是，则默认处理程序会检查错误的发生是否是由于隔区试图执行自己区域外的代码而导致的。这种情况下，处理程序会发出一个访问违规错误。如果产生错误是因为对隔区地址空间之外进行了读或写访问，那么安全页面错误处理程序会发出GET_PHYSICAL_PAGE常规服务，进而导致VTL 0访问错误处理程序被取消。VTL 0处理程序会检查包含进程的VAD树，通过PTE获得页面的PFN（为此在必要时将其带入内存），并将其返回给VTL 1。在这个阶段，安全内核可以创建必要的分页结构，以便将物理页面映射到相同虚拟地址（由于隔区本身属性的缘故，所以该地址是可用的）并恢复执行。至此，该页面在安全隔区上下文中已处于有效状态。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">密封和认证</h4>
+<p class="zw">VBS隔区与基于硬件的隔区类似，都支持数据的密封（seal）和认证（attestation）。“密封”是指使用一个或多个对隔区代码不可见，而由安全内核管理并绑定到计算机和隔区标识的加密密钥对任意数据进行的加密。隔区永远无法访问这些密钥，安全内核通过使用隔区指定的适当密钥，以及借助EnclaveSealData和EnclaveUnsealData API，提供了密封和解封任意内容的服务。在数据被密封后，将提供一组参数来控制哪些隔区可以解封数据。该机制支持下列策略。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">安全内核和主映像的安全版本号</strong><strong>（SVN）</strong>。任何隔区都不能解封被后续版本隔区或安全内核密封的数据。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">准确代码</strong>。如果数据被映射了某个模块的隔区密封，那么随后只能被映射了完全相同模块的隔区解封。安全内核会验证隔区中映射的每个映像的唯一ID的哈希值，以便让正确的隔区解封数据。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">相同映像、族或作者</strong>。数据只能被具有相同作者ID、族ID或映像ID的隔区解封。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">运行时策略</strong>。只有在解封隔区与密封隔区具备相同调试策略（可调试或不可调试）的情况下，数据才可以解封。</p>
+<p class="zw">每个隔区都可以向任意第三方证明自己以VBS隔区的形式运行，并且具备VBS隔区架构所提供的全部保护。隔区认证报告提供了特定隔区在安全内核的控制下运行的认证。认证报告包含隔区中所加载全部代码的标识，以及控制隔区执行方式的策略。</p>
+<p class="zw">有关密封和认证操作的内部细节介绍已超出了本书范围。隔区可通过EnclaveGetAttestationReport API生成认证报告。由该API返回的内存缓冲区可传送给另一个隔区，借此通过EnclaveVerifyAttestationReport函数生成的报告“证明”源隔区运行环境的完整性。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"299b0677-b68d-4088-a559-555354991b32","id":"1d164617-5fed-4f8d-9d48-dd3611d97f92"}</p>

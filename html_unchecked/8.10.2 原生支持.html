@@ -1,0 +1,67 @@
+<h3 class="bt3" id="sigil_toc_id_56">8.10.2　原生支持</h3>
+<p class="zw">虽然用户模式调试的基本协议非常简单，但并不能直接被Windows应用程序使用，而是需要由Ntdll.dll中的DbgUi函数包装起来。这种抽象是必要的，这样才能让原生应用程序以及不同的子系统使用这些例程（因为Ntdll.dll中的代码没有依赖性）。该组件提供的大部分函数类似于Windows API函数以及相关系统调用。在内部，这些代码还提供了创建与线程相关联的调试对象所需的功能。所创建的调试对象的句柄永远不会被暴露，而是会存储在执行连接操作的调试器线程的线程环境块（TEB）中（有关TEB的详情请参阅卷1第4章）。这个值会被保存在DbgSsReserved[1]字段中。</p>
+<p class="zw">在调试器连接到一个进程后，会期待该进程被中断，也就是说，应该由注入该进程的线程引发int 3（断点）操作。如果没有发生该操作，调试器将永远无法真正控制该进程，而只能看到调试器事件一闪而过。Ntdll.dll负责创建线程并将其注入目标进程。请注意，该线程在创建时使用了一个特殊标记，内核会在TEB上设置该标记，进而导致SkipThreadAttach标记被设置，这避免了DLL_THREAD_ATTACH通知以及TLS槽的使用，因为被避免的这两种情况会导致调试器每次中断进程时产生不必要的副作用。</p>
+<p class="zw">Ntdll.dll还提供了一些API，借此可将调试器事件的原生结构转换为Windows API所能理解的结构。这是通过表8-33中列出的转换来完成的。</p>
+<p class="表题">表8-33　从原生到Win32的转换</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">原生状态变化</p> </th> 
+   <th> <p class="bt">Win32状态变化</p> </th> 
+   <th> <p class="bt">详情</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgCreateThreadStateChange</p> </td> 
+   <td> <p class="bg">CREATE_THREAD_DEBUG_EVENT</p> </td> 
+   <td></td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgCreateProcessStateChange</p> </td> 
+   <td> <p class="bg">CREATE_PROCESS_DEBUG_EVENT</p> </td> 
+   <td> <p class="bg">lpImageName始终为NULL，fUnicode始终为TRUE</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgExitThreadStateChange</p> </td> 
+   <td> <p class="bg">EXIT_THREAD_DEBUG_EVENT</p> </td> 
+   <td></td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgExitProcessStateChange</p> </td> 
+   <td> <p class="bg">EXIT_PROCESS_DEBUG_EVENT</p> </td> 
+   <td></td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgExceptionStateChange DbgBreakpointStateChange DbgSingleStepStateChange</p> </td> 
+   <td> <p class="bg">OUTPUT_DEBUG_STRING_EVENT、RIP_EVENT或EXCEPTION_DEBUG_<br> EVENT</p> </td> 
+   <td> <p class="bg">基于异常代码来决定（异常代码可能为DBG_PRINTEXCEPTION_C / DBG_<br> PRINTEXCEPTION_WIDE_C、DBG_<br> RIPEXCEPTION或其他）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgLoadDllStateChange</p> </td> 
+   <td> <p class="bg">LOAD_DLL_DEBUG_EVENT</p> </td> 
+   <td> <p class="bg">fUnicode始终为TRUE</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">DbgUnloadDllStateChange</p> </td> 
+   <td> <p class="bg">UNLOAD_DLL_DEBUG_EVENT</p> </td> 
+   <td></td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：查看调试器对象</p>
+<p class="zwts1">虽然我们一直使用WinDbg进行内核模式调试，但其实也可以用它调试用户模式的程序。请试着通过下列步骤启动Notepad.exe并连接调试器：</p>
+<p class="zwts1">1）运行WinDbg，随后点击File→Open Executable。</p>
+<p class="zwts1">2）打开\Windows\System32\目录并选择Notepad.exe。</p>
+<p class="zwts1">3）因为我们无须真正进行调试，因此可忽略随后出现的所有提示信息。接着在命令行窗口中输入g即可让WinDbg继续执行记事本。</p>
+<p class="zwts1">运行Process Explorer，确定已经启用了底部窗格，并将其配置为显示打开的句柄（选择View→Lower Pane View，随后选择Handles）。我们还需要查看未命名句柄，因此请选择View→Show Unnamed Handles And Mappings。</p>
+<p class="zwts1">点击Windbg.exe（如果使用WinDbg Preview，则点击EngHost.exe）进程，并查看句柄表。在这里应该可以看到一个指向调试器对象的打开的未命名句柄（按照&nbsp;Type排列表格可以更轻松地找到该句柄），类似下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx5392.jpg" style="width: 100%" />
+<p class="zwts1">试着右键点击该句柄并将其关闭。记事本窗口会消失，WinDbg中会显示如下信息：</p>
+<pre class="代码无行号"><code>ERROR: WaitForEvent failed, NTSTATUS 0xC0000354 
+This usually indicates that the debuggee has been 
+killed out from underneath the debugger. 
+You can use .tlist to see if the debuggee still exists. </code></pre>
+<p class="zwts1">实际上，如果查看给出的NTSTATUS代码描述，就会找到类似“An attempt to do an operation on a debug port failed because the port is in the process of being deleted”（针对调试端口执行操作的企图失败了，因为该端口正在被删除）这样的文字，而这恰恰是我们关闭句柄所做的事情。</p>
+<p class="zw">如上所示，原生DbgUi接口除了抽象本身，并未对该框架提供其他支持。它所做的最复杂的工作就是原生和Win32调试器结构之间的转换。该转换涉及对结构进行的一些额外改变。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"558e2097-f40f-4c13-ae16-2a36e72d6cab","id":"c4dc5aa7-94b0-41cf-bc90-8e446fd4631a"}</p>

@@ -1,0 +1,43 @@
+<h2 class="bt2" id="sigil_toc_id_159"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 10.6　动态跟踪</h2>
+<p class="zw">如上文所述，Windows事件跟踪（ETW）是Windows在操作系统中集成的一种强大的跟踪技术，但它是静态的，意味着最终用户只能跟踪和记录由操作系统或第三方框架/应用程序（如.NET CLR）妥善定义的组件所产生的事件。为了打破这一限制，Windows 10的2019年5月更新（19H1）引入了DTrace，这是Windows自带的一种动态跟踪技术。管理员可以使用DTrace针对正在运行的系统检查用户程序和操作系统自身的行为。DTrace是一种开源技术，最初为Solaris操作系统（及其后续版本illumos，它们均是基于UNIX的）开发，现已移植到Windows之外的很多操作系统。</p>
+<p class="zw">DTrace可以在用户关注的某些位置（这些位置也叫探针，Probe）动态地监测操作系统和用户应用程序的某些部分。探针是一种二进制代码位置或活动，当它被触发时，DTrace可以绑定一个请求进而执行一系列活动，例如记录消息、捕获堆栈跟踪或时间戳等。启动探针后，DTrace会收集来自探针的数据，并执行与探针相关的活动。探针和活动均可通过脚本文件使用D编程语言来指定（或直接在DTrace应用程序中通过命令行指定）。对探针的支持是由名为提供程序的内核模块提供的。最初的illumos DTrace支持约20个提供程序，这些提供程序与基于UNIX的操作系统紧密相联。在撰写这部分内容时，Windows可支持下列提供程序。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> SYSCALL：用于跟踪从用户模式应用程序和内核模式驱动程序（通过Zw* API）发出的OS系统调用（进入和退出）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> FBT（函数边界跟踪）：借助FBT，系统管理员可以跟踪在NT内核中运行的所有模块中所实现的各个函数的执行情况。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> PID（用户模式进程跟踪）：该提供程序与FBT类似，可用于跟踪用户模式进程和应用程序中的函数。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> ETW（Windows事件跟踪）：DTrace可使用该提供程序附加至ETW引擎发出的基于清单的事件和TraceLogging事件。DTrace可以定义新的ETW提供程序并通过etw_trace操作（不属于任何提供程序）提供相关的ETW事件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> PROFILE：提供与基于时间的中断相关的探针，每隔指定的固定时间触发。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> DTRACE：内置提供程序，在DTrace引擎中隐式启用。</p>
+<p class="zw">上述提供程序可供系统管理员动态跟踪Windows操作系统和用户模式应用程序的几乎所有组件。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　Windows中的第一版DTrace出现在Windows 10的2019年5月更新中，该版本与目前的稳定版（截至撰写这部分内容，包含在Windows 10的2021年5月更新中）有较大差异。其中最明显的差异在于：第一版需要设置内核调试器才能启用FBT提供程序。此外，在第一版DTrace中，ETW提供程序并不完全可用。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：启用DTrace并列出已安装的提供程序</p>
+<p class="zwts1">在这个实验中，我们将安装并启用DTrace，随后列出可动态跟踪各种Windows组件的提供程序。我们需要一台运行Windows 10的2020年5月更新（20H1）或后续版本的计算机。按照微软文档（https://docs.microsoft.com/windows-hardware/drivers/devtest/ DTrace）的说明，首先需要启用DTrace，为此请以管理员身份打开命令提示符窗口，然后输入下列命令（如果BitLocker已启用，请先将其禁用）：</p>
+<pre class="代码无行号"><code>bcdedit /set dtrace ON </code></pre>
+<p class="zwts1">随后下载并安装DTrace软件包（https://www.microsoft.com/download/details.aspx? id=100441）。重启动计算机（或虚拟机），随后以管理员身份打开命令提示符窗口（在搜索框中输入CMD并选择“<strong style="color:#0092dd">以管理员身份运行</strong>”）。运行下列命令（可将providers.txt替换为自己希望使用的其他文件名）：</p>
+<pre class="代码无行号"><code>cd /d "C:\Program Files\Dtrace" 
+dtrace -l &gt; providers.txt </code></pre>
+<p class="zwts1">打开生成的文件（本例中为providers.txt）。如果DTrace已成功安装并启用，则应该能在输出文件中看到探针和提供程序（DTrace、syscall和ETW）列表。探针由ID和人工易读的名称组成。这个人工易读的名称则由四部分组成，每部分可能存在，也可能不存在，这主要取决于提供程序本身。一般来说，提供程序会尽可能遵守相关约定的要求，但某些情况下，每部分的含义也可能超出最初的定义。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">提供程序（Provider）</strong>：发布该探针的DTrace提供程序的名称。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">模块（Module）</strong>：如果该探针对应程序中的某个特定位置，那么这部分表示探针所在模块的名称。模块仅供PID（上述DTrace -l命令的输出结果并未包含PID信息）和ETW提供程序使用。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">函数（Function）</strong>：如果该探针对应程序中的某个特定位置，那么这部分表示探针所在程序函数的名称。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">名称（Name）</strong>：探针名称的最后一部分表示探针在语义方面的某些含义，例如BEGIN或END。</p>
+<p class="zwts1">在写出探针完整的人工易读名称时，名称的不同部分会使用冒号隔开，例如：</p>
+<pre class="代码无行号"><code>syscall::NtQuerySystemInformation:entry </code></pre>
+<p class="zwts1">上述名称指定了对Syscall提供程序提供NtQueryInformation函数项进行的探测。请注意，上述例子中的模块名称是空的，因为Syscall提供程序并未指定任何名称（所有Syscall都由NT内核隐式提供）。</p>
+<p class="zwts1">PID和FBT提供程序反而会根据自己应用到的进程或内核映像以及当前可用的符号动态地生成探针。例如，为了正确列出进程的PID探针，我们首先需要获得分析的进程对应的进程ID（PID）（只需打开“<strong style="color:#0092dd">任务管理器</strong>”，打开“<strong style="color:#0092dd">详细信息</strong>”选项卡。本例中我们选择了Notepad，在测试系统中，它的PID为8020）。随后使用下列命令执行DTrace：</p>
+<pre class="代码无行号"><code>dtrace -ln pid8020:::entry &gt; pid_notepad.txt </code></pre>
+<p class="zwts1">随后会列出PID提供程序为Notepad进程生成的函数条目上的所有探针。输出结果会包含大量条目。请注意，如果未设置符号存储路径，则输出结果将不包含任何由私有函数生成的探针。要限制输出的内容，可以添加下列模块名称：</p>
+<pre class="代码无行号"><code>dtrace.exe -ln pid8020:kernelbase::entry &gt;pid_kernelbase_notepad.txt </code></pre>
+<p class="zwts1">这样即可得到在Notepad中映射的kernelbase.dll模块的函数条目所产生的全部PID探针。如果使用下列命令设置符号存储路径：</p>
+<pre class="代码无行号"><code>set _NT_SYMBOL_PATH=srv*C:\symbols*http://msdl.microsoft.com/download/symbols</code></pre>
+<p class="zwts1">再重新执行之前的两条命令，则会发现输出结果会产生巨大的差异（并且可以看到私有函数的探针）。</p>
+<p class="zwts1">正如下文“函数边界跟踪（FBT）和进程（PID）提供程序”一节所述，PID和FBT提供程序可应用于函数代码中的任何偏移量。下列命令可返回PID提供程序能为Kernelbase.dll中的SetComputerNameW函数生成探针的所有偏移量（总是位于指令边界处）：</p>
+<pre class="代码无行号"><code>dtrace.exe -ln pid8020:kernelbase:SetComputerNameW: </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"162693e7-e7e7-41c7-8477-5ccbc444fdec","id":"8ec98f6d-2493-4bae-9a02-187c6c75678d"}</p>

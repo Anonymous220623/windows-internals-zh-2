@@ -1,0 +1,27 @@
+<h3 class="bt3" id="sigil_toc_id_112">10.1.6　事务型注册表（TxR）</h3>
+<p class="zw">在内核事务管理器（Kernel Transaction Manager，KTM，详见第8章）的帮助下，开发者可以通过一套简洁的API在执行注册表操作时实现强大的错误恢复功能，这些操作还能与非注册表操作（如文件或数据库操作）关联起来。</p>
+<p class="zw">我们可以通过三个API对注册表进行事务型的修改：RegCreateKeyTransacted、RegOpenKeyTransacted以及RegDeleteKeyTransacted。这些新例程除了增加一个新的事务句柄参数外，其他参数与非事务型操作中的参数完全相同。开发者可在调用KTM的CreateTransaction函数后传入该句柄。</p>
+<p class="zw">在执行事务型的创建或打开操作后，所有后续的注册表操作（如创建、删除或修改键中的值）也会自动变成事务型的。不过对已执行事务型操作的子键进行的操作将不会自动继续以事务型的方式进行，因此诞生了第三个API：RegDeleteKeyTransacted。它可以实现以事务型的方式删除子键，而这是RegDeleteKeyEx通常无法完成的。</p>
+<p class="zw">与其他的KTM操作类似，这些事务型操作涉及的数据会使用通用日志文件系统（Common Logging File System，CLFS）服务写入日志文件。在事务最终提交或回滚（取决于事务状态，这两种情况都能通过编程发生，或由于断电或系统崩溃而发生）之前，键、值以及通过事务句柄对注册表进行的其他修改都不会被外部应用程序使用的非事务型API看到。此外，事务是相互隔离的，在最终提交之前，一个事务中进行的修改对其他事务或事务外部不可见。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　在发生冲突的情况下，非事务型写入方会终止事务。举例来说，如果在一个事务中创建了某个值，但随后在该事务依然活跃的情况下，一个非事务型写入方试图在同一个键下创建一个值，那么非事务型操作将会成功，发生冲突的事务中的所有操作都会被忽略。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">TxR资源管理器实现的隔离级别（ACID<sup>[2]</sup>中的“I”）为“读取-提交”，这意味着一旦提交，之后的改动会立即对其他读取方（无论是事务型或非事务型）可见。对熟悉数据库事务的人来说，这种机制很重要，因为数据库的隔离级别为“可预测-读取”（或按照数据库领域的称呼为“游标-稳定性”）。对于“可预测-读取”隔离级别，如果读取了事务中的一个值，则后续的读取将返回相同的数据。“读取-提交”无法提供这样的保证，而这造成的影响是：注册表事务不能用于对注册表值进行“原子性”的增减操作。</p>
+<p class="footnote">[2]ACID是指数据库事务能够正确执行所要满足的四个要素：原子性（Atomicity）、一致性（Consistency）、隔离性（Isolation）、持久性（Durability）。——译者注</p>
+<p class="zw">为了对注册表进行永久性更改，使用事务句柄的应用程序必须调用&nbsp;KTM&nbsp;的CommitTransaction函数（如果应用程序需要撤销改动，例如处于失败路径时，此时可调用RollbackTransaction API）。随后这些改动就可以通过常规的注册表API变得可见。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　如果用CreateTransaction创建的事务句柄在事务提交之前被关闭（并且没有其他句柄打开这个事务），则系统将回滚该事务。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">除了借助KTM对CLFS的支持，TxR还会将自己的内部日志文件存储在%SystemRoot%\System32\Config\Txr文件夹中，这些文件的扩展名为.regtrans-ms，默认会被隐藏。有一个全局注册表资源管理器（RM）为启动时挂载的配置单元提供服务。每个显式挂载的配置单元都会创建一个RM。对于使用注册表事务的应用程序，RM的创建过程是透明的，因为KTM保证了参与同一事务的所有RM会通过一个两阶段的提交/忽略协议进行协调。对于全局注册表RM，CLFS日志文件会被存储到System32\Config\Txr目录下；其他配置单元的日志文件会与配置单元存储在一起（同一个目录下）。这些文件都是隐藏的，并遵循相同的命名约定，都使用了.regtrans-ms扩展名。日志文件的名称会使用对应的配置单元的名称作为前缀。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"5a53b69b-1f5b-45b1-989a-6fe8c9cf2a82","id":"dd4297ba-be8d-4719-90f8-d0ec1202807d"}</p>

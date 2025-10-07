@@ -1,0 +1,4 @@
+<h3 class="bt3" id="sigil_toc_id_232">11.10.3　安全性</h3>
+<p class="zw">NTFS的安全性直接源于Windows对象模型。文件和目录会受到保护，无法被未经授权的用户访问（有关Windows安全性的详细信息，请参阅卷1第7章）。打开的文件是作为一个文件对象实现的，其安全描述符存储在磁盘上的一个隐藏的$Secure元文件中，该文件位于一个名为$SDS（Security Descriptor Stream，安全描述符流）的流中。进程打开任何对象（包括文件对象）的句柄前，Windows安全系统会验证进程是否具备授权功能。安全描述符与用户必须登录系统并提供密码的要求相结合，保证除非系统管理员或文件的所有者授予必要的权限，否则任何进程都无法访问文件（有关安全描述符的更多信息，请参阅卷1第7章中的“安全描述符和访问控制”一节）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"faa29e90-f12c-4c71-81b0-fff867e624e1"}</p>

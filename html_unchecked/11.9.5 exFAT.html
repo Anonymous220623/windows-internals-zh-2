@@ -1,0 +1,67 @@
+<h3 class="bt3" id="sigil_toc_id_213">11.9.5　exFAT</h3>
+<p class="zw">由微软设计的可扩展文件分配表文件系统（Extended File Allocation Table file system，exFAT，也叫FAT64）是对传统FAT文件系统的改进，专为闪存设备设计。exFAT的主要目标是在不产生元数据结构开销和元数据日志操作的情况下提供NTFS所具备的一些高级功能，因为元数据结构和相关日志操作会产生不适合大部分闪存媒体设备的写入模式。表11-4列出了exFAT的默认簇大小。</p>
+<p class="表题">表11-4　exFAT卷使用512字节扇区时的默认簇大小</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">卷大小</p> </th> 
+   <th> <p class="bt">默认簇大小</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">&lt;256&nbsp;MB</p> </td> 
+   <td> <p class="bg">4&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">256&nbsp;MB～32&nbsp;GB</p> </td> 
+   <td> <p class="bg">32&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">32&nbsp;GB～512&nbsp;GB</p> </td> 
+   <td> <p class="bg">128&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">512&nbsp;GB～1&nbsp;TB</p> </td> 
+   <td> <p class="bg">256&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">1&nbsp;TB～2&nbsp;TB</p> </td> 
+   <td> <p class="bg">512&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">2&nbsp;TB～4&nbsp;TB</p> </td> 
+   <td> <p class="bg">1&nbsp;MB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">4&nbsp;TB～8&nbsp;TB</p> </td> 
+   <td> <p class="bg">2&nbsp;MB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">8&nbsp;TB～16&nbsp;TB</p> </td> 
+   <td> <p class="bg">4&nbsp;MB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">16&nbsp;TB～32&nbsp;TB</p> </td> 
+   <td> <p class="bg">8&nbsp;MB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">32&nbsp;TB～64&nbsp;TB</p> </td> 
+   <td> <p class="bg">16&nbsp;MB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">≥64&nbsp;TB</p> </td> 
+   <td> <p class="bg">32&nbsp;MB</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">正如FAT64这个名称所暗示的那样，文件大小限制已扩大至2<sup>64</sup>，最大可支持16&nbsp;EB的文件。这一变化也与簇大小的增量相匹配，目前最大可支持32&nbsp;MB的簇，但最多可达2255个扇区。exFAT还增加了一个用于跟踪空闲簇的位图，借此可改善分配和删除操作的性能。最后，exFAT目录中可以包含超过1000个文件。这些特性不仅可以提高可扩展性，也可以支持更大的磁盘。</p>
+<p class="zw">另外，exFAT还实现了一些原本仅NTFS具备的功能，例如支持访问控制列表（ACL）和事务（也叫事务安全FAT，即TFAT）。不过这些功能仅包含在Windows Embedded CE所实现的exFAT中，Windows的exFAT中并不包含。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　ReadyBoost（详见卷1第5章）可配合格式化为exFAT的闪存设备使用，进而支持大小超过4&nbsp;GB的缓存文件。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"4f88f2df-54cf-4eaf-b2f4-5d135b373a0a"}</p>

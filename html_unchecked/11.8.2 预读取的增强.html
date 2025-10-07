@@ -1,0 +1,13 @@
+<h3 class="bt3" id="sigil_toc_id_198">11.8.2　预读取的增强</h3>
+<p class="zw">Windows 8.1对缓存管理器的预读取功能进行了一些增强。文件系统驱动程序和网络重定向器可以通过CcSetReadAheadGranularityEx API函数确定智能预读取的大小和增长情况。缓存管理器客户端可以决定：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">预读取粒度</strong>。设置预读取单位大小的最小值以及下一次预读取结束时的文件偏移量。缓存管理器设置的默认粒度为4&nbsp;KB（内存页的大小），但每个文件系统可以通过不同的方式设置该值（例如NTFS可设置为64&nbsp;KB）。</p>
+<p class="zw">图11-13展示了一个200&nbsp;KB文件的预读取范例，缓存粒度设置为64&nbsp;KB。如果用户请求在偏移量0x10800处进行1&nbsp;KB非对齐读取，并且已检测到顺序读取，智能预读取将发出一个I/O，该I/O涵盖了从偏移量0x10000到0x20000范围内共64&nbsp;KB的数据。如果已经产生超过两次的顺序读取，缓存管理器就会发起一个从偏移量0x20000到0x30000（总共192&nbsp;KB）的补充读取。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx797.png" style="width: 100%" />
+<p class="图题">图11-13　粒度设置为64&nbsp;KB时一个200&nbsp;KB文件的预读取</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">管道大小</strong>。对于某些远程文件系统驱动程序，将大型预读取I/O拆分为多个小块可能是更合理的做法，这样，缓存管理器工作线程就可以并行发出多个请求。网络文件系统通过这种技术可以实现更高的吞吐量。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">预读取激进度</strong>。文件系统驱动程序可以指定缓存管理器在检测到第三次连续读取后，要将预读取大小增大多少百分比。例如，假设应用程序使用1&nbsp;MB的I/O大小读取一个大文件。第十次读取后，应用程序已经读取了10&nbsp;MB（缓存管理器可能已经预取了其中的一些数据）。此时，智能预读取可以决定预读取I/O大小的增长幅度。如果文件系统指定了60%的增长率，那么将使用下列公式：</p>
+<p class="zw">(连续读取次数×最后一次读取的大小) × (增长百分率 / 100)</p>
+<p class="zw">因此，这意味着下一次预读取大小为6&nbsp;MB（不再是2&nbsp;MB，假设粒度为64&nbsp;KB且I/O大小为1&nbsp;MB）。如果任何缓存管理器客户端未进行修改，那么默认增长百分率是50%。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"12f97583-be18-467a-a595-eb74d0d9db22","id":"c1b855ad-eb25-4f29-80b2-06e093dd8626"}</p>

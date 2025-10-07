@@ -1,0 +1,126 @@
+<h3 class="bt3" id="sigil_toc_id_303">11.15.8　大型页和巨型页的支持</h3>
+<p class="zw">在DAX模式的卷上通过内存映射节读/写文件时，内存管理器的处理方式与非DAX节的处理方式类似：如果在映射时指定了MEM_LARGE_PAGES标记，则内存管理器会检测到一个或多个文件范围指向了足够多的已对齐连续物理空间（NTFS分配的文件范围），并使用大型页（2&nbsp;MB）或巨型页（1&nbsp;GB）来映射物理DAX空间（有关内存管理器和大型页的详情请参阅卷1第5章）。与传统的4&nbsp;KB页相比，大型页和巨型页有很多优势，尤其是可大幅改善DAX文件的性能，因为可减少在处理器页表结构中进行查找的次数，同时减少了要在处理器的地址转换后备缓冲区（Translation Lookaside Buffer，TLB）中存储的项的数量。对于内存占用量大并且需要随机访问内存的应用程序，CPU可能需要花费大量时间查找TLB项，并在TLB缺失的情况下读/写页表层次结构。此外，使用大型/巨型页还可以大幅节约提交开销，因为只需要为页面目录的父项和页目录（只针对大文件，不针对巨型文件）进行记账。页表空间（每2&nbsp;MB的叶VA空间对应4&nbsp;KB）无须记账。因此举例来说，对于一个2&nbsp;TB的文件映射，系统使用大型页和巨型页即可节约4&nbsp;GB的已提交内存。</p>
+<p class="zw">NTFS驱动程序会与内存管理器合作，在映射DAX卷上文件时对大型页和巨型页提供支持。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 默认情况下，每个DAX分区都以2&nbsp;MB的边界对齐。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> NTFS支持2&nbsp;MB大小的簇。以2&nbsp;MB簇格式化的DAX卷可以保证只为卷上存储的文件使用大型页。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> NTFS不支持1&nbsp;GB大小的簇。如果DAX卷上存储的文件大小超过1&nbsp;GB，并且有一个或多个文件范围存储在足够的持续物理空间，则内存管理器将使用巨型页映射该文件（巨型页使用两个页面映射级别，大型页使用三个）。</p>
+<p class="zw">如卷1第5章所述，对于常规的、由内存支撑的节，只有当描述PM页的范围未在DAX卷上正确对齐时，内存管理器才会使用大型页和巨型页（这个对齐是相对于卷的LCN而不是相对于文件的VCN而言的）。对于大型页，这意味着范围需要从2&nbsp;MB的边界开始，而巨型页则需要从1&nbsp;GB的边界开始。如果DAX卷上的文件并未完全对齐，则内存管理器将只能为对齐的块使用大型页或巨型页，并会继续对其他块使用标准的4&nbsp;KB页。</p>
+<p class="zw">为了促进并增加大型页的使用，NTFS文件系统提供了FSCTL_SET_DAX_ALLOC_ ALIGNMENT_HINT的控制代码，应用程序可以借此针对新的文件范围设置自己首选的对齐方式。该I/O控制代码接收的值规定了首选对齐方式、起始偏移量（可用于指定对齐需要从何处开始）以及其他一些标记。通常来说，应用程序在创建了一个全新的文件，但尚未映射该文件时，可以向文件系统驱动程序发送该IOCTL。这样，在为文件分配空间的同时，NTFS就可以拿到落在首选对齐方式范围内的可用簇。</p>
+<p class="zw">如果所请求的对齐方式不可用（例如卷的碎片化程度极高），则该IOCTL可以指定文件系统应当使用的回退（Fallback）行为：让请求失败，或转而求其次地使用备用对齐方式（备用方式可通过参数指定）。该IOCTL甚至可以作用于已经存在的文件，借此为文件指定新扩展的对齐方式。应用程序可以使用FSCTL_QUERY_FILE_REGIONS控制代码或fsutil dax queryfilealignment命令查询文件的所有范围所使用的对齐方式。</p>
+<p class="zwtsh">实验：操作DAX的文件对齐</p>
+<p class="zwts1">我们可以使用本书随附资源提供的FsTool工具观察不同类型的DAX文件对齐。要完成该实验，计算机上需要具备DAX卷。打开命令提示符窗口，使用该工具将一个大文件（建议最少4&nbsp;GB）复制到DAX卷。在下列范例中，两个DAX磁盘挂载为P:盘和Q:盘。Big_Image.iso文件会使用FsTool工具通过标准操作复制到Q:盘这个DAX卷上：</p>
+<pre class="代码无行号"><code>D:\&gt;fstool.exe /copy p:\Big_DVD_Image.iso q:\test.iso 
+NTFS / ReFS Tool v0.1 
+Copyright (C) 2018 Andrea Allievi (AaLl86) 
+　
+Copying "Big_DVD_Image.iso" to "test.iso" file... Success.
+   Total File-Copy execution time: 10 Sec - Transfer Rate: 495.52 MB/s. 
+Press any key to exit... </code></pre>
+<p class="zwts1">我们可以使用FsTool.exe工具的/queryalign命令行参数查看新的test.iso文件的对齐方式，或者也可以使用Windows内置工具fsutil.exe的queryFileAlignment参数：</p>
+<pre class="代码无行号"><code>D:\&gt;fsutil dax queryFileAlignment q:\test.iso
+　
+  File Region Alignment: 
+　
+    Region        Alignment      StartOffset       LengthInBytes 
+    0             Other          0                 0x1fd000 
+    1             Large          0x1fd000          0x3b800000 
+    2             Huge           0x3b9fd000        0xc0000000 
+    3             Large          0xfb9fd000        0x13e00000 
+    4             Other          0x10f7fd000       0x17e000 </code></pre>
+<p class="zwts1">如以上输出结果所示，文件的第一个块存储在4&nbsp;KB的对齐簇中。该工具显示的偏移量并非相对于卷的偏移量（即LCN），而是相对于文件的偏移量（即VCN）。这个差别很重要，因为大型页和巨型页映射所需的对齐是相对于卷页的偏移量。随着不断地增长，文件的一些簇将从卷中2&nbsp;MB或1&nbsp;GB边界对齐的偏移量分配。这样，内存管理器就可以使用大型页或巨型页来映射文件中的这些部分。接下来和前面的实验类似，我们试试通过指定目标对齐提示来执行DAX复制：</p>
+<pre class="代码无行号"><code>P:\&gt;fstool.exe /daxcopy p:\Big_DVD_Image.iso q:\test.iso /align:1GB 
+NTFS / ReFS Tool v0.1 
+Copyright (C) 2018 Andrea Allievi (AaLl86) 
+　
+Starting DAX copy...
+   Source file path: p:\Big_DVD_Image.iso.
+   Target file path: q:\test.iso.
+   Source Volume: p:\ - File system: NTFS - Is DAX Volume: True. 
+   Target Volume: q:\ - File system: NTFS - Is DAX Volume: False. 
+　
+   Source file size: 4.34 GB 
+   Target file alignment (1GB) correctly set. 
+　
+Performing file copy... Success! 
+   Total execution time: 6 Sec. 
+   Copy Speed: 618.81 MB/Sec 
+　
+Press any key to exit... 
+　
+P:\&gt;fsutil dax queryFileAlignment q:\test.iso 
+　
+  File Region Alignment: 
+　
+    Region       Alignment       StartOffset        LengthInBytes 
+    0            Huge            0                  0x100000000 
+    1            Large           0x100000000        0xf800000 
+    2            Other           0x10f800000        0x17b000 </code></pre>
+<p class="zwts1">在后一种情况下，文件被立即分配到下一个1&nbsp;GB对齐的簇中。文件内容的前4&nbsp;GB（0x100000000字节）被存储在连续的空间中。当内存管理器映射文件的这部分内容时，将只需要使用4个页目录指针表（Page Directory Pointer Table，PDPT）项，而不需要使用2048个页表。这有助于节约物理内存空间，并显著提高CPU访问DAX节数据时的性能。为确认复制操作确实是使用大型页进行的，我们可以向计算机连接内核调试器（本地内核调试器足矣），并为FsTool工具使用/debug开关：</p>
+<pre class="代码无行号"><code>P:\&gt;fstool.exe /daxcopy p:\Big_DVD_Image.iso q:\test.iso /align:1GB /debug 
+NTFS / ReFS Tool v0.1 
+Copyright (C) 2018 Andrea Allievi (AaLl86) 
+　
+Starting DAX copy... 
+   Source file path: p:\Big_DVD_Image.iso. 
+   Target file path: q:\test.iso. 
+   Source Volume: p:\ - File system: NTFS - Is DAX Volume: False. 
+   Target Volume: q:\ - File system: NTFS - Is DAX Volume: True. 
+　
+   Source file size: 4.34 GB 
+   Target file alignment (1GB) correctly set. 
+　
+Performing file copy... 
+ [Debug] (PID: 10412) Source and Target file correctly mapped. 
+         Source file mapping address: 0x000001F1C0000000 (DAX mode: 1). 
+         Target file mapping address: 0x000001F2C0000000 (DAX mode: 1). 
+         File offset : 0x0 - Alignment: 1GB. 
+　
+Press enter to start the copy... 
+　
+ [Debug] (PID: 10412) File chunk’s copy successfully executed. 
+Press enter go to the next chunk / flush the file... </code></pre>
+<p class="zwts1">我们可以使用调试器的!pte扩展查看最终生效的内存映射。首先需要使用.process命令移动至适当的进程上下文，随后即可分析FsTool显示的已映射的虚拟地址：</p>
+<pre class="代码无行号"><code>8: kd&gt; !process 0n10412 0 
+Searching for Process with Cid == 28ac 
+PROCESS ffffd28124121080 
+    SessionId: 2 Cid: 28ac    Peb: a29717c000 ParentCid: 31bc 
+    DirBase: 4cc491000 ObjectTable: ffff950f94060000 HandleCount: 49. 
+    Image: FsTool.exe 
+　
+8: kd&gt; .process /i ffffd28124121080 
+You need to continue execution (press 'g' &lt;enter&gt;) for the context 
+to be switched. When the debugger breaks in again, you will be in 
+the new process context. 
+　
+8: kd&gt; g 
+Break instruction exception - code 80000003 (first chance) 
+nt!DbgBreakPointWithStatus: 
+fffff804`3d7e8e50 cc              int     3 
+　
+8: kd&gt; !pte 0x000001F2C0000000 
+                                          VA 000001f2c0000000 
+PXE at FFFFB8DC6E371018   PPE at FFFFB8DC6E203E58   PDE at FFFFB8DC407CB000 
+contains 0A0000D57CEA8867 contains 8A000152400008E7 contains 0000000000000000 
+pfn d57cea8  ---DA--UWEV  pfn 15240000 --LDA--UW-V  LARGE PAGE pfn 15240000 
+　
+PTE at FFFFB880F9600000 
+contains 0000000000000000 
+LARGE PAGE pfn 15240000 </code></pre>
+<p class="zwts1">通过调试器命令!pte可以证实，DAX文件的前1&nbsp;GB空间是使用巨型页映射的。实际上，页目录和页表都不存在。FsTool工具还可用于为已存在的文件设置对齐方式。FSCTL_SET_DAX_ALLOC_ALIGNMENT_HINT控制代码虽然不实际移动任何数据，但可以为新分配的文件范围提供提示，因为文件在以后可能会继续增大：</p>
+<pre class="代码无行号"><code>D:\&gt;fstool e:\test.iso /align:2MB /offset:0 
+NTFS / ReFS Tool v0.1 
+Copyright (C) 2018 Andrea Allievi (AaLl86) 
+　
+Applying file alignment to "test.iso" (Offset 0x0)... Success. 
+Press any key to exit... 
+　
+D:\&gt;fsutil dax queryfileAlignment e:\test.iso 
+　
+  File Region Alignment: 
+　
+    Region        Alignment      StartOffset         LengthInBytes 
+    0             Huge           0                   0x100000000 
+    1             Large          0x100000000         0xf800000 
+    2             Other          0x10f800000         0x17b000 </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"79bbbed1-3a35-4d22-b579-86536ea07e54","id":"c9a72110-7452-4dab-88f3-369981c01601"}</p>

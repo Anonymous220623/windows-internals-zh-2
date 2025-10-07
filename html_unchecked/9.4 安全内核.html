@@ -1,0 +1,11 @@
+<h2 class="bt2" id="sigil_toc_id_90"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 9.4　安全内核</h2>
+<p class="zw">安全内核主要在securekernel.exe文件中实现，由Windows加载器在虚拟机监控程序成功运行后启动。如图9-31所示，安全内核是一种最小化的操作系统，会与运行在VTL 0下的常规内核紧密合作。与任何常规操作系统类似，安全内核运行在VTL 1的CPL 0（也称Ring 0或内核模式）模式下，它为VTL 1的CPL 3（也称Ring 3或用户模式）下的隔离用户模式（Isolated User Mode，IUM）提供所需服务（大部分通过系统调用提供）。为了尽可能地减小攻击面，安全内核在设计上尽可能的小巧。它不像常规内核那样可以通过外部设备驱动程序进行扩展，唯一可以扩展其功能的内核模块是由Windows加载器在VSM启动前加载并从securekernel.exe中导入的。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong>Skci.dll</strong>：实现安全内核中与虚拟机监控程序实施的代码完整性有关的部分。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong>Cng.sys</strong>：提供安全内核所需的密码学引擎。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong>Vmsvcext.dll</strong>：为安全内核组件在Intel TXT（Trusted Boot）环境中的认证提供支持（有关Trusted Boot的详情请参阅第12章）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2127.png" style="width: 100%" />
+<p class="图题">图9-31　基于虚拟机监控程序构建的虚拟安全模式架构方案</p>
+<p class="zw">虽然安全内核不可扩展，但隔离用户模式提供了一种名为Trustlet的专用进程。Trustlet相互之间会被隔离，并且在数字签名方面有一些特殊要求。它们能通过Syscall与安全内核通信，并能通过邮件槽和ALPC与常规世界通信。隔离用户模式的详细信息请参阅下文。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"af7a860a-0901-4112-8270-9695feebd3b6","id":"235e6070-2914-47dd-bdb6-a375816a60a3"}</p>

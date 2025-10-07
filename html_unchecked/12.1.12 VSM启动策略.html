@@ -1,0 +1,27 @@
+<h3 class="bt3" id="sigil_toc_id_340">12.1.12　VSM启动策略</h3>
+<p class="zw">启动时，Windows加载器需要判断是否启动虚拟安全模式（Virtual Secure Mode，VSM）。为保证所有恶意软件都无法禁用这种新的防护措施，系统会使用一种特殊的策略来密封VSM启动设置。默认配置下，当首次启动时（Windows安装程序复制完Windows文件后），Windows加载器会使用OslSetVsmPolicy例程读取并密封VSM配置，这些配置存储在HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard下的VSM根注册表键中。</p>
+<p class="zw">VSM可由不同的源启用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">Device Guard场景</strong>。每个场景都以子键形式存储在VSM根键下。名为Enabled的DWORD注册表值控制对应的场景中是否启用。如果有一个或多个场景被激活，那么VSM将被启用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">全局设置</strong>。存储在注册表值EnableVirtualizationBasedSecurity中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">HVCI代码完整性策略</strong>。存储在代码完整性策略文件（Policy.p7b）中。</p>
+<p class="zw">另外，默认情况下，启用虚拟机监控程序的同时，也将自动启用&nbsp;VSM（除非存在HyperVVirtualizationBasedSecurityOptOut注册表值）。</p>
+<p class="zw">每个VSM激活源都可以指定一个锁定策略。如果锁定模式已启用，则Windows加载器会构建一个名为VbsPolicy的安全启动变量，并在其中存储VSM激活模式和平台配置。VSM平台的一部分配置会根据检测到的系统硬件动态生成，另外一部分配置则可直接从VSM根键下的RequirePlatformSecurityFeatures注册表值中读取。随后每次启动时都会读取这个安全启动变量，而该变量中存储的配置将始终替代Windows注册表中的配置。</p>
+<p class="zw">这样，即使恶意软件通过修改Windows注册表禁用了VSM，Windows依然可以忽略这些改动，以保证用户环境的安全。恶意软件无法修改VSM安全启动变量，因为根据安全启动规范的要求，只有包含可信任数字签名的新变量才可以修改或删除原先的变量。微软提供了一个特殊的签名工具可以禁用VSM保护，该工具是一个特殊的EFI启动应用程序，可以设置另一个名为VbsPolicyDisabled的带签名的安全启动变量。Windows加载器可以在启动时识别该变量。如果发现该变量存在，则Winload将删除VbsPolicy安全变量，并修改注册表以禁用VSM（同时修改全局设置和每个激活的场景）。</p>
+<p class="zwtsh">实验：理解VSM策略</p>
+<p class="zwts1">在这个实验中，我们将了解安全内核的启动过程是如何抵抗外部篡改的。首先请在兼容的Windows版本（通常为专业版或商业版）中启用基于虚拟化的安全性（Virtualization Based Security，VBS）。在这些版本的系统中，我们可以通过任务管理器</p>
+<p class="zwts1">快速了解VBS是否已启用。如果VBS已启用，即可在“<strong style="color:#0092dd">详细信息</strong>”选项卡下看到一个名为Secure System的进程。不过即便已经启用，也别忘了检查UEFI锁是否已启用。在开始菜单的搜索框中输入“<strong style="color:#0092dd">组策略编辑器</strong>”（或gpedit.msc）并启动本地组策略编辑器控制台，随后依次进入“计算机配置”→“管理模板”→“系统”→“Device Guard”，双击“<strong style="color:#0092dd">打开基于虚拟化的安全</strong>”。请确保该策略设置为“<strong style="color:#0092dd">已启用</strong>”，并且相关选项的设置如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx947.png" style="width: 100%" />
+<p class="zwts1">接下来需要检查安全启动是否已启用（为此可以使用系统信息工具或系统BIOS配置工具确认安全启动的激活状态），随后重启系统。“使用UEFI锁启用”选项甚至可以防止管理员权限的用户进行篡改。重启系统后，通过相同的组策略禁用VBS（务必将所有设置都禁用）并删除HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\ Control\DeviceGuard下的所有注册表键和值（也可将其全部设置为“0”）。请使用注册表编辑器正确删除所有值。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx954.png" style="width: 100%" />
+<p class="zwts1">使用管理员权限运行的命令提示符窗口运行“bcdedit/set {current} hypervisorlaunchtype off”命令禁用虚拟机监控程序，然后再次重启系统。系统重启后，即便VBS和虚拟机监控程序已经按照预期正确关闭，依然可以通过任务管理器看到Secure System和LsaIso进程。这是因为UEFI服务变量VbsPolicy依然包含原策略，因此，恶意程序或用户无法轻易禁用这一层额外的保护。为了确认这一点，请运行eventvwr打开系统事件查看器并进入“Windows日志”→“系统”。向下拖动事件列表，应该能看到有一条描述VBS激活类型的事件（事件来源为Kernel-Boot）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx962.png" style="width: 100%" />
+<p class="zwts1">VbsPolicy是一种由启动服务认证的UEFI变量，这意味着当操作系统切换到运行时模式后，该变量将不可见。上一个实验中用到的UefiTool工具无法显示此类变量。为了查看VbsPolicy变量内容，请再次重启计算机，禁用安全启动，随后使用Efi Shell。Efi Shell（包含在本书随附资源中）必须复制到FAT32文件系统U盘的efi\boot路径下，并将其命名为bootx64.efi。随后用这个U盘启动系统即可运行Efi Shell。接着请运行下列命令：</p>
+<pre class="代码无行号"><code>dmpstore VbsPolicy -guid 77FA9ABD-0359-4D32-BD60-28F4E78F784B </code></pre>
+<p class="zwts1">（77FA9ABD-0359-4D32-BD60-28F4E78F784B是安全启动私有命名空间的GUID。）</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx969.png" style="width: 100%" />
+
+<p class="epubit-contents-id" style="display: none">{"index":11,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"6e93984b-1415-4591-b653-320546ba2e09"}</p>

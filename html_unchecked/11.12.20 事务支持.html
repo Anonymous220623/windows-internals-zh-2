@@ -1,0 +1,22 @@
+<h3 class="bt3" id="sigil_toc_id_271">11.12.20　事务支持</h3>
+<p class="zw">借助内核对内核事务管理器（KTM）的支持，以及通用日志文件系统提供的必要设施，NTFS实现了一种名为事务型NTFS（也叫TxF）的事务模型。TxF提供了一系列用户模式API，应用程序可以借此对自己的文件和目录执行事务型操作，并通过文件系统控制（FSCTL）接口管理自己的资源管理器。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　作为向Windows引入原子性事务的一种方式，Windows Vista引入了对TxF的支持。NTFS驱动程序也因此进行了一些修改，但实际上并未改变NTFS数据结构的格式，所以自Windows XP和Windows Server 2003起，NTFS格式版本就始终为3.1。TxF重新使用原本只为支持EFS而使用的属性类型（$LOGGED_UTILITY_STREAM），并未增加新的属性类型，借此实现了向后兼容性。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">TxF是一个强大的API，但因为过于复杂，开发者需要考虑很多问题，因此只有少数应用程序用到了该功能。截至撰写这部分内容，微软正考虑在后续版本的Windows中弃用TxF API。但考虑到内容的完整性，本书依然会概括介绍TxF的架构。</p>
+<p class="zw">TxF的整体架构如图11-54所示，其中包含以下多个组件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 实现于Kernel32.dll库中的事务API。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个读取TxF日志的库（%SystemRoot%\System32\Txfw32.dll）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个用于实现TxF日志功能的COM组件（%SystemRoot\System32\Txflog.dll）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> NTFS驱动程序内部的事务型NTFS库。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 用于读/写日志记录的CLFS基础架构。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2532.png" style="width: 100%" />
+<p class="图题">图11-54　TxF架构</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":19,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"01f1e7f5-dd67-471f-b6ae-5413b3558108"}</p>

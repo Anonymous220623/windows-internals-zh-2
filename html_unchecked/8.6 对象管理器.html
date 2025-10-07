@@ -1,0 +1,37 @@
+<h2 class="bt2" id="sigil_toc_id_30"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 8.6　对象管理器</h2>
+<p class="zw">正如本书卷1第2章所述，为了向执行体实现的各种内部服务提供一致且安全的访问，Windows实现了一种对象模型。本节要介绍的Windows对象管理器就是负责创建、删除、保护和跟踪对象的执行体组件。对象管理器与资源控制有关的操作集中到了一起，否则这些操作将只能分散在操作系统的各处。对象管理器在设计上满足了一系列目标的要求，这些内容将在实验之后详细介绍。</p>
+<p class="zwtsh">实验：浏览对象管理器</p>
+<p class="zwts1">本节会通过一系列实验向大家展示如何查看对象管理器数据库。这些实验会用到下列工具，建议不熟悉这些工具的读者先掌握这些工具的用法：</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> WinObj（可通过Sysinternals获得）可显示对象管理器的内部命名空间以及与对象有关的信息（例如引用计数、打开的句柄数量、安全描述符等）。GitHub上提供的WinObjEx64是一个类似工具，提供了更多高级功能，它是开源的，但未经微软认可或签名。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> Sysinternals提供的Process Explorer、Handles以及Resource Monitor（详细介绍可参阅本书卷1第1章）可显示进程已打开的句柄。Process Hacker也可以显示打开的句柄，并能显示某些对象类型的其他详细信息。</p>
+<p class="zwts1"><span style="color: #0092dd">●</span> 内核调试器!handle扩展，可显示进程打开的句柄及进程内部的Io.Handles数据模型对象，例如@$curprocess。</p>
+<p class="zwts1">WinObj和WinObjEx64提供了一种对对象管理器所维护的命名空间进行遍历的方法（稍后将介绍，并非所有对象都有名称）。运行这两个工具中的任何一个即可查看布局，如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2836.png" style="width: 100%" />
+<p class="zwts1">Windows的Openfiles/query命令可列出当前在系统中打开的本地和远程文件，该命令需要启用一个名为Maintain objects list的Windows全局标记（有关全局标记的详情请</p>
+<p class="zwts1">参阅第10章“全局标记”一节）。输入Openfiles/Local即可得知该标记是否已启用。可以用Openfiles/Local ON命令启用该标记，但为了让设置生效，需要重启动系统。Process Explorer、Handle和Resource Monitor无须启用对象跟踪，因为它们可以查询所有系统句柄并创建每进程对象列表。Process Hacker使用最新的Windows API查询每进程句柄，也无须该标记。</p>
+<p class="zw">对象管理器在设计上可满足下列目标：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 提供通用、统一的系统资源使用机制。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 将对象保护隔离到操作系统的一个位置内，以保证统一且一致的对象访问策略。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 提供一种对进程使用的对象进行“收费”的机制，从而限制对系统资源的使用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 建立一种能够很容易纳入现有对象（如设备、文件、文件系统目录或其他独立对象集合）的命名方案。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 为各种操作系统的环境要求提供支持，如进程从父进程继承资源的能力（该能力是Windows和UNIX子系统应用程序所必需的），以及创建可区分大小写文件名的能力（这是UNIX子系统应用程序所必需的）。虽然UNIX子系统应用程序已被弃用，但这些机制对随后开发的Windows Subsystem for Linux提供了一定帮助。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 建立统一的对象保留规则（即在所有进程全部使用完之前，确保对象始终可用）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 提供为特定会话隔离对象的能力，以便在命名空间中同时实现本地对象和全局对象。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 允许通过符号链接重定向对象名称和路径，并允许对象所有者（如文件系统）实现自己类型的重定向机制（如NTFS交接点，即junction point）。这些重定向机制结合在一起形成所谓的重分析（reparsing）。</p>
+<p class="zw">在内部，Windows有三种主要的对象类型：执行体对象、内核对象及GDI/用户对象。执行体对象是由执行体的各个组件（例如进程管理器、内存管理器、I/O子系统等）所实现的对象。内核对象是由Windows内核实现的一种类似基元的对象。这些对象对用户模式代码不可见，只能在执行体内部创建和使用。内核对象提供构建执行体对象所需的一些基本功能，例如同步。因此很多执行体对象会包含（封装）一个或多个内核对象，如图8-30所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2844.png" style="width: 100%" />
+<p class="图题">图8-30　包含内核对象的执行体对象</p>
+<p><br></p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　从另一方面来看，大部分GDI/用户对象都属于Windows子系统（Win32k.sys），并不与内核交互。因此这些内容已超出本书范围，读者可通过Windows SDK进一步了解有关此类对象的信息。但Desktop和Windows Station User对象是两个例外，它们被包装在执行体对象中，此外大部分DirectX对象（Shaders、Surfaces、Compositions）也会包装为执行体对象。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">下文将进一步介绍内核对象的结构及用它们实现同步的方法。本节后续部分将专注于介绍对象管理器的工作方式，以及执行体对象、句柄和句柄表的结构。这里只简要介绍如何通过对象来实现Windows的安全访问检查，有关该话题的详细讨论请参阅本书卷1第7章。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"18136782-cc9e-4447-8382-748342e5e95c","id":"6399eadf-b329-4125-b132-dff6515a2e34"}</p>

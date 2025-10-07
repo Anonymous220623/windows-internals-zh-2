@@ -1,0 +1,15 @@
+<h3 class="bt3" id="sigil_toc_id_226">11.9.18　过滤命名管道和邮件槽</h3>
+<p class="zw">当属于用户应用程序的进程需要与另一个实体（进程、内核驱动程序或远程应用程序）通信时，即可利用操作系统提供的各项设施。最传统的方式是命名管道和邮件槽，因为它们在其他操作系统中也是可移植的。命名管道是管道服务器和一个或多个管道客户端之间产生的一种命名的单向通信渠道。同一个命名管道的所有实例共享相同的管道名称，但每个实例都有自己的缓冲区和句柄，并为客户端/服务器通信提供单独的通道。命名管道是通过文件系统驱动程序NPFS驱动程序（Npfs.sys）实现的。</p>
+<p class="zw">邮件槽则是一个邮件槽服务器和一个或多个客户端之间的一种多向通信渠道。邮件槽服务器是一种通过CreateMailslot这个Win32 API创建邮件槽的进程，它只能读取由一个或多个客户端生成的小消息（远程计算机之间发送时最大为424字节）。客户端则是可将消息写入邮件槽的进程。客户端可通过标准的CreateFile API连接至邮件槽，随后可通过WriteFile函数发送消息。邮件槽通常主要用于在一个域内广播消息。如果一个域内的多个服务器进程每个都分别使用相同的名称创建邮件槽，那么每条以该邮件槽为地址并且发送到该域的消息都会被接收方的进程收到。邮件槽是通过邮件槽文件系统驱动程序Msfs.sys实现的。</p>
+<p class="zw">邮件槽和NPFS驱动程序都实现了一种简单的文件系统。它们管理由文件和目录组成的命名空间，这些命名空间支持安全性，可以打开、关闭、读取、写入等。这两个驱动程序的详细介绍已超出了本书的内容范围。</p>
+<p class="zw">从Windows 8开始，邮件槽和命名管道均由过滤器管理器提供支持。微过滤器也能通过在注册时指定的FLTFL_REGISTRATION_SUPPORT_NPFS_MSFS标记附加至邮件槽和命名管道卷（\Device\NamedPipe和\Device\Mailslot，它们并非真正的卷）。随后微过滤器即可拦截并修改本地和远程进程之间，以及用户应用程序与其内核驱动程序之间产生的所有命名管道和邮件槽I/O。此外，微过滤器还可以通过FltCreateNamedPipeFile或FltCreateMailslotFile API，在不产生递归事件的前提下打开或创建命名管道或邮件槽。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　为何说命名管道和邮件槽文件系统驱动程序比NTFS和ReFS更简单？一个重要原因在于它们并不与缓存管理器产生太多的交互。命名管道驱动程序实现了快速I/O路径，但并不支持缓存读取或后写入。邮件槽驱动程序则完全不与缓存管理器交互。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":17,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"c610cbc6-e9d5-42e7-8184-5fd0f84f092e"}</p>

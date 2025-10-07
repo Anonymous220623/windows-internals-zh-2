@@ -1,0 +1,11 @@
+<h2 class="bt2" id="sigil_toc_id_100"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 9.5　隔离用户模式</h2>
+<p class="zw">隔离用户模式（Isolated User Mode，IUM）是一种由安全内核为自己的安全进程（Trustlet）提供的服务。Trustlet的常规架构请参阅卷1第3章，本节将继续介绍隔离用户模式所提供的一些服务，例如安全设备以及VBS隔区。</p>
+<p class="zw">如卷1第3章所述，在VTL 1中创建一个Trustlet后，它通常会在自己的地址空间中映射下列库。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong>Iumdll.dll：</strong>IUM原生层DLL实现了安全系统调用存根，它相当于VTL 0下的Ntdll.dll。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong>Iumbase.dll：</strong>IUM基础层DLL这个库实现了仅供VTL 1软件使用的大部分安全API。它为每个安全进程提供了各种服务，如安全识别、通信、密码学运算以及安全内存管理。Trustlet通常并不直接调用安全系统调用，但会通过Iumbase.dll（相当于VTL 0下的kernelbase.dll）进行这些操作。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong>IumCrypt.dll：</strong>公开了用于签名和完整性验证的公钥/私钥加密函数。VTL 1中公开的大部分加密函数都在Iumbase.dll中实现，仅少数专用加密例程在IumCrypt中实现。IumCrypt公开的服务主要由LsaIso使用，但很多其他Trustlet并不加载LsaIso。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong>Ntdll.dll、Kernelbase.dll和Kernel32.dll：</strong>Trustlet在设计上可同时运行于VTL 1和VTL 0。这种情况下，它应该只能使用标准VTL 0 API表面所实现的例程。VTL 0下可用的服务并不全在VTL 1中实现。例如，一个Trustlet可以永远不执行与注册表和文件有关的I/O操作，但依然可以使用同步例程、ALPC、线程API以及结构化异常处理，并能管理虚拟内存和节对象。由Kernelbase和Kernel32库提供的几乎所有服务都通过Ntdll.dll执行系统调用。在VTL 1中，此类系统调用可“转换为”常规调用并重定向至VTL 0内核（常规调用详见上文）。常规调用通常会被IUM函数和安全内核本身所使用。这也解释了为何ntdll.dll始终会映射到每个Trustlet中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong>Vertdll.dll：</strong>VSM隔区运行时DLL负责管理VBS隔区的生命周期。安全隔区中执行的软件只能提供非常有限的服务，该库实现了公开给隔区软件的所有隔区服务，通常并不为标准的VTL 1进程加载。</p>
+<p class="zw">了解这些信息后，我们一起来看看Trustlet创建过程中涉及的内容，首先是VTL 0中的CreateProcess API，有关它的执行流程详情请参阅卷1第3章。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"af7a860a-0901-4112-8270-9695feebd3b6","id":"299b0677-b68d-4088-a559-555354991b32"}</p>

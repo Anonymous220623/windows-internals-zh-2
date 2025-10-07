@@ -1,0 +1,4 @@
+<h3 class="bt3" id="sigil_toc_id_201">11.8.5　强制缓存直接写入磁盘</h3>
+<p class="zw">由于某些应用程序无法容忍“写入文件”和“在磁盘上看到更新后的文件”这两个环节之间存在哪怕很短暂的延迟，因此缓存管理器还支持基于每个文件对象的直写缓存，在这种机制下，文件内容会在产生改动的同时立即写入磁盘。若要开启直写缓存，可在调用CreateFile函数时设置FILE_FLAG_WRITE_THROUGH标记。或者当一个线程需要将数据写入磁盘时，使用Windows的CreateFile函数明确刷新打开的文件。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"12f97583-be18-467a-a595-eb74d0d9db22","id":"db6c6a75-213b-4496-83c3-b932634e874b"}</p>

@@ -1,0 +1,15 @@
+<h3 class="bt3" id="sigil_toc_id_165">10.7.3　进程挂起检测</h3>
+<p class="zw">当应用程序因自身代码缺陷或Bug而挂起或停止工作时，也会用到Windows错误报告。应用程序挂起所导致的一个直接影响是，该应用将不再响应用户的任何交互。检测应用程序挂起所用的算法取决于应用程序的具体类型。现代应用程序栈认定Centennial或UWP应用程序挂起的依据为，HAM（主机活动管理器）发出的请求在一个明确定义的超时值（通常为30秒）内未能成功处理；任务管理器认定应用程序挂起的依据为，应用程序不响应WM_QUIT消息；Win32桌面应用程序视为不响应和挂起的依据为，前台窗口不再处理GDI消息且持续超过5秒。</p>
+<p class="zw">有关各种挂起检测算法的详细介绍已超出了本书范围。这里我们只考虑最常见的情况：经典Win32桌面应用程序不再响应用户的任何输入。检测工作始于Win32k内核驱动程序，当5秒超时值到期后，该驱动程序会向桌面窗口管理器（DWM.exe）创建的DwmApiPort ALPC端口发送一条消息。DWM会使用一种复杂的算法处理该消息，最终在挂起的窗口上层创建一个“幽灵”窗口。幽灵窗口重绘了挂起的窗口原本显示的内容，将内容模糊显示，并在窗口标题中添加“（未响应）”字样。该幽灵窗口会通过一个内部消息泵例程处理GDI消息，该例程可调用Windows User Mode Crash Reporting DLL（faultrep.dll）导出的ReportHang例程拦截关闭、退出和激活消息。ReportHang函数会直接构建一条WERSVC_REPORT_HANG消息，并将其发送给WER服务并等待回复。</p>
+<p class="zw">WER服务会读取注册表HKLM\Software\Microsoft\Windows\Windows Error Reporting\ Hangs根键中的设置值来处理消息并初始化挂起报告。尤其是可使用MaxHangrepInstances值指示在同一时间里能生成多少个挂起报告（如果该值不存在，则默认值为&nbsp;8&nbsp;个），而TerminationTimeout值决定了WER服务试图终止挂起的进程前需要等待的时间，超过该时间后才会认定整个系统处于挂起状态（默认为10秒）。造成这种情况的原因有很多，例如某个应用程序有一个活跃的挂起IRP，但从未被内核驱动程序完成。WER服务会打开挂起的进程，获取其令牌和其他基本信息。随后WER服务会创建一个共享内存节对象来存储这些信息（类似于用户应用程序的崩溃，不过此时该共享节的名称为Global\&lt;随机GUID&gt;）。</p>
+<p class="zw">随后将使用挂起进程的令牌和-h命令行开关（指定了要为挂起的进程生成报告），以暂停状态启动一个WerFault进程。与用户应用程序的崩溃不同，此时，WER服务调用Ntdll导出的PssNtCaptureSnapshot API，借此使用完整的SYSTEM令牌创建一个快照。该快照的句柄会被复制到暂停的WerFault进程中，快照成功创建后该进程会恢复运行。当WerFault启动后，它会发出一个事件信号，表明报告创建过程已开始。随后，原始进程即可被终止。系统将从克隆的进程中获取报告所需的信息。</p>
+<p class="zw">为挂起进程生成报告的过程与崩溃进程的报告过程类似：WerFault进程首先查询位于全局HKLM\Software\ Microsoft\Windows\Windows Error Reporting\Hangs注册表根键下的Debugger值。如果存在有效的调试器，则会启动调试器并连接到挂起的原始进程。如果Disable注册表值被设置为1，该过程将被忽略，WerFault进程会直接退出而不生成任何报告。其他情况下，WerFault会打开共享内存节，验证其内容，随后获取WER服务之前保存的所有信息。报告会使用WER.dll中导出的WerReportCreate函数进行初始化，崩溃报告也用到了这个函数。无论WER如何配置，挂起进程的对话框（见图10-44）将始终显示。最后，将使用（WER.dll中导出的）WerReportSubmit函数生成报告所需的全部文件（包括小型转储文件），这一过程与应用程序崩溃后的情况类似（详见上文“崩溃报告的生成”一节）。报告最终将发送给在线崩溃分析服务器。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3951.png" style="width: 100%" />
+<p class="图题">图10-44 Windows错误报告为挂起的应用程序显示的对话框</p>
+<p class="zw">当开始生成报告并且WERSVC_HANG_REPORTING_STARTED消息返回DWM时，WER会使用TerminateProcess API终止挂起的进程。如果该进程未在预期时间范围（通常为10秒，但可按照上文介绍通过TerminationTimeout设置来调整）内终止，WER服务将使用完整的SYSTEM令牌重新启动另一个WerFault实例并等待更长的时间（通常为60秒，但可通过LongTerminationTimeout设置来调整）。如果更长的超时等待后进程依然未能终止，WER将只能向应用程序日志中写入一条ETW事件，借此报告无法终止进程。该ETW事件的内容如图10-45所示。需要注意的是，该事件的描述信息有些误导，因为WER根本无法终止挂起的应用程序。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3958.png" style="width: 100%" />
+<p class="图题">图10-45　当挂起的应用程序无法终止时，ETW向应用程序日志中写入的错误事件</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"e82c68f3-ce07-4590-87fa-97745b952b95","id":"d6046b19-0874-4365-be86-22d59b488fce"}</p>

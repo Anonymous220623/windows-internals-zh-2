@@ -1,0 +1,19 @@
+<h3 class="bt3" id="sigil_toc_id_59">8.11.1　UWP应用程序</h3>
+<p class="zw">在卷1第7章，我们已经介绍了UWP应用程序及其安全环境。为了更好地理解本章涉及的概念，有必要对现代UWP应用程序的一些基本特性进行简要的介绍。Windows 8为进程引入了一些重要的新属性：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 程序包标识符。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 应用程序标识符。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> AppContainer。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Modern UI。</p>
+<p class="zw">我们已经全面介绍过AppContainer（详见卷1第7章）。当用户下载一个现代UWP应用程序时，应用程序通常会封装在AppX程序包中。一个程序包可以包含同一个作者所发布的不同应用程序，这些应用程序会相互链接在一起。程序包标识符是一种逻辑结构，能够以唯一的方式定义程序包，它包含名称、版本、架构、资源ID以及发行商五个部分。程序包标识符可以用两种方式来表示：一是使用程序包全名（package full name，最初也叫package moniker），这是一种由程序包标识符的每部分内容通过下划线连接组合成的字符串；二是使用程序包家族名（package family name），这是由程序包和发行商名称组成的另一种字符串。在这两种情况下，发行商需要负责使用Base32对完整的发行商名称字符串进行编码。在UWP的世界中，“程序包ID”和“程序包全名”这两个术语的含义是相同的。例如，Adobe Photoshop程序包就是通过下列全名分发的：</p>
+<p class="zw">AdobeSystemsIncorporated.AdobePhotoshopExpress_2.6.235.0_neutral_split.scale-125_ynb6jyjzte8ga</p>
+<p class="zw">其中：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> AdobeSystemsIncorporated.AdobePhotoshopExpress是程序包的名称。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 2.6.235.0是版本。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Neutral是目标架构。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Split_scale是资源ID。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> ynb6jyjzte8ga是发行商的Base32编码（采用了Crockford变体，为避免字母与数字混淆而不使用i、l、u和o这几个英文字母）。</p>
+<p class="zw">而程序包家族名称则是更简单的AdobeSystemsIncorporated.AdobePhotoshopExpress_ ynb6jyjzte8ga字符串。</p>
+<p class="zw">构成程序包的每个应用程序都由一个应用程序标识符所代表。应用程序标识符能以唯一的方式来标识组成面向用户的程序所包含的全部窗口、进程、快捷方式、图标和功能的集合，但不会考虑程序具体的实现方式（这意味着在UWP世界中，应用程序可以由不同的进程组成，但这些进程依然属于同一个应用程序标识符）。应用程序标识符通过一个简单的字符串来表示（在UWP世界中这叫作程序包相关应用程序ID，即Package Relative Application ID，通常可缩写为PRAID）。后者总会与程序包家族名称组合在一起，构成应用程序用户模型ID（Application User Model ID，通常可缩写为AUMID）。例如，Windows现代开始菜单应用程序的AUMID是Microsoft.Windows.ShellExperienceHost_ cw5n1h2txyewy!App，其中的App部分就是它的PRAID。</p>
+<p class="zw">程序包全名和应用程序标识符均位于描述现代应用程序安全上下文的令牌所包含的WIN://SYSAPPID安全特性中。有关UWP应用程序运行所需的安全环境的详细介绍，请参阅卷1第7章。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"9334f317-a4b1-4935-821c-b084138eb566","id":"1c93df11-9581-455f-804e-b61902e35bd8"}</p>

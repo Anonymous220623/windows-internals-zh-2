@@ -1,0 +1,76 @@
+<h3 class="bt3" id="sigil_toc_id_160">10.6.1　内部架构</h3>
+<p class="zw">如上文“启用DTrace并列出已安装的提供程序”实验所述，在Windows 10的2020年5月的更新（20H1）中，需要通过外部程序包来安装DTrace的某些组件。未来版本的Windows可能会将DTrace完全集成在操作系统映像中。虽然DTrace与操作系统深度集成，但仍然依赖三个外部组件才能正常工作。这些组件包括NT特有的实现，以及根据通用开发和分发许可证（Common Development and Distribution License，CDDL）自由发布的原始DTrace代码，这些代码可从https://github.com/microsoft/DTrace-on-Windows/tree/ windows下载。</p>
+<p class="zw">如图10-37所示，Windows中的DTrace包含下列组件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> DTrace.sys：DTrace扩展驱动程序是最主要的组件，负责执行与探针相关的操作并将结果存储在循环缓冲区中，用户模式应用程序可通过IOCTL从缓冲区中获取内容。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> DTrace.dll：该模块封装了LibDTrace，这是DTrace的用户模式引擎。它实现了D脚本编译器，可将IOCTL发送给DTrace驱动程序，同时也是循环DTrace缓冲区（DTrace驱动程序在这里存储操作结果）的主要消费者。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> DTrace.exe：入口点可执行文件，负责将所有可能的命令（通过命令行指定）分发给LibDTrace。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3362.png" style="width: 100%" />
+<p class="图题">图10-37　DTrace内部架构</p>
+<p class="zw">为了启动对Windows内核、驱动程序或用户模式应用程序的动态跟踪，用户只需调用DTrace.exe主可执行文件，并指定一个命令或外部D脚本即可。在这两种情况下，命令或脚本文件中可包含一个或多个探针，以及用D编程语言表达的其他操作。DTrace.exe会解析输入的命令行，并将相应请求转发给LibDTrace（实现于DTrace.dll中）。例如，当启动并启用一个或多个探针时，DTrace可执行文件会调用LibDTrace中实现的内部函数DTrace_program_fcompile，由该函数编译D脚本并在输出缓冲区中生成DTrace中间格式（DTrace Intermediate Format，DIF）字节码。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　有关DIF字节码和D脚本（或D命令）编译方式的详细介绍已超出了本书范围。感兴趣的读者可通过剑桥大学出版的<em>OpenDTrace Specification</em>（OpenDTrace规范）一书进一步了解详情：https://www.cl.cam.ac.uk/techreports/UCAM-CL-TR-924.pdf。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">虽然D编译器完全是在用户模式下的LibDTrace中实现的，但为了执行编译后的DIF字节码，LibDTrace模块只需将DTRACEIOC_ENABLE IOCTL发送给DTrace驱动程序，该驱动程序实现了一种DIF虚拟机。DIF虚拟机可以评估字节码中表达的每条D子句，并执行与其相关的可选操作。有一组较为有限的可用操作可通过原生代码执行，而无须通过D虚拟机进行解释。</p>
+<p class="zw">如图10-37所示，DTrace扩展驱动程序实现了所有提供程序。在讨论主提供程序工作原理之前，有必要先介绍Windows操作系统中的DTrace初始化过程。</p>
+<h4 class="bt4 sigil_not_in_toc">DTrace初始化</h4>
+<p class="zw">DTrace的初始化始于系统启动的早期阶段，当时Windows加载器正在加载内核正确启动所需的全部模块。加载和验证过程有个重要部件：API集文件（apisetschema.dll），它是Windows系统的重要组件（API集详见卷1第3章）。如果启动项中设置了BCD的DTRACE_ENABLED元素（值为0x26000145，可通过DTrace的人工易读名称来设置。有关BCD对象的详细信息请参阅第&nbsp;12&nbsp;章），Windows加载器将检查%SystemRoot%\ System32\Drivers路径下是否存在DTrace.sys驱动程序。如果存在，Windows加载器会构建一个名为ext-ms-win-ntos-trace-l1-1-0的全新API集Schema扩展。该Schema以DTrace. sys驱动程序为目标，会合并到系统API集Schema（OslApiSetSchema）中。</p>
+<p class="zw">后续启动过程中，当NT内核开始自己的阶段1初始化过程后，将调用TraceInitSystem函数以初始化动态跟踪子系统。该API会通过ext-ms-win-ntos-trace-l1-1-0.dll这个API集Schema导入NT内核。这意味着如果DTrace未被Windows加载器启用，名称解析将会失败，该函数基本上将起不到任何作用。</p>
+<p class="zw">TraceInitSystem有一个重要职责：计算跟踪调用数组的内容，该数组包含发出跟踪探针后需要由NT内核调用的函数。该数组存储在全局符号KiDynamicTraceCallouts中，这个符号稍后会受到Patchguard的保护，以防止恶意驱动程序对系统例程的执行流进行非法的重定向。最后，NT内核会通过TraceInitSystem函数向DTrace驱动程序发送另一个重要数组，该数组中包含了DTrace驱动程序应用探针所需的私有系统接口（该数组会被暴露在一种跟踪扩展上下文数据结构中）。在这种类型的初始化过程中，DTrace驱动程序和NT内核都交换了私有接口，而这也是DTrace驱动程序被称为扩展驱动程序的一个主要原因。</p>
+<p class="zw">随后，Pnp管理器将启动（以“启动驱动程序”形式安装在系统中）DTrace驱动程序，并调用其主入口点（DriverEntry）。该例程会注册\Device\DTrace控制设备及其符号链接（\GLOBAL??\DTrace）。随后它会初始化内部的DTrace状态，创建第一个DTrace内置提供程序。最后，它会调用每个提供程序的初始化函数，借此注册每个可用的提供程序。具体的初始化方法取决于每个提供程序，通常最终都需要调用内部的DTrace_register函数，该函数可将提供程序注册给DTrace框架。提供程序的初始化过程中还有另一个常见操作：为控制设备注册处理程序。用户模式应用程序可以与DTrace通信，并通过DTrace控制设备与提供程序通信，而控制设备向提供程序公开虚拟文件（处理程序）。例如，用户模式的LibDTrace可以打开到\\.\DTrace\Fasttrap虚拟文件（处理程序）的句柄，借此直接与PID提供程序通信。</p>
+<h4 class="bt4 sigil_not_in_toc">Syscall提供程序</h4>
+<p class="zw">当Syscall提供程序被启用后，DTrace最终会调用KeSetSystemServiceCallback例程，通过该例程为探针中指定的系统调用设置一个回调。在NT系统接口数组的帮助下，该例程会暴露给DTrace驱动程序。DTrace驱动程序由NT内核在DTrace初始化时编译（详见上一节），会被封装在一个内部称为KiDynamicTraceContext的扩展上下文数据结构中。KeSetSystemServiceCallback被首次调用时，该例程的重要任务是构建全局服务跟踪表（KiSystemServiceTraceCallbackTable），这是一种RB（红黑）树，其中包含了所有可用系统调用的描述符。每个描述符都包含Syscall名称、地址、参数数量以及表示该回调是在进入或退出时才会被启用的标记哈希值。NT内核包含一个通过KiServicesTab内部数组公开的Syscall静态列表。</p>
+<p class="zw">全局服务跟踪表被填满后，KeSetSystemServiceCallback会计算探针所指定的Syscall的名称哈希，并在红黑树中搜索该哈希。如果没有匹配的结果，则意味着探针指定了错误的Syscall名称（即函数退出时发出了错误信号）。否则函数会修改所找到的Syscall描述符中的启用标记，并增大启用的跟踪回调数量（存储在一个内部变量中）。</p>
+<p class="zw">当第一个DTrace syscall回调被启用时，NT内核会在全局KiDynamicTraceMask位掩码中设置Syscall位。这个操作很重要，借此系统调用处理程序（KiSystemCall64）才可以调用全局跟踪处理程序（系统调用和系统服务的调度详见第8章）。</p>
+<p class="zw">这样的设计使得DTrace能与系统调用处理机制共存，并且不会对性能造成任何负面影响。如果没有活跃的DTrace syscall探针，跟踪处理程序将不被调用。跟踪处理程序可在进入或退出系统调用时被调用。其功能很简单：扫描全局服务跟踪表，从中查找系统调用的描述符。找到目标描述符后，它会检查启用标记是否已设置，如果设置，则会调用正确的标注（Callout，根据上一节的介绍，包含在全局动态跟踪标注数组KiDynamicTraceCallouts中）。这种标注是在DTrace驱动程序中实现的，可使用常规的内部DTrace_probe函数发出Syscall探针并执行相关操作。</p>
+<h4 class="bt4 sigil_not_in_toc">函数边界跟踪（FBT）和进程（PID）提供程序</h4>
+<p class="zw">FBT和PID提供程序较为类似，它们都可以在任意函数（并不一定是Syscall）的入口和出口点上启用探针。目标函数可以位于NT内核中，或者是驱动程序的组成部分（这些情况将使用FBT提供程序），此外也可以位于用户模式模块中，由进程负责执行（PID提供程序可以跟踪用户模式应用程序）。在系统中，FBT或PID探针可通过直接写入目标函数代码的断点操作码（x86中的INT 3，ARM64中的BRK）激活，这种做法有一些重要意义。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在发出PID或FBT探针后，DTrace应该能在调用回到目标函数之前重新执行被替换的指令。为此，DTrace使用了一种指令仿真器。截至撰写这部分内容，该仿真器可兼容AMD64和ARM64架构。这个仿真器实现于NT内核中，通常可由系统异常处理程序在处理断点异常时调用。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> DTrace需要通过一种方法来按照名称识别不同函数。在最终的二进制文件中，函数名称并未编译（导出的函数除外）。DTrace使用了多种技术来实现这一目标，详见下文“DTrace类型库”一节。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 一个函数可以从不同代码分支以多种方式退出（返回）。为识别这些退出点，需要通过函数图分析器（Function graph analyzer）反汇编函数指令并找到退出点。尽管最初的函数图分析器是Solaris代码的一部分，但Windows中DTrace的实现使用了一种更优化版本的函数图分析器，该分析器依然位于LibDTrace库（DTrace.dll）中。在使用该函数图分析器分析用户模式函数时，DTrace会通过PDATA v2展开（Unwind）信息可靠地找出内核模式函数退出点（有关函数展开和异常调度的详情请参阅第8章）。如果内核模式模块未使用PDATA v2展开信息，FBT提供程序将不会为返回的函数创建任何探针。</p>
+<p class="zw">DTrace通过调用KeSetTracepoint函数来安装FBT或PID探针，该函数由NT内核通过NT系统接口数组导出，可验证参数（尤其是回调指针），并且对于内核目标，还会验证目标函数是否位于已知内核模式模块的可执行代码节中。与Syscall提供程序类似，此时会构建并使用一个KI_TRACEPOINT_ENTRY数据结构来跟踪被激活的跟踪点。该数据结构包含拥有者进程、访问模式以及目标函数地址，会被插入全局哈希表KiTpHashTable中，该表则会在FBT或PID探针被首次激活时分配。最后，位于目标代码中的一条指令被解析（导入仿真器中）并替换为断点操作码，同时还会设置全局KiDynamicTraceMask位掩码中的Trap位。</p>
+<p class="zw">对于内核模式的目标，只有在启用VBS（Virtualization Based Security，基于虚拟化的安全性）时才能进行断点替换。MmWriteSystemImageTracepoint例程将定位与目标函数相关的加载器数据表项，并调用SECURESERVICE_SET_TRACEPOINT安全调用。安全内核是唯一能与HyperGuard协作的实体，从而使断点应用成为合法的代码修改。正如卷1第7章所述，Kernel Patch保护（也称Patchguard）可防止对NT内核和某些重要的内核驱动程序代码进行任何改动。如果系统中未启用VBS，并且未连接调试器，此时将返回错误代码并且探针应用程序会失败。如果已连接内核调试器，即可通过MmDbgCopyMemory函数为NT内核应用断点操作码（被调试的系统将不启用Patchguard）。</p>
+<p class="zw">在为调试器异常进行调用（这可能是DTrace的FTB或PID探针发出引起的）时，系统异常处理程序（KiDispatchException）会检查全局KiDynamicTraceMask位掩码中的Trap位是否已设置。如果已设置，异常处理程序将调用KiTpHandleTrap函数，由该函数搜索KiTpHashTable以确定该异常的产生是否是因为发出了已注册的FTB或PIF探针所导致的。对于用户模式探针，该函数会检查进程上下文是否符合预期。如果符合，或如果探针是内核模式探针，该函数将直接调用DTrace回调FbtpCallback，由它执行探针关联的操作。该回调执行完毕后，处理程序会调用仿真器，借此在将执行上下文转移到目标函数之前模拟目标函数的第一条原始指令。</p>
+<p class="zwtsh">实验：跟踪动态内存</p>
+<p class="zwts1">在这个实验中，我们将动态跟踪虚拟机所应用的动态内存。为此需要使用Hyper-V管理器创建一个第二代虚拟机，设置内存容量最小值为768MB，动态内存最大容量为无限（有关动态内存和Hyper-V的详细信息请参阅第9章）。该虚拟机需要运行Windows 10的2019年5月的更新（19H1）或2020年5月的更新（20H1），或者后续的新版本。此外该虚拟机中需要安装DTrace程序包（具体方法详见本章上文“启用DTrace并列出已安装的提供程序”实验）</p>
+<p class="zwts1">请将本书随附资源中提供的dynamic_memory.d脚本复制到DTrace目录，并在管理员身份运行的命令提示符窗口中通过下列命令启动：</p>
+<pre class="代码无行号"><code>cd /d "c:\Program Files\DTrace" 
+dtrace.exe -s dynamic_memory.d </code></pre>
+<p class="zwts1">如果只运行上述命令，DTrace将拒绝编译该脚本，此时可能会显示类似下列错误信息：</p>
+<pre class="代码无行号"><code>dtrace: failed to compile script dynamic_memory.d: line 62: probe description fbt:nt:MiRem 
+ovePhysicalMemory:entry does not match any probes </code></pre>
+<p class="zwts1">这是因为标准配置中并未设置符号存储路径。该脚本会通过操作系统的两个函数连接到FBT提供程序。一个函数是从NT内核二进制文件中导出的MmAddPhysicalMemory，另一个是未被导出也未包含在公开WDK中的MiRemovePhysicalMemory。对于后者，FBT提供程序完全无法计算它在系统中的地址。</p>
+<p class="zwts1">DTrace可以从不同来源获得类型和符号信息，详见本章下文“DTrace类型库”一节。为了让FBT提供程序能与操作系统内部函数正确配合，我们需要将符号存储的路径指向微软的公开符号服务器，为此请使用下列命令：</p>
+<pre class="代码无行号"><code>set _NT_SYMBOL_PATH=srv*C:\symbols*http://msdl.microsoft.com/download/symbols </code></pre>
+<p class="zwts1">设置了符号存储路径后，如果以dynamic_memory.d脚本为目标重启动DTrace，此时应该可以正确编译并显示如下的输出：</p>
+<pre class="代码无行号"><code>The Dynamic Memory script has begun. </code></pre>
+<p class="zwts1">随后可以模拟一些高内存压力的场景。这可以通过多种方式实现，例如启动浏览器并打开大量网页标签，运行3D游戏，或直接通过-d命令开关运行TestLimit工具，这会迫使系统持续分配并写入内存，直到所有资源均已耗尽。根分区中的虚拟机工作进程应该会检测到这种情况，并向子虚拟机注入新内存。DTrace会检测到这个操作：</p>
+<pre class="代码无行号"><code>Physical memory addition request intercepted. Start physical address 0x00112C00, 
+Number of pages: 0x00000400. 
+   Addition of 1024 memory pages starting at PFN 0x00112C00 succeeded! </code></pre>
+<p class="zwts1">通过类似的方式，如果关闭客户虚拟机中的所有应用程序，并在宿主系统中重新创</p>
+<p class="zwts1">建这种高内存压力场景，则该脚本能拦截动态内存的移除请求：</p>
+<pre class="代码无行号"><code>Physical memory removal request intercepted. Start physical address 0x00132000, 
+Number of pages: 0x00000200. 
+   Removal of 512 memory pages starting at PFN 0x00132000 succeeded! </code></pre>
+<p class="zwts1">使用Ctrl+C中断DTrace后，脚本会输出一些统计信息：</p>
+<pre class="代码无行号"><code>Dynamic Memory script ended. 
+Numbers of Hot Additions: 217 
+Numbers of Hot Removals: 1602 
+Since starts the system has gained 0x00017A00 pages (378 MB). </code></pre>
+<p class="zwts1">使用记事本打开dynamic_memory.d脚本，我们会看到它共安装了6个探针（4个FBT，2个内置探针），并执行了日志和计数操作。例如：</p>
+<pre class="代码无行号"><code>fbt:nt:MmAddPhysicalMemory:return 
+/ self-&gt;pStartingAddress != 0 / </code></pre>
+<p class="zwts1">上述内容会在MmAddPhysicalMemory函数的退出点上安装一个探针，但前提是在函数入口点获得的起始物理地址非0。有关DTrace中所用D编程语言的详细信息请参考<em>The illumos Dynamic Tracing Guide</em>一书，本书可通过下列地址免费阅读：http://DTrace. org/guide/preface.html。</p>
+<h4 class="bt4 sigil_not_in_toc">ETW提供程序</h4>
+<p class="zw">DTrace可同时支持ETW提供程序和etw_trace操作，前者可让探针在特定提供程序生成某些ETW事件后触发，后者可以让DTrace脚本生成新的定制化TraceLogging ETW事件。Etw_trace操作实现于LibDTrace中，而LibDTrace可使用TraceLogging API动态地注册新的ETW提供程序并生成与之相关的事件。有关ETW的详细信息请参阅上文“Windows事件跟踪”一节。</p>
+<p class="zw">ETW提供程序实现于DTrace驱动程序中。当PNP管理器初始化DTrace引擎时，会向DTrace引擎注册所有提供程序。在注册时，ETW提供程序会配置一种名为DTraceLoggingSession的DTrace会话，该会话会设置为将事件写入循环缓冲区。在从命令行启动DTrace时，会向DTrace驱动程序发送一个IOCTL，IOCTL处理程序会调用每个提供程序提供的函数，并由内部函数DtEtwpCreate使用EtwEnumTraceGuidList函数代码调用NtTraceControl API。这样DTrace就可以枚举系统中注册的所有ETW提供程序，并为每个提供程序创建一个探针（dtrace -l也能显示ETW探针）。</p>
+<p class="zw">在编译并执行以ETW提供程序为目标的D脚本时，将会调用内部例程DtEtwEnable，借此可启用一个或多个ETW探针。随后将启动在注册时配置的日志会话（如果还没开始运行的话）。在跟踪扩展上下文（如上文所述，其中包含了私有系统接口）的帮助下，DTrace可以注册一个内核模式回调，每当DTrace日志会话中有新事件被记录后，都会调用这个回调。会话首次启动时，还没有相关联的提供程序。与Syscall和FBT提供程序类似，DTrace会为每个探针创建一个跟踪数据结构，并将其插入一个表示所有已启用ETW探针的全局红黑树（DtEtwpProbeTree）。这个跟踪数据结构很重要，它表示了ETW提供程序和相关探针之间的链接。DTrace会为提供程序计算正确的启用级别和关键字位掩码（详见上文“提供程序的启用”一节），并会调用NtTraceControl API在会话中启用提供程序。</p>
+<p class="zw">生成事件后，ETW子系统会调用回调例程，由回调例程在全局ETW探针树中搜索表示该探针的上下文数据结构。找到后，DTrace即可触发该探针（依然使用了内部函数DTrace_probe）并执行所有相关操作。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"8ec98f6d-2493-4bae-9a02-187c6c75678d","id":"64ea0698-ec6c-4456-9864-55c8d5766b86"}</p>

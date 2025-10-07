@@ -1,0 +1,130 @@
+<h3 class="bt3" id="sigil_toc_id_256">11.12.5　文件记录</h3>
+<p class="zw">NTFS并不仅仅将文件视为一种文本或二进制数据的存储库，而是将文件视为一种属性/值对的集合，而其中的一个属性（名为“未命名数据属性”）恰好保存了文件本身的数据内容。构成文件的其他属性包括文件名、时间戳信息，甚至其他命名数据属性。图11-34演示了一个小文件的MFT记录。</p>
+<p class="zw">每个文件的属性都作为一个单独的字节流存储在文件中。严格来说，NTFS并不读/写文件，它读/写的是属性流。NTFS提供了这些与属性有关的操作，即创建、删除、读取（字节范围）、写入（字节范围）。读/写服务通常会在文件的未命名数据属性上执行操作，不过调用方可以使用命名数据流语法指定不同的数据属性。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2003.png" style="width: 100%" />
+<p class="图题">图11-34　一个小文件的MFT记录</p>
+<p class="zw">表11-6列出了NTFS卷上文件的属性（并非每个文件都包含所有这些属性）。NTFS的每个属性可以是未命名的，也可以是命名的。例如$LOGGED_UTILITY_STREAM就是一个命名特性，该属性被NTFS的不同组件用于多种用途。表11-7列出了$LOGGED_UTILITY_STREAM属性可能的名称以及各自的用途。</p>
+<p class="表题">表11-6　NTFS卷上文件的属性</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">属性</p> </th> 
+   <th> <p class="bt">属性类型名称</p> </th> 
+   <th> <p class="bt">是否常驻</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">卷信息</p> </td> 
+   <td> <p class="bg">$VOLUME_INFORMATION、<br> $VOLUME_NAME</p> </td> 
+   <td> <p class="bg">始终、始终</p> </td> 
+   <td> <p class="bg">仅$Volume元数据文件包含该属性，存储了卷版本和卷标信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">标准信息</p> </td> 
+   <td> <p class="bg">$STANDARD_<br> INFORMATION</p> </td> 
+   <td> <p class="bg">始终</p> </td> 
+   <td> <p class="bg">诸如只读、存档等文件属性以及时间戳，包括文件的创建或上次修改的时间</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">文件名</p> </td> 
+   <td> <p class="bg">$FILE_NAME</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">以Unicode 1.0字符表示的文件名。一个文件可以有多个文件名属性，例如文件存在硬链接，或长名称文件为了供MS-DOS和16位Windows应用程序访问而自动生成的短名称</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">安全描述符</p> </td> 
+   <td> <p class="bg">$SECURITY_DESCRIPTOR</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">该属性的存在主要是为了向后兼容老版本NTFS，很少在当前版本（3.1）NTFS中使用。NTFS将几乎所有安全描述符存储在$Secure元数据文件中，并为使用相同设置的文件和目录共享这些描述符。老版本NTFS将专用安全描述符信息存储在每个文件和目录中。一些文件依然包含$SECURITY_ DESCRIPTOR属性，如$Boot</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">数据</p> </td> 
+   <td> <p class="bg">$DATA</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">文件的内容。在NTFS中，一个文件只有一个默认未命名数据属性，但可以有多个命名数据属性，也就是说，文件可以包含多个数据流。目录没有默认数据属性，但可以有可选命名数据属性。<br></p> <p class="bg">命名数据流甚至可用于特定的系统用途，例如，存储服务可以使用存储保留区域表（Storage Reserve Area Table）流（$SRAT）在卷上创建预留空间。该属性仅适用于$Bitmap元数据文件。存储保留详见下文</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">索引根、索引<br> 分配</p> </td> 
+   <td> <p class="bg">$INDEX_ROOT、<br> $INDEX_ALLOCATION</p> </td> 
+   <td> <p class="bg">始终、从不</p> </td> 
+   <td> <p class="bg">这些属性用于实现目录、安全性、配额以及其他元数据文件所用的B树数据结构</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">属性列表</p> </td> 
+   <td> <p class="bg">$ATTRIBUTE_LIST</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">包含组成文件的所有属性，以及每个属性在MFT中所处的文件记录号。当一个文件需要多个MFT文件记录时就会出现该属性</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">索引位图</p> </td> 
+   <td> <p class="bg">$BITMAP</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">该属性可用于不同的用途：对于非常驻目录（始终存在$INDEX_ALLOCATION），位图记录了哪些4&nbsp;KB大小的索引块已被B树使用，以及哪些索引块可以在B树增长后继续使用。MFT中有一个未命名的“$Bitmap”属性，可跟踪哪些MFT段正被使用，以及哪些段可供以后的新文件或需要更多空间的现有文件使用</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">对象ID</p> </td> 
+   <td> <p class="bg">$OBJECT_ID</p> </td> 
+   <td> <p class="bg">始终</p> </td> 
+   <td> <p class="bg">文件或目录的16位标识符（GUID）。链接跟踪服务会为外壳快捷方式和OLE链接源文件分配对象ID。NTFS提供了API，借此可以使用对象ID而非文件名来打开文件和目录</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">重分析信息</p> </td> 
+   <td> <p class="bg">$REPARSE_POINT</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">该属性存储了文件的重分析点数据。NTFS交叉和挂载点包含了该属性</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">扩展属性</p> </td> 
+   <td> <p class="bg">$EA、$EA_<br> INFORMATION</p> </td> 
+   <td> <p class="bg">也许、始终</p> </td> 
+   <td> <p class="bg">扩展属性是一种名称/值对，通常并不使用，主要是为了向OS/2应用程序提供向后兼容性</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">记录的工具流</p> </td> 
+   <td> <p class="bg">$LOGGED_UTILITY_<br> STREAM</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">该属性类型可被NTFS的不同组件用于多种用途，详见表11-7</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="表题">表11-7　$LOGGED_UTILITY_STREAM属性</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">属性</p> </th> 
+   <th> <p class="bt">属性类型名称</p> </th> 
+   <th> <p class="bt">是否常驻</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">加密文件流</p> </td> 
+   <td> <p class="bg">$EFS</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">在这个属性中存储了管理文件加密所需的数据，如解密文件所需的加密密钥版本，以及被授权可访问该文件的用户列表</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">联机加密备份</p> </td> 
+   <td> <p class="bg">$EfsBackup</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">EFS联机加密会使用该属性存储原始加密数据流组成的块</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">事务型<br> NTFSData</p> </td> 
+   <td> <p class="bg">$TXF_DATA</p> </td> 
+   <td> <p class="bg">也许</p> </td> 
+   <td> <p class="bg">在文件或目录成为事务的一部分后，TxF便会在$TXF_DATA属性中存储事务数据，如文件的唯一事务ID</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">所需存储类</p> </td> 
+   <td> <p class="bg">$DSC</p> </td> 
+   <td> <p class="bg">常驻</p> </td> 
+   <td> <p class="bg">所需存储类可用于将文件“固定”到首选存储层中。详见“NTFS对分层卷的支持”一节</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">表11-6列出了属性名称，然而，这些属性实际上对应于数字类型代码，NTFS用这些代码来排列文件记录中的属性。MFT记录中的文件属性是按照这些类型代码（以数字升序的顺序）排序的，有些属性类型可能不止出现一次，例如一个文件可能有多个数据属性，或有多个文件名。所有可能的属性类型（及其名称）都位于$AttrDef元数据文件中。</p>
+<p class="zw">文件记录中的每个属性都可以用属性类型代码区分，并有一个值和一个可选的名称。属性的值是组成该属性的字节流。例如，$FILE_NAME属性的值就是文件的名称，$DATA属性的值就是用户在文件中存储的数据字节。</p>
+<p class="zw">大多数属性并没有名称，但与索引有关的属性和$DATA属性通常都有名称。名称区分了一个文件可以包含同一类型的多个属性。例如，一个包含命名数据流的文件有两个$DATA属性：一个未命名的$DATA属性存储了默认的未命名数据流，另一个命名的$DATA属性存储了备用命名数据流所包含的命名流数据。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"0249667c-2a07-4afb-b3ab-3bf29dde7a5d"}</p>

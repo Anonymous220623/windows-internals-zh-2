@@ -1,0 +1,22 @@
+<h3 class="bt3" id="sigil_toc_id_220">11.9.12　显式文件I/O</h3>
+<p class="zw">应用程序访问文件最明显的方式是调用Windows的I/O函数，例如CreateFile、ReadFile以及WriteFile。应用程序使用CreateFile打开一个文件，随后即可将CreateFile返回的句柄传递给其他Windows函数，实现文件的读取、写入或删除功能。CreateFile函数实现于Kernel32.dll这个Windows客户端DLL中，可调用原生函数NtCreateFile，为应用程序传递给自己的路径形成一个完整的根相对路径名（会处理路径名中的“.”和“..”符号），并为路径添加“\??”的前缀（例如\??\C:\Daryl\Todo.txt）。</p>
+<p class="zw">NtCreateFile系统服务使用ObOpenObjectByName来打开文件，它会解析以对象管理器根目录和路径名称的第一部分（“??”）开头的名称。第8章详细介绍了对象管理器名称的解析及其对进程设备映射的使用，此处将简要回顾相关步骤，不过将重点关注卷盘符的查找。</p>
+<p class="zw">对象管理器执行的第一步操作是将“\??”转换为进程的每会话命名空间的目录，该目录是进程对象中设备映射结构中的DosDevicesDirectory字段所引用的（使用登录会话令牌中的登录会话引用字段从第一个进程进行传播）。通常只有网络共享的卷名称以及Subst.exe工具映射的驱动器盘符会存储在每会话目录中，因此在这些系统中，如果每会话目录中不存在某个名称（例如本例中的C:），对象管理器会在该每会话目录关联的设备映射的GlobalDosDevicesDirectory字段所引用的目录中重新查找。GlobalDosDevicesDirectory字段始终指向\GLOBAL??目录，Windows在这里存储了本地卷的盘符（详见第8章中的“会话命名空间”一节）。进程也可以有自己的设备映射，这是通过RPC等协议进行模拟时的一个重要特征。</p>
+<p class="zw">卷盘符的符号链接会指向\Device下的卷设备对象，因此，当对象管理器遇到卷对象时，它会将路径名称的其余部分交给I/O管理器为设备对象注册的解析函数IopParseDevice（对于动态磁盘中的卷，符号链接会指向一个中间符号链接，这个中间符号链接最终指向卷设备对象）。图11-23展示了如何通过对象管理器命名空间访问卷对象。图中展示了\GLOBAL??\C:这个符号链接是如何指向\Device\HarddiskVolume6这个卷设备对象的。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1341.png" style="width: 100%" />
+<p class="图题">图11-23　卷盘符的名称解析</p>
+<p class="zw">在锁定了调用方的安全上下文并通过调用方的令牌获取了安全信息后，IopParseDevice会创建一个类型为IRP_MJ_CREATE的I/O请求包（IRP），并创建一个文件对象来存储要打开的文件名称，以及用于查找卷的已挂载文件系统设备对象的卷设备对象VPB，随后会使用IoCallDriver将该IRP传递给拥有该文件系统设备对象的文件系统驱动程序。</p>
+<p class="zw">当FSD收到IRP_MJ_CREATE IRP时，会查找指定的文件，执行安全验证，如果文件存在并且用户有权按照所请求的方式访问该文件，则会返回成功状态代码。对象管理器会在进程的句柄表中为文件对象创建一个句柄，该句柄可通过调用链回传，最终作为CreateFile返回的参数抵达应用程序。如果文件系统的创建操作失败，I/O管理器会删除其为文件创建的文件对象。</p>
+<p class="zw">我们跳过了FSD如何在卷上定位要打开文件的方法细节，但ReadFile函数调用操作在很多方面与FSD和缓存管理器以及存储驱动程序的交互都是相同的。ReadFile和CreateFile都是映射至I/O管理器函数的系统调用，但NtReadFile系统服务并不需要进行名称查找，它会调用对象管理器将ReadFile传递来的句柄转换为文件对象指针。如果在打开文件时，句柄显示调用方获得了读取文件的权限，则NtReadFile会继续创建一个IRP_ MJ_READ类型的IRP，并将其发送给文件所在卷的FSD。NtReadFile会获取FSD的设备对象（存储在文件对象中），并调用IoCallDriver，随后I/O管理器即可从设备对象中找到FSD并将IRP提供给FSD。</p>
+<p class="zw">如果正在读取的文件可被缓存（即打开文件时未向CreateFile传递FILE_FLAG_NO_ BUFFERING标记），则FSD会检查是否已经为该文件对象发起了缓存。如果某个文件对象已经发起了缓存，则文件对象中的PrivateCacheMap字段会指向一种专用缓存映射结构（上文已有相关介绍）。如果FSD尚未发起对某个文件对象的缓存（例如在首次读取或写入一个文件对象时），则PrivateCacheMap字段将为Null。FSD会调用缓存管理器的CcInitializeCacheMap函数来初始化缓存，在这一过程中，缓存管理器会创建私有缓存映射，并且如果引用同一个文件的另一个文件对象没有发起缓存，则创建一个共享缓存映射和节对象。</p>
+<p class="zw">在验证了文件缓存已启用后，FSD会将请求的文件数据从缓存管理器的虚拟内存复制到线程传递给ReadFile函数的缓冲区。文件系统会在Try/except块中执行复制操作，这样就能捕捉到由于无效应用程序缓冲区而导致的所有错误。文件系统会使用缓存管理器的CcCopyRead函数来执行复制。CcCopyRead接受一个文件对象、文件偏移量以及长度作为参数。</p>
+<p class="zw">当缓存管理器执行CcCopyRead时，会获取一个指向共享缓存映射的指针，该指针存储在文件对象中。上文曾经提到，共享缓存映射存储了指向虚拟地址控制块（VACB）的指针，文件每256&nbsp;KB的块有一个对应的VACB项。如果文件中正被读取部分的VACB指针为Null，则CcCopyRead会分配一个VACB，在缓存管理器的虚拟地址空间中保留一个256&nbsp;KB的视图，并使用MmMapViewInSystemCache将文件中的指定部分映射到该视图。随后CcCopyRead会直接将文件数据从映射的视图复制到自己传递的缓冲区（即最开始传递给ReadFile的缓冲区）。如果文件数据不在物理内存中，则复制操作会产生页面错误，随后将由MmAccessFault提供服务。</p>
+<p class="zw">当发生页面错误时，MmAccessFault会检查造成错误的虚拟地址，并在造成错误的进程的VAD树中查找虚拟地址描述符（VAD）（有关VAD树的详细信息请参阅卷1第5章）。这种情况下，VAD描述了缓存管理器对正被读取的文件创建的已映射视图，因此MmAccessFault会调用MiDispatchFault来处理有效虚拟内存地址的页面错误。MiDispatchFault会定位VAD指向的控制区，并通过该控制区找到表示所打开文件的文件对象（如果文件被打开多次，可能会有一个文件对象列表，并通过私有缓存映射中的指针链接在一起）。</p>
+<p class="zw">得到文件对象后，MiDispatchFault会调用I/O管理器的IoPageRead函数构建（IRP_ MJ_READ类型的）IRP，并将该IRP发送给文件对象指向的设备对象的拥有者FSD。这样即可重新进入文件系统以读取通过CcCopyRead请求的数据，但这次的IRP会被标记为未缓存和分页I/O。这些标记会向FSD发出信号，让FSD直接从磁盘上获取文件数据，这是通过判断磁盘上的哪些簇包含所请求的数据（确切机制取决于文件系统），并向拥有文件所在卷设备对象的卷管理器发送IRP实现的。FSD设备对象中的卷参数块（VPB）字段会指向卷设备对象。</p>
+<p class="zw">内存管理器会等待FSD完成IRP读取，随后将控制权返回给缓存管理器，并由缓存管理器继续执行之前被页面错误中断的复制操作。当CcCopyRead完成时，FSD会将控制权返回给调用了NtReadFile的线程，并在缓存管理器和内存管理器的帮助下将所请求的文件数据复制到线程的缓冲区。</p>
+<p class="zw">WriteFile的路径与上述情况类似，差别在于NtWriteFile系统服务会生成类型为IRP_ MJ_WRITE的IRP，并且FSD会调用CcCopyWrite而非CcCopyRead。CcCopyWrite与CcCopyRead类似，保证了文件中正被写入的部分可映射至缓存，随后将WriteFile传递的缓冲区复制到缓存。</p>
+<p class="zw">如果文件的数据已经被缓存（到系统工作集中），那么上述情况将会有几种变数。如果文件的数据已经存储在缓存中，则CcCopyRead将不产生页面错误。此外，在某些情况下，NtReadFile和NtWriteFile会调用FSD的快速I/O入口点，而不是立即构建并发送IRP到FSD。其中的一些条件包括：文件被读取的部分必须位于文件的前4&nbsp;GB范围内，文件不能有锁定，文件正在被读取或写入的部分必须在文件当前分配的大小范围内。</p>
+<p class="zw">对大部分FSD来说，快速I/O读取和写入的入口点可以调用缓存管理器的CcFastCopyRead和CcFastCopyWrite函数。这些标准复制例程的变体保证了在执行复制操作之前，文件的数据已被映射至文件系统缓存。如果无法满足这个条件，CcFastCopyRead和CcFastCopyWrite则会认为无法实现快速I/O。当快速I/O不可行时，NtReadFile和NtWriteFile会回退以创建IRP（有关快速I/O的详细介绍请参阅上文“快速I/O”一节）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":11,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"61774183-ab99-4a68-a583-eb1725ebb544"}</p>

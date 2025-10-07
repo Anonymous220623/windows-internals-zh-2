@@ -1,0 +1,10 @@
+<h3 class="bt3" id="sigil_toc_id_227">11.9.19　控制重分析点的行为</h3>
+<p class="zw">NTFS支持重分析点（reparse point）的概念，重分析点是一种由应用程序和系统定义的重分析数据组成的、18&nbsp;KB大小、可关联给单一文件的块（下文很多小节还将详细讨论）。某些类型的重分析点（如卷挂载点或符号链接）包含作为占位符的原始文件（或空目录）与另一个文件（该文件甚至可以位于另一个卷中）之间的链接。当NTFS文件系统驱动程序在路径上遇到重分析点后，会向设备堆栈的上级驱动程序返回一个错误代码。上级驱动程序（可能是另一个过滤器驱动程序）将会分析重分析点的内容，如果发现这是一个符号链接，则会向正确的卷设备重新发出另一个I/O。</p>
+<p class="zw">这个过程对于任何过滤器驱动程序来说都是复杂烦琐的。微过滤器驱动程序可以拦截STATUS_REPARSE的错误代码并通过新的FltCreateFileEx2 API重新打开重分析点，该API可接收一种额外的创建参数（Extra Create Parameter，ECP）列表，借此可进一步调整微过滤器上下文中目标文件的打开/创建进程的具体行为。一般来说，过滤器管理器支持不同的ECP，每个ECP都可通过唯一的GUID加以识别。过滤器管理器提供了多种用于处理ECP和ECP列表的文档化API。通常，微过滤器会使用FltAllocateExtraCreateParameter函数分配ECP，向其中填充内容，随后在调用过滤器管理器的I/O API之前，将其通过FltInsertExtraCreateParameter插入列表中。</p>
+<p class="zw">FLT_CREATEFILE_TARGET这个额外创建的参数可以让过滤器管理器自动管理跨卷文件的创建（调用方需要指定标记）。微过滤器无须执行其他任何复杂操作。</p>
+<p class="zw">为了支持容器隔离，也可以在非空目录上设置重分析点。同时，为了支持容器隔离，还可创建具备目录重分析点的新文件。在遇到非空目录重分析点后，文件系统的默认行为取决于该重分析点是否应用于文件完整路径的最后一个组件。如果是，则文件系统将像处理空目录那样返回STATUS_REPARSE的错误代码；如果不是，则会继续沿路径向下。</p>
+<p class="zw">过滤器管理器可以通过另一个ECP（名为TYPE_OPEN_REPARSE）正确处理这种新的重分析点。该ECP包含一个描述符列表（OPEN_REPARSE_LIST_ENTRY数据结构），其中每一项都（通过自己的重分析标记）描述了重分析点的类型，以及在解析路径时遇到这种类型的重分析点后，系统应该采取的行为。在正确初始化描述符列表后，微过滤器即可通过不同的方式应用新的行为。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 使用&nbsp;FltCreateFileEx2&nbsp;函数对路径中任何一部分包含重分析点的文件发出新的打开（或创建）操作。该过程类似于FLT_CREATEFILE_TARGET这个ECP所执行的过程。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 对&nbsp;Pre-Create&nbsp;回调所拦截的任何文件，全局应用新的重分析点行为。FltAddOpenReparseEntry和FltRemoveOpenReparseEntry API可用于在实际创建文件前，为目标文件设置重分析点行为（创建前的回调会在开始创建文件前拦截文件创建请求）。Windows容器隔离微过滤器驱动程序（Wcifs.sys）使用了该策略。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":18,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"0dd49763-749e-4653-a0d6-f7b095435cc8"}</p>

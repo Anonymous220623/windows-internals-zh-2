@@ -1,0 +1,48 @@
+<h3 class="bt3" id="sigil_toc_id_273">11.12.22　事务型API</h3>
+<p class="zw">TxF实现了Windows文件I/O API的事务型版本，它们均使用“Transacted”作为后缀。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Create API：CreateDirectoryTransacted、CreateFileTransacted、CreateHardLinkTransacted、CreateSymbolicLinkTransacted。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Find API：FindFirstFileNameTransacted、FindFirstFileTransacted、FindFirstStreamTransacted。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Query API：GetCompressedFileSizeTransacted、GetFileAttributesTransacted、GetFullPathNameTransacted、GetLongPathNameTransacted。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Delete API：DeleteFileTransacted、RemoveDirectoryTransacted。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Copy和Move/Rename API：CopyFileTransacted、MoveFileTransacted。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Set API：SetFileAttributesTransacted。</p>
+<p class="zw">此外，当所传递的文件句柄是事务的一部分时，一些API会自动参与到事务型操作中，例如，由CreateFileTransacted API创建的事务。表11-10列出了在处理事务型文件句柄时，默认行为有变化的Windows API。</p>
+<p class="表题">表11-10　被TxF改变的API行为</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">API名称</p> </th> 
+   <th> <p class="bt">变化</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CloseHandle</p> </td> 
+   <td> <p class="bg">在所有应用程序关闭到文件的事务型句柄前，事务不被提交</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">CreateFileMapping、MapViewOfFile</p> </td> 
+   <td> <p class="bg">对参与事务的文件映射视图的修改与事务本身有关</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">FindNextFile、ReadDirectoryChanges、<br> GetInformationByHandle、GetFileSize</p> </td> 
+   <td> <p class="bg">如果文件句柄是事务的一部分，则这些操作将应用读取-隔离规则</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">GetVolumeInformation</p> </td> 
+   <td> <p class="bg">如果卷支持TxF，那么函数将返回FILE_SUPPORTS_TRANSACTIONS</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">ReadFile、WriteFile</p> </td> 
+   <td> <p class="bg">对事务型文件句柄的读取和写入操作是事务的一部分</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SetFileInformationByHandle</p> </td> 
+   <td> <p class="bg">如果文件句柄是事务的一部分，那么对FileBasicInfo、FileRenameInfo、FileAllocationInfo、FileEndOfFileInfo和FileDispositionInfo类的改变也将是事务型的</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">SetEndOfFile、SetFileShortName、<br> SetFileTime</p> </td> 
+   <td> <p class="bg">如果文件句柄是事务的一部分，那么改变也将是事务型的</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":21,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"1ea4fc06-149b-4a48-9f49-bae61ccd2f61"}</p>

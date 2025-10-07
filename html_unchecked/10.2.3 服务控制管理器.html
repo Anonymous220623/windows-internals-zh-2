@@ -1,0 +1,29 @@
+<h3 class="bt3" id="sigil_toc_id_125">10.2.3　服务控制管理器</h3>
+<p class="zw">SCM的可执行文件为%SystemRoot%\System32\Services.exe，与大部分服务进程类似，它也以Windows控制台程序的形式运行。Wininit进程会在系统启动的早期启动SCM（有关启动过程的详情可参阅第12章）。SCM的启动函数SvcCtrlMain会负责协调并启动被配置为需要自动启动的服务。</p>
+<p class="zw">SvcCtrlMain首先会执行自己的初始化过程，为此需要设置自己的进程安全缓解措施和未处理异常过滤器，并在内存中创建众所周知SID的表达。随后它会创建两个同步事件：一个名为SvcctrlStartEvent_A3752DX，另一个名为SC_AutoStartComplete。这两个事件都会被初始化为非信号事件。第一个事件由SCM在完成从SCP接收命令所需的全部操作后发出信号，第二个事件会在SCM初始化全部完成后收到信号。该事件可防止系统或其他用户启动服务控制管理器的另一个实例。SCP会使用OpenSCManager函数与SCM建立对话，OpenSCManager函数会等待SvcctrlStartEvent_A3752DX收到信号，借此防止SCP在SCM初始化完毕之前与SCM联系。</p>
+<p class="zw">随后，SvcCtrlMain开始工作，创建适当的安全描述符并调用ScGenerateServiceDB，这个函数用于构建SCM的内部服务数据库。ScGenerateServiceDB会读取并存储HKLM\ SYSTEM\CurrentControlSet\Control\ServiceGroupOrder\List&nbsp;的内容，其中有一个REG_MULTI_ SZ值列出了已定义服务组的名称和顺序。如果一个服务或设备驱动程序需要控制自己相对于其他组中服务的启动顺序，那么可以通过服务的注册表键包含一个可选的Group值。例如，Windows网络栈是自下而上构建的，因此网络服务必须指定Group值，将自己放置在启动序列中网络设备驱动程序的后方。SCM内部创建了一个组列表，该列表保存了从注册表中读到的组顺序。这些组包括（但不限于）NDIS、TDI、主磁盘、键盘端口、键盘类、过滤器等。加载项和第三方应用程序甚至可以定义自己的组，并将其加入列表。例如Microsoft Transaction Server就会添加一个名为MS Transactions的组。</p>
+<p class="zw">接着会由ScGenerateServiceDB扫描HKLM\SYSTEM\CurrentControlSet\Services的内容，在服务数据库中为自己遇到的每个键创建一个项（名为“服务记录”）。这种数据库项包含了为服务定义的所有相关参数，以及一个用于跟踪服务状态的字段。SCM还会为设备驱动程序添加这样的项，因为SCM会启动标记为“自动启动”的服务和驱动程序，并会检测标记为“引导启动”和“系统启动”驱动程序的启动失败状态。SCM还可以让应用程序查询驱动程序的状态。由于I/O管理器会先于任何用户模式进程加载被标记为“引导启动”和“系统启动”的驱动程序，因此任何具备这种启动类型的驱动程序都会先于SCM启动。</p>
+<p class="zw">ScGenerateServiceDB会读取服务的Group值以确定服务在组中的成员关系，并将该值与之前创建的组列表中的组项进行关联。该函数还会通过数据库读取并记录服务的组和服务依赖项关系，为此需要查询服务的DependOnGroup和DependOnService注册表值。图10-14展示了SCM组织服务项和组顺序列表的方式。请注意，服务列表是按照字母表顺序排序的，这是因为SCM从Services注册表键创建了该列表，而Windows是按照字母表顺序枚举这些注册表键的。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1609.png" style="width: 100%" />
+<p class="图题">图10-14　服务数据库内部的组织方式</p>
+<p class="zw">在服务启动过程中，SCM会调用LSASS（例如用非本地系统账户登录服务），因此SCM会等待LSASS在初始化完成后向同步事件LSA_RPC_SERVER_ACTIVE发出信号。Wininit也会启动LSASS进程，因此LSASS与SCM的初始化工作是同时进行的，而LSASS与SCM完成初始化的顺序可能各异。SCM会清理（注册表，而非数据库中）所有被标记为删除（具备DeleteFlag这个注册表值）的服务，并为数据库中的每条服务记录生成依赖项列表。这样SCM就可以知道哪个服务依赖特定的服务记录，这与存储在注册表中的依赖项信息是完全相反的。</p>
+<p class="zw">随后&nbsp;SCM&nbsp;会查询系统是否以安全模式启动（通过&nbsp;HKLM\System\CurrentControlSet\ Control\Safeboot\Option\OptionValue注册表值获知）。该检查是必需的，稍后需要通过该检查的结果确定服务是否应当启动（详见下文“自启动服务的启动”一节）。随后SCM会创建自己的远程过程调用（Remote Procedure Call，RPC）命名管道，名为\Pipe\ Ntsvcs，接着RPC会启动一个线程来监听管道上由SCP传入的消息。SCM会为自己的初始化完成事件SvcctrlStartEvent_A3752DX发送信号，并注册一个控制台应用程序关闭事件处理程序，同时会通过RegisterServiceProcess与Windows子系统进程注册，借此让SCM为系统关闭做好准备。</p>
+<p class="zw">在启动需要自动启动的服务前，SCM还会执行一些工作。它会初始化UMDF驱动程序管理器，该管理器负责管理UMDF驱动程序。自从Windows 10秋季创意者更新（RS3）以来，这个管理器已成为服务控制管理器的一部分，会等待已知DLL初始化完成（为此需要等待\KnownDlls\SmKnownDllsInitialized事件收到会话管理器的信号）。</p>
+<p class="zwtsh">实验：启用服务日志记录</p>
+<p class="zwts1">服务控制管理器通常只会在检测到异常错误（如某服务启动失败或需要更改服务配置）时，才会记录ETW事件日志。只需手动启用或禁用不同类型的SCM事件，即可修改这种行为。在这个实验中，我们将启用两类事件，借此可以更好地对服务的状态变化进行调试。当一个服务的状态有变化，或向服务发送了STOP控制请求后，会产生事件7036和事件7042。</p>
+<p class="zwts1">服务器版Windows默认启用了这两类事件，但客户端版的Windows 10默认并未启用。在Windows 10计算机上，我们可以打开注册表编辑器（在搜索框中输入regedit.exe）并打开HKLM\SYSTEM\CurrentControlSet\Control\ ScEvents注册表键。如果ScEvents子键不存在，可以右键单击Control子键并从“<strong style="color:#0092dd">新建</strong>”菜单中选择“<strong style="color:#0092dd">项</strong>”。</p>
+<p class="zwts1">随后创建两个DWORD值，名称分别为7036和7042，并将这两个值的数据设置为1（设置为0可实现相反的效果，即禁止生成这些事件，服务器版系统也会受此影响）。至此我们应该可以看到类似下图所示的注册表状态。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1617.png" style="width: 100%" />
+<p class="zwts1">重启动计算机，随后使用sc.exe工具启动并停止一个服务（如AppXSvc服务），为此请在管理员身份运行的命令提示符窗口中运行下列命令：</p>
+<p class="代码行内倾斜"><em>sc stop AppXSvc</em></p>
+<p class="代码行内倾斜"><em>sc start AppXSvc</em></p>
+<p class="zwts1">打开事件查看器（在搜索框中输入eventvwr）并打开Windows日志，然后打开“<strong style="color:#0092dd">系统</strong>”。随后应该可以看到来自服务控制管理器、ID为7036和7042的很多事件。在最上方应该可以看到AppXSvc服务停止事件，如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1624.png" style="width: 100%" />
+<p class="zwts1">需要注意的是，服务控制管理器默认会记录系统启动时那些自动启动服务生成的所有事件，这可能会在系统事件日志中充斥大量不必要的事件。为缓解这种问题，我们可以禁用SCM的自动启动事件，为此可在HKLM\ System\CurrentControlSet\Control键下创建一个名为EnableAutostartEvents的注册表值，并将其数据设置为0（服务器和客户端版本系统的默认隐含值均为1）。随后系统将只记录服务应用程序在启动、暂停或停止服务时产生的事件。</p>
+<h4 class="bt4 sigil_not_in_toc">网络驱动器盘符</h4>
+<p class="zw">除了作为服务的接口，SCM还有一个完全不相关的“副业”：当系统创建或删除了网络驱动器盘符连接后，它会向系统中的GUI应用程序发出通知。SCM会等待多提供程序路由器（Multiple Provider Router，MPR）向命名事件\BaseNamedObjects\ScNetDrvMsg发出信号，每当应用程序为远程网络共享分配了驱动器盘符，或删除这样的分配后，MPR就会发出信号。当MPR发出这样的信号后，SCM会调用GetDriveType这个Windows函数来查询已连接网络驱动器盘符列表。如果列表内容在事件信号前后产生了变化，SCM会发出一条WM_DEVICECHANGE类型的Windows广播消息。SCM会使用DBT_ DEVICEREMOVECOMPLETE或DBT_DEVICEARRIVAL作为消息的子类型。该消息主要是为Windows资源管理器准备的，资源管理器可以借此更新所有打开的“计算机”窗口，显示添加或删除的网络驱动器盘符。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"7e003fac-8dc6-432b-9e10-4f28442720ce"}</p>

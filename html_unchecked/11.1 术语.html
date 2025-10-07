@@ -1,0 +1,14 @@
+<h2 class="bt2" id="sigil_toc_id_173"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 11.1　术语</h2>
+<p class="zw">为了更好地理解本章内容，首先需要熟悉下列基本术语。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 磁盘（disk）：一种物理存储设备，例如硬盘、CD-ROM、DVD、蓝光盘、固态硬盘（SSD）、非易失性内存盘（NVMe）或闪存盘（Flash）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 扇区（sector）：存储介质上的硬件可寻址块。扇区大小由硬件决定。大部分硬盘扇区为4096字节或512字节，DVD-ROM和蓝光盘扇区通常为2048字节。因此，如果扇区大小为4096字节，但操作系统需要修改磁盘上第5120字节的内容，就必须将4096字节的数据块写入磁盘上的第二个扇区中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 分区（partition）：磁盘上一系列连续扇区的集合。分区表或其他磁盘管理数据库存储了分区的起始扇区、大小及其他特征，这些信息会存储到分区所在的磁盘上。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 卷（volume）：文件系统驱动程序总是将大量扇区作为一个单位进行管理，而卷是一种可以表示所有这些扇区的对象。简单卷表示来自同一个分区的扇区，多分区卷则表示来自多个分区的扇区。多分区卷通常可提供简单卷无法提供的性能、可靠性和大小调整功能。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 文件系统格式（file system format）：定义了文件数据在存储介质上的存储方式，并影响着文件系统的功能。例如，若不支持为文件和目录分配用户权限的格式，就无法支持安全性。文件系统格式也会对文件系统可支持的文件和存储设备大小施加压力。最后，一些文件系统格式对大文件、小文件、大磁盘、小磁盘实现了更高效的支持。NTFS、exFAT和ReFS都是常见的文件系统格式，它们提供了不同的功能和使用场景。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 簇（cluster）：很多文件系统格式所使用的可寻址块。簇大小始终是扇区大小的整数倍，如图11-1所示，8个扇区组成1个簇。文件系统格式可使用簇来更有效地管理磁盘空间，比扇区更大的簇可以将磁盘划分为更易于管理的块。但更大的簇也需要付出潜在的代价——浪费磁盘空间，或更易于产生内部碎片。当文件大小不是簇大小的整数倍时，就容易产生这种情况。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 元数据（metadata）：是指为支持文件系统格式管理而在卷中存储的数据。应用程序通常无法访问此类数据。例如，元数据包含的数据定义了文件和目录在卷上的放置情况。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx452.png" style="width: 100%" />
+<p class="图题">图11-1 传统机械硬盘中的扇区和簇</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"12042f06-13bb-4487-b2cc-12b9114bd68f","id":"d7561c8a-967e-49fc-8d1a-7a061d2fa38c"}</p>

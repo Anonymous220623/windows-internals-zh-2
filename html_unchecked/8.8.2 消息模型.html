@@ -1,0 +1,21 @@
+<h3 class="bt3" id="sigil_toc_id_38">8.8.2　消息模型</h3>
+<p class="zw">通过使用ALPC，客户端和使用阻塞消息的线程将轮流执行围绕NtAlpcSendWaitReceivePort系统调用的循环，其中一端发送请求并等待回复，另一端则反向重复该过程。然而，因为ALPC支持异步消息，任何一方都有可能不进行阻塞，而是选择执行其他一些运行时任务并在稍后检查消息（下文很快将介绍其中一些方法）。ALPC支持以下几种交换消息载荷的方法：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 消息可通过标准双缓冲机制发送给另一个进程，在这期间，内核将保持消息的副本（从源进程复制），切换到目标进程，然后从内核缓冲区中复制数据。为了实现兼容性，如果使用了遗留LPC，则只能通过这种方式发送最大256字节的消息，而ALPC可以为最大64&nbsp;KB的消息分配扩展缓冲区。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 消息可以存储在ALPC节对象中，客户端和服务器进程可通过该对象映射视图（有关节映射的详情请参阅卷1第5章）。</p>
+<p class="zw">发送异步消息的能力产生了一个重要的副作用：消息可以被取消，例如，当一个请求花费了太长时间，或用户发出指示想要取消所实现的操作时。ALPC通过NtAlpcCancelMessage系统调用为此提供支持。</p>
+<p class="zw">ALPC消息可处于ALPC端口对象所实现的下列五个不同队列中的任何一个之内。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">main queue（主队列）：</strong>消息已发送，客户端正在进行处理。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">pending queue（挂起队列）：</strong>消息已发送，调用方正在等待回复，但尚未发送回复。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">large message queue（大消息队列）：</strong>消息已发送，但调用方的缓冲区太小无法接收。调用方将获得另一次机会分配更大的缓冲区，随后再次请求消息载荷。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">canceled queue（已取消队列）：</strong>消息已发送到端口但随后被取消了。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">direct queue（直接队列）：</strong>消息已发送，并附加了一个直接事件。</p>
+<p class="zw">请注意，还有第六个名为wait queue（等待队列）的队列，该队列并不将消息连接在一起，而是会将等待某个消息的所有线程连接在一起。</p>
+<p class="zwtsh">实验：查看子系统ALPC端口对象</p>
+<p class="zwts1">我们可以通过Sysinternals的WinObj工具或GitHub上提供的WinObjEx64查看命名的ALPC端口对象。以管理员模式运行这两个工具中的任意一个，并选择根目录。随后WinObj会用齿轮图标代表端口对象，WinObjEx64则会用电源插头图标代表，如下图所示（我们也可以点击Type字段并按照类型为对象排序）。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx4856.png" style="width: 100%" />
+<p class="zwts1">我们应当可以看到电源管理器、安全管理器以及Windows的其他内部服务所使用的ALPC端口。如果想要查看RPC使用的ALPC端口对象，可以选择\RPC Control目录。除了本地RPC外，ALPC的主要用户之一是Windows子系统，它们会使用ALPC与所有Windows进程中的Windows子系统DLL通信。由于CSRSS会为每个会话加载一次，因此可以在相应的\Sessions\X\Windows目录下找到它的ALPC端口对象，如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx4867.png" style="width: 100%" />
+
+<p class="epubit-contents-id" style="display: none">{"index":1,"parentId":"e3feacd9-ccbb-4c83-b36b-bb1c5293963c","id":"9bc6cdd3-71e8-4ad1-958e-68f8dd38cd74"}</p>

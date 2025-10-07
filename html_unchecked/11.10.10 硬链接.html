@@ -1,0 +1,23 @@
+<h3 class="bt3" id="sigil_toc_id_239">11.10.10　硬链接</h3>
+<p class="zw">硬链接（hard link）可以让多个路径指向同一个文件（目录不支持硬链接）。如果创建一个名为C:\Documents\Spec.doc的硬链接并指向现有文件C:\Users\Administrator\ Documents\Spec.doc，则这两个路径将链接到磁盘上同一个文件，我们可通过任一路径更改文件的内容。进程可通过Windows的CreateHardLink函数创建硬链接。</p>
+<p class="zw">NTFS通过保持对实际数据的引用计数来实现硬链接，每次为文件创建硬链接时，都会对数据进行一个额外的数据名引用。这意味着，如果一个文件有多个硬链接，则可以删除引用该数据的原始文件名（本例中为C:\Users\ Administrator\Documents\Spec.doc），而其他硬链接（C:\Documents\Spec.doc）依然会保留并指向该数据。然而，因为硬链接是对磁盘数据的本地引用（由文件记录号表示），因此只能存在于同一个卷中，无法跨越卷或计算机使用。</p>
+<p class="zwtsh">实验：创建硬链接</p>
+<p class="zwts1">我们可以通过两种方式创建硬链接：fsutil hardlink create命令，或mklink工具配合/H选项。在这个实验中，我们将使用mklink，因为随后还将用该工具创建符号链接。</p>
+<p class="zwts1">首先创建一个名为test.txt的文件并向其中添加一些内容，例如：</p>
+<pre class="代码无行号"><code>C:\&gt;echo Hello from a Hard Link &gt; test.txt </code></pre>
+<p class="zwts1">随后像这样创建一个名为hard.txt的硬链接：</p>
+<pre class="代码无行号"><code>C:\&gt;mklink hard.txt test.txt /H 
+Hardlink created for hard.txt &lt;&lt;===&gt;&gt; test.txt </code></pre>
+<p class="zwts1">列出该目录的内容就会发现，这两个文件完全一致，创建日期、权限和文件大小都相同，仅文件名不同。</p>
+<pre class="代码无行号"><code>c:\&gt;dir *.txt 
+ Volume in drive C is OS 
+ Volume Serial Number is F080-620F
+　
+ Directory of c:\ 
+　
+12/07/2018 05:46 PM               26 hard.txt 
+12/07/2018 05:46 PM               26 test.txt 
+              2 File(s)            52 bytes 
+              0 Dir(s) 15,150,333,952 bytes free </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":9,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"3f7bf03f-cd46-4160-84dd-a2459f1f4f0c"}</p>

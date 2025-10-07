@@ -1,0 +1,227 @@
+<h3 class="bt3" id="sigil_toc_id_264">11.12.13　变更日志文件</h3>
+<p class="zw">变更日志文件（\$Extend\$UsnJrnl）是一种稀疏文件，NTFS在其中存储了文件和目录的变更记录。诸如Windows文件复制服务（FRS）和Window搜索服务等应用程序可以使用该日志响应文件和目录发生的变化。</p>
+<p class="zw">日志将变更项存储在$J数据流中，日志的最大大小存储在$Max数据流中。项是可以包含版本信息的，其中包含有关文件或目录变更的如下信息。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 变更时间。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 变更原因（参阅表11-9）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 文件或目录的属性。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 文件或目录的名称。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 文件或目录的MFT文件记录号。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 文件的父目录的文件记录号。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 安全ID。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 记录的更新序列号（USN）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 有关变更来源的额外信息（用户、FRS等）。</p>
+<p class="表题">表11-9　变更日志的变更原因</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">标识符</p> </th> 
+   <th> <p class="bt">原因</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_DATA_OVERWRITE</p> </td> 
+   <td> <p class="bg">文件或目录中的数据被覆盖</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_DATA_EXTEND</p> </td> 
+   <td> <p class="bg">数据被添加至文件或目录</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_DATA_TRUNCATION</p> </td> 
+   <td> <p class="bg">文件或目录中的数据被截断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_NAMED_DATA_OVERWRITE</p> </td> 
+   <td> <p class="bg">文件数据流中的数据被覆盖</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_NAMED_DATA_EXTEND</p> </td> 
+   <td> <p class="bg">文件数据流中的数据被扩展</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_NAMED_DATA_TRUNCATION</p> </td> 
+   <td> <p class="bg">文件数据流中的数据被截断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_FILE_CREATE</p> </td> 
+   <td> <p class="bg">新文件或目录被创建</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_FILE_DELETE</p> </td> 
+   <td> <p class="bg">文件或目录被删除</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_EA_CHANGE</p> </td> 
+   <td> <p class="bg">文件或目录的扩展属性被更改</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_SECURITY_CHANGE</p> </td> 
+   <td> <p class="bg">文件或目录的安全描述符被更改</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_RENAME_OLD_NAME</p> </td> 
+   <td> <p class="bg">文件或目录被更名，这是老名称</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_RENAME_NEW_NAME</p> </td> 
+   <td> <p class="bg">文件或目录被更名，这是新名称</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_INDEXABLE_CHANGE</p> </td> 
+   <td> <p class="bg">文件或目录的索引状态已改变（无论索引服务是否处理该文件或目录）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_BASIC_INFO_CHANGE</p> </td> 
+   <td> <p class="bg">文件或目录的属性和时间戳已改变</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_HARD_LINK_CHANGE</p> </td> 
+   <td> <p class="bg">文件或目录添加或移除了硬链接</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_COMPRESSION_CHANGE</p> </td> 
+   <td> <p class="bg">文件或目录的压缩状态已改变</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_ENCRYPTION_CHANGE</p> </td> 
+   <td> <p class="bg">文件或目录启用或禁用了加密状态（EFS）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_OBJECT_ID_CHANGE</p> </td> 
+   <td> <p class="bg">文件或目录的对象ID已改变</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_REPARSE_POINT_CHANGE</p> </td> 
+   <td> <p class="bg">文件或目录的重分析点已改变，或者文件或目录添加或删除了新的重分析点（如符号链接）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_STREAM_CHANGE</p> </td> 
+   <td> <p class="bg">文件添加或删除了新数据流或已更名</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_TRANSACTED_CHANGE</p> </td> 
+   <td> <p class="bg">值已添加（ORed）至变更原因，代表该变更是最近提交TxF事务的结果</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_CLOSE</p> </td> 
+   <td> <p class="bg">文件或目录句柄已关闭，代表这是一系列操作中对文件进行的最终更改</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_INTEGRITY_CHANGE</p> </td> 
+   <td> <p class="bg">文件的范围（运行）内容已更改，相关完整性流已更新为新校验值。该标识符由ReFS文件系统生成</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">USN_REASON_DESIRED_STORAGE_CLASS_<br> CHANGE</p> </td> 
+   <td> <p class="bg">当流从容量层移动至性能层（反之亦然）时，NTFS文件系统驱动程序会生成该事件</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：读取变更日志</p>
+<p class="zwts1">我们可以使用系统自带的%SystemRoot%\System32\Fsutil.exe工具创建、删除或查询日志信息：</p>
+<pre class="代码无行号"><code>d:\&gt;fsutil usn queryjournal d: 
+Usn Journal ID   : 0x01d48f4c3853cc72 
+First Usn        : 0x0000000000000000 
+Next Usn         : 0x0000000000000a60 
+Lowest Valid Usn : 0x0000000000000000 
+Max Usn          : 0x7fffffffffff0000 
+Maximum Size     : 0x0000000000a00000 
+Allocation Delta : 0x0000000000200000 
+Minimum record version supported : 2 
+Maximum record version supported : 4 
+Write range tracking: Disabled </code></pre>
+<p class="zwts1">从上述输出结果中可知，卷上变更日志的最大大小（10&nbsp;MB）及其当前状态。作为一个简单的实验，我们可以看看NTFS如何记录日志中的变化，为此请在当前目录下创建一个名为Usn.txt的文件，将其更名为UsnNew.txt，随后使用Fsutil转储日志：</p>
+<pre class="代码无行号"><code>d:\&gt;echo Hello USN Journal! &gt; Usn.txt 
+d:\&gt;ren Usn.txt UsnNew.txt 
+d:\&gt;fsutil usn readjournal d: 
+... 
+　
+Usn               : 2656 
+File name         : Usn.txt 
+File name length  : 14 
+Reason            : 0x00000100: File create 
+Time stamp        : 12/8/2018 15:22:05 
+File attributes   : 0x00000020: Archive 
+File ID           : 0000000000000000000c000000617912 
+Parent file ID    : 00000000000000000018000000617ab6 
+Source info       : 0x00000000: *NONE* 
+Security ID       : 0 
+Major version     : 3 
+Minor version     : 0 
+Record length     : 96 
+　
+Usn               : 2736 
+File name         : Usn.txt 
+File name length  : 14 
+Reason            : 0x00000102: Data extend | File create 
+Time stamp        : 12/8/2018 15:22:05 
+File attributes   : 0x00000020: Archive 
+File ID           : 0000000000000000000c000000617912 
+Parent file ID    : 00000000000000000018000000617ab6 
+Source info       : 0x00000000: *NONE* 
+Security ID       : 0 
+Major version     : 3 
+Minor version     : 0 
+Record length     : 96 
+　
+Usn               : 2816 
+File name         : Usn.txt 
+File name length  : 14 
+Reason            : 0x80000102: Data extend | File create | Close 
+Time stamp        : 12/8/2018 15:22:05 
+File attributes   : 0x00000020: Archive 
+File ID           : 0000000000000000000c000000617912 
+Parent file ID    : 00000000000000000018000000617ab6 
+Source info       : 0x00000000: *NONE* 
+Security ID       : 0 
+Major version     : 3 
+Minor version     : 0 
+Record length     : 96 
+　
+Usn               : 2896 
+File name         : Usn.txt 
+File name length  : 14 
+Reason            : 0x00001000: Rename: old name 
+Time stamp        : 12/8/2018 15:22:15 
+File attributes   : 0x00000020: Archive 
+File ID           : 0000000000000000000c000000617912 
+Parent file ID    : 00000000000000000018000000617ab6 
+Source info       : 0x00000000: *NONE* 
+Security ID       : 0 
+Major version     : 3 
+Minor version     : 0 
+Record length     : 96 
+　
+Usn               : 2976 
+File name         : UsnNew.txt 
+File name length  : 20 
+Reason            : 0x00002000: Rename: new name 
+Time stamp        : 12/8/2018 15:22:15 
+File attributes   : 0x00000020: Archive 
+File ID           : 0000000000000000000c000000617912 
+Parent file ID    : 00000000000000000018000000617ab6 
+Source info       : 0x00000000: *NONE* 
+Security ID       : 0 
+Major version     : 3 
+Minor version     : 0 
+Record length     : 96 
+　
+Usn               : 3056 
+File name         : UsnNew.txt 
+File name length  : 20 
+Reason            : 0x80002000: Rename: new name | Close 
+Time stamp        : 12/8/2018 15:22:15 
+File attributes   : 0x00000020: Archive 
+File ID          : 0000000000000000000c000000617912 
+Parent file ID   : 00000000000000000018000000617ab6 
+Source info      : 0x00000000: *NONE* 
+Security ID      : 0 
+Major version    : 3 
+Minor version    : 0 
+Record length    : 96 </code></pre>
+<p class="zwts1">这些项反映了命令行操作基础上所涉及的各种修改操作。如果卷没有启用变更日志（这种情况常见于非系统卷，因为没有应用程序请求文件变更通知或创建USN日志），也可以通过下列命令轻松启用（本例中请求了一个10&nbsp;MB的日志）：</p>
+<pre class="代码无行号"><code>d:\ &gt;fsutil usn createJournal d: m=10485760 a=2097152 </code></pre>
+<p class="zw">日志是稀疏的，因此永远不会溢出，当磁盘上的日志大小超出文件定义的最大值后，NTFS会将变更信息窗口之前的文件数据清零，使其大小等于日志文件的最大值，如图11-49所示。为防止应用程序不断超过日志大小时频繁调整大小，NTFS只在日志大小超过应用程序定义最大尺寸的两倍后开始收缩日志。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2404.png" style="width: 100%" />
+<p class="图题">图11-49　变更日志（$UsnJrnl）的空间分配</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":12,"parentId":"65b5fd03-8e4f-4d2b-beba-4e7c140dd099","id":"8f9f3c6d-a850-416b-803f-ab6366e7fae6"}</p>

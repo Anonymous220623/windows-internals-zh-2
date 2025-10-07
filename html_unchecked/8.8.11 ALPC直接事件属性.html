@@ -1,0 +1,6 @@
+<h3 class="bt3" id="sigil_toc_id_47">8.8.11　ALPC直接事件属性</h3>
+<p class="zw">回顾一下，ALPC为客户端和服务器的通信提供了两种机制：请求和数据报。其中，前者是双向的，需要得到响应；而后者是单向的，永远不会收到同步的回复。此时还需要一种“中间地带”，即数据报类型的消息，它无法收到回复，但其接收方可以通过某种方式进行确认，这样发送方就会知道消息已成功执行，而无须实现复杂的响应处理机制。实际上，直接事件属性（direct event attribute）恰恰提供了这样的功能。</p>
+<p class="zw">通过让发送方将内核事件对象的句柄（通过CreateEvent）与ALPC消息相关联，直接事件属性可以获得底层的KEVENT，并为其添加一个引用，借此将其附着在KALPC_ MESSAGE结构上。随后，当接收进程收到该消息后，即可暴露出这个直接事件属性，并导致进程收到信号。客户端可以使用一个与I/O完成端口相关联的等待完成数据包（Wait Completion Packet），或者可以处于一个同步等待的调用中，例如事件句柄上的WaitForSingleObject，此时客户端将收到通知和等待满足信号，这样即可得知消息已经成功交付。</p>
+<p class="zw">该功能以前是由RPC运行时手动提供的，可以让调用RpcAsyncInitializeHandle的客户端传入RpcNotificationTypeEvent，并使用异步RPC消息将HANDLE与事件对象关联在一起。但这并不需要强迫另一端的RPC在运行时响应所请求的消息，这样发送方的RPC运行时就可以在本地向事件发出信号以示完成，ALPC则会将其放入直接事件属性，并将消息放置到直接消息队列，而不是常规消息队列中。ALPC子系统将在消息交付时发出信号，在内核模式下这很有效，可避免额外的跳转和上下文切换。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":10,"parentId":"e3feacd9-ccbb-4c83-b36b-bb1c5293963c","id":"dadd76df-bd51-4945-b68a-b3214331dbf6"}</p>

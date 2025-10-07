@@ -1,0 +1,17 @@
+<h3 class="bt3" id="sigil_toc_id_282">11.13.6　分析扫描</h3>
+<p class="zw">如图11-60所示，在分析扫描过程中，NTFS会从日志文件开头处最后一次检查点操作开始位置向前扫描，借此查找更新记录，并用这些记录来更新已经复制到内存的事务和脏页表。请注意图中的内容，检查点操作在日志文件中存储了三条记录，更新记录可能穿插在这些记录中。因此，NTFS必须在检查点操作起始位置开始自己的扫描。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2638.png" style="width: 100%" />
+<p class="图题">图11-60　分析扫描</p>
+<p class="zw">日志文件中的检查点操作之后出现的大部分更新记录都代表对事务表或脏页表的改动。举例来说，如果某条更新记录为“事务已提交”记录，那么该记录所代表的事务必须从事务表中移除。同理，如果更新记录为修改文件系统数据结构的页更新记录，那么必须更新脏页表以反映这一变化。</p>
+<p class="zw">内存中的表处于最新状态之后，NTFS会扫描这些表来确定所有尚未应用到磁盘的操作中最早的更新记录所对应的LSN。事务表包含未提交（未完成）事务的LSN，脏页表包含缓存中尚未刷新到磁盘的记录的LSN。而NTFS在这两个表中找到的最早更新记录的LSN决定了重做操作的起始位置。然而，如果最后的检查点记录更早，则NTFS将从这里直接开始重做。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　TxF恢复模型并不存在明显的分析过程，相反，正如上文所述，TxF会在重做过程中执行与分析类似的操作。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"244f39ce-6f59-4168-9f84-d031b04d0916","id":"034ecb12-d245-4ae1-9f8c-5911b6c2dea0"}</p>

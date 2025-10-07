@@ -1,0 +1,24 @@
+<h3 class="bt3" id="sigil_toc_id_341">12.1.13　安全运行</h3>
+<p class="zw">如果可信执行（通过VSM策略中的一个特定功能值）已启用，并且系统兼容该功能，那么Winload将启用一个与常规启动路径略有差异的全新启动路径。这个新启动路径称为安全运行（secure launch）。安全运行实现了Intel可信启动（TXT）技术（或AMD64的SKINIT技术）。可信启动通过两个组件实现：启动库和TcbLaunch.exe文件。启动库在初始化的时候会检测到可信启动功能已启用，并注册一个拦截不同事件的启动回调。可拦截事件包括启动应用程序运行、哈希计算及启动应用程序结束。Windows加载器在这个早期环节并不加载虚拟机监控程序，而会执行安全运行设置过程的三个阶段（从现在开始，我们将“安全运行的设置过程”称为“TCB设置过程”）。</p>
+<p class="zw">如上文所述，安全运行的最终目标是运行安全的启动序列，其中CPU是唯一可信任的根。为此，系统需要摆脱对所有固件的依赖。</p>
+<p class="zw">为了实现这一点，Windows会创建一个RAM磁盘并将其格式化为FAT文件系统，其中包含Winload、虚拟机监控程序、VSM模块，以及启动系统所需的全部操作系统启动组件。Windows加载器（Winload）会使用BlImgLoadBootApplication例程将TcbLaunch. exe从系统启动磁盘读入内存。后者将触发可由TCB启动回调管理的三个事件。该回调首先会准备运行测量启动环境（Measured Launch Environment，MLE）；然后检查ACM模块和ACPI表，并映射所需的TXT区域；最后用一个特殊的TXT MLE例程替换启动应用程序的入口点。</p>
+<p class="zw">在OslExecuteTransition例程运行的最新阶段，Windows加载器并不会启动虚拟机监控程序的运行序列。相反，它会将执行转交给TCB运行序列，这个过程相当简单。TCB启动应用程序将通过上文介绍过的BlImgStartBootApplication例程启动。修改后的启动应用程序入口点将调用TXT MLE运行例程，借此执行GETSEC(SENTER) TXT指令。该指令可测量内存中的TcbLaunch.exe可执行文件（TBOOT模块），如果测量成功，则MLE运行例程会将代码执行转交给真正的启动应用程序入口点（TcbMain）。</p>
+<p class="zw">安全运行环境中执行的第一个代码是TcbMain函数。这个实现相当简单：重新初始化启动库，注册事件以接收虚拟化运行/恢复通知，随后调用安全RAM磁盘中Tcbloader.dll模块内的TcbLoadEntry。Tcbloader.dll模块是受信任Windows加载器的小型版本，其作用是加载、验证并启动虚拟机监控程序，设置虚拟化调用页面，以及运行安全内核。安全运行过程就此结束，接下来将由虚拟机监控程序和安全内核负责NT内核与其他模块的验证工作并提供信任链。随后执行将返回Windows加载器，并通过标准的OslArchTransferToKernel例程回到Windows内核。</p>
+<p class="zw">图12-10展示了安全运行功能的结构与涉及的所有组件。用户可以使用本地组策略编辑器启用安全运行功能，为此只需要在“计算机配置”→“管理模板”→“系统”→“Device Guard”下调整“打开基于虚拟化的安全”设置即可。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　可信启动的ACM模块由Intel提供，依赖于特定芯片组。大部分TXT接口都是物理内存中的内存映射。这意味着HvLoader甚至可以访问SINIT区域，验证SINIT ACM版本，并在需要时对其更新。Windows使用一个特殊的压缩WIM文件（名为Tcbres.wim）实现了这一点，该文件中包含每个芯片组的所有已知SINIT ACM模块。如果需要，MLE准备阶段还可以打开该压缩文件，从中提取正确的二进制模块，并用它替换TXT区域中原始的SINIT固件内容。当调用安全运行过程时，CPU会将SINIT ACM载入安全内存，验证其数字签名的完整性，随后将其公钥的哈希值与芯片组中硬编码的哈希值进行对比。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1127.png" style="width: 100%" />
+<p class="图题">图12-10　安全运行功能的结构与涉及的所有组件。请留意来自RAM磁盘的虚拟机监控程序和安全内核</p>
+<h4 class="bt4 sigil_not_in_toc">AMD平台上的安全运行</h4>
+<p class="zw">虽然安全运行功能仅适用于支持TXT技术的Intel计算机，但从Windows 10的2020年春季更新开始，Windows提供了对SKINIT的支持，这是AMD开发的一项类似技术，可用于从最初不受信任的操作模式开始，以可验证的方式启动可信任的软件。</p>
+<p class="zw">SKINIT的用途与Intel的TXT相同，也可用于安全运行功能的启动流程。不过与TXT的不同之处在于，SKINIT基于一种名为安全加载器（Secure Loader，SL）的小型软件，在Windows中，SL是通过AMD所提供的Amddrtm.dll库文件的资源节中包含的amdsl.bin二进制文件实现的。SKINIT指令可以重新初始化处理器，进而建立安全的执行环境，并以一种无法篡改的方式开始执行SL。安全加载器位于安全加载器程序块中，这个64&nbsp;KB的结构可由SKINIT指令转换到TPM中。TPM可测量SL的完整性并将执行转交给它的入口点。</p>
+<p class="zw">SL可以验证系统状态，将测量结果扩展到PCR中，并将执行转交给AMD MLE运行例程，该例程位于TcbLaunch.exe模块中一个单独的二进制文件内。MLE例程可以初始化IDT和GDT并构建将处理器切换至长模式所需的页表（AMD计算机中的MLE执行于32位受保护模式下，这是为了尽可能地减少TCB中的代码）。与Intel系统一样，最后它会跳回TcbLaunch，重新初始化启动库，注册事件以接收虚拟化运行/恢复通知，随后调用Tcbloader.dll模块内的TcbLoadEntry。从这里往后，引导流程就与Intel系统中实现的安全运行功能完全相同了。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":12,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"792157f1-4d2a-42f8-9e45-5353be0f018c"}</p>

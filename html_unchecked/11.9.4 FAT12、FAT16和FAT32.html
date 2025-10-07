@@ -1,0 +1,118 @@
+<h3 class="bt3" id="sigil_toc_id_212">11.9.4　FAT12、FAT16和FAT32</h3>
+<p class="zw">Windows对FAT文件系统的支持主要是为了在多重启动系统中实现与其他操作系统的兼容性，并作为闪存驱动器或内存卡的格式。Windows FAT文件系统驱动程序实现于%SystemRoot%\System32\Drivers\ Fastfat.sys。</p>
+<p class="zw">FAT格式名称中包含的数字代表特定格式在磁盘上识别簇所用的位数。FAT12的12位簇标识符限制了一个分区最多可存储2<sup>12</sup>（4096）个簇。Windows允许的簇的大小介于512字节到8&nbsp;KB之间，因此FAT12卷最大只能达到32&nbsp;MB。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　所有FAT文件系统类型都会保留一个卷的前2个簇和最后16个簇，因此举例来说，FAT12卷可用簇的总数会略小于4096。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">FAT16使用了16位簇标识符，可寻址2<sup>16</sup>（65536）个簇。在Windows上，FAT16簇的大小介于512字节（扇区的大小）和64&nbsp;KB（在扇区大小为512字节的磁盘上）之间，因此FAT16卷的最大大小为4&nbsp;GB。扇区大小为4096字节的磁盘可实现256&nbsp;KB的簇。Windows所用簇的大小取决于卷的大小。各种大小详见表11-2。如果使用format命令或磁盘管理控制台将小于16&nbsp;MB的卷格式化为FAT，Windows将使用FAT12格式而非FAT16格式。</p>
+<p class="表题">表11-2　Windows中默认FAT16簇大小</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">卷大小</p> </th> 
+   <th> <p class="bt">默认簇大小</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">&lt;8&nbsp;MB</p> </td> 
+   <td> <p class="bg">不支持</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">8&nbsp;MB～32&nbsp;MB</p> </td> 
+   <td> <p class="bg">512字节</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">32&nbsp;MB～64&nbsp;MB</p> </td> 
+   <td> <p class="bg">1&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">64&nbsp;MB～128&nbsp;MB</p> </td> 
+   <td> <p class="bg">2&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">128&nbsp;MB～256&nbsp;MB</p> </td> 
+   <td> <p class="bg">4&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">256&nbsp;MB～512&nbsp;MB</p> </td> 
+   <td> <p class="bg">8&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">512&nbsp;MB～1024&nbsp;MB</p> </td> 
+   <td> <p class="bg">16&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">1&nbsp;GB～2&nbsp;GB</p> </td> 
+   <td> <p class="bg">32&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">2&nbsp;GB～4&nbsp;GB</p> </td> 
+   <td> <p class="bg">64&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">&gt;16&nbsp;GB</p> </td> 
+   <td> <p class="bg">不支持</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">一个FAT卷可以分为多个区域，如图11-14所示。文件分配表（File Allocation Table，这也是FAT文件系统格式名称的来源）中对卷上的每个簇都有一个条目。由于文件分配表对成功解读卷的内容至关重要，所以FAT格式会为该表保持两个副本。这样，即使文件系统驱动程序或一致性检查程序（例如Chkdsk）无法访问其中一个分配表（例如因为产生了坏扇区），它也可以读取另一个分配表。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1092.png" style="width: 100%" />
+<p class="图题">图11-14　FAT格式的组织方式</p>
+<p class="zw">文件分配表中的项定义了文件和目录的文件分配链（见图11-15），链中的链接可以看成指向文件数据中下一个簇的索引。文件目录项存储了文件的起始簇。文件分配链中的最后一项是保留值，FAT16为0xFFFF，FAT12为0xFFF。未使用簇的FAT项的值为0。在图11-15中可以看到：文件1分配了簇2、3和4；碎片化的文件2分配了簇5、6和8；文件3仅使用了簇7。从FAT卷中读取一个文件可能需要读取文件分配表中的大部分内容来遍历文件的分配链。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1099.png" style="width: 100%" />
+<p class="图题">图11-15　FAT文件分配链范例</p>
+<p class="zw">FAT12和FAT16卷的根目录在卷的开始位置已经预分配了足够保存256个目录项的空间，这就对根目录下可存储的文件和目录数量设置了一个上限（FAT32根目录没有这种预分配空间或大小限制）。FAT目录项的大小为32字节，其中存储了文件名、大小、起始簇、时间戳（最后访问时间、创建时间等）信息。如果文件名使用了Unicode的编码方式或未遵守MS-DOS的8.3命名约定，则需要分配额外的目录项来存储长文件名。这些补充的目录项位于文件的主项之前。图11-16展示了一个名为“The quick brown fox.”的文件的目录项范例。系统为这个文件名创建了一个符合8.3格式的表达方式“THEQUI~1.FOX”（也就是说，目录项中看不到“.”，因为这个点位于八个字符之后），并额外使用两个目录项来存储Unicode的长文件名。图11-16中每一行都包含16字节。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1108.png" style="width: 100%" />
+<p class="图题">图11-16　FAT目录项</p>
+<p class="zw">FAT32使用32位簇标识符，但保留了高4位，因此，实际效果上等于使用了28位簇标识符。由于FAT32的簇的大小最大可达64&nbsp;KB，理论上FAT32最大可以寻址16&nbsp;TB的卷。虽然Windows可以使用更大的现有FAT32卷（在其他操作系统中创建），但Windows可以新建的FAT32卷最大只能达到32&nbsp;GB。FAT32可支持更多数量的簇，因此能比FAT16更高效地管理磁盘空间，它可以处理高达512字节的簇的最大128&nbsp;GB的卷。表11-3列出了FAT32卷的默认簇的大小。</p>
+<p class="zw">除了对簇的数量有更多限制外，FAT32相较于FAT12和FAT16的其他优势包括：FAT32根目录并不存储在卷中预定义的位置上，根目录的大小无限制，并且为保证可靠性，FAT32还会为启动扇区保存第二个副本。但FAT32也沿袭了与FAT16相同的限制，即最大文件大小为4&nbsp;GB，因为目录会将文件大小存储为一个32位的值。</p>
+<p class="表题">表11-3　FAT32卷的默认簇的大小</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">卷大小</p> </th> 
+   <th> <p class="bt">默认簇大小</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">&lt;32&nbsp;MB</p> </td> 
+   <td> <p class="bg">不支持</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">32&nbsp;MB～64&nbsp;MB</p> </td> 
+   <td> <p class="bg">512字节</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">64&nbsp;MB～128&nbsp;MB</p> </td> 
+   <td> <p class="bg">1&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">128&nbsp;MB～256&nbsp;MB</p> </td> 
+   <td> <p class="bg">2&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">256&nbsp;MB～8&nbsp;GB</p> </td> 
+   <td> <p class="bg">4&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">8&nbsp;GB～16&nbsp;GB</p> </td> 
+   <td> <p class="bg">8&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">16&nbsp;GB～32&nbsp;GB</p> </td> 
+   <td> <p class="bg">16&nbsp;KB</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">&gt;32&nbsp;GB</p> </td> 
+   <td> <p class="bg">不支持</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"8b585af7-aebc-4c54-ac1c-a77c3f64143b"}</p>

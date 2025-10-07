@@ -1,0 +1,9 @@
+<h3 class="bt3" id="sigil_toc_id_338">12.1.10　从iSCSI启动</h3>
+<p class="zw">Internet SCSI（iSCSI）设备是一种网络附加存储设备，借此可通过iSCSI主机总线适配器（HBA）或以太网连接远程物理磁盘。不过这些设备和传统的网络附加存储（NAS）有较大不同，因为可以针对磁盘提供块级访问，而传统NAS使用了基于逻辑访问的网络文件系统。因此使用Microsoft iSCSI发起程序通过以太网连接提供访问的iSCSI磁盘，能像其他任何类型的磁盘一样出现在启动加载器和操作系统中。使用iSCSI磁盘代替本地存储，可以帮助企业节约空间、耗电量以及降低冷却压力。</p>
+<p class="zw">传统上，虽然Windows只支持从本地连接的磁盘启动，或通过PXE进行网络启动，但现代版本的Windows也可通过一种名为iSCSI启动的机制原生支持从iSCSI设备启动。如图12-9所示，启动加载器（Winload.efi）会读取必须存在于物理内存中（通常通过ACPI暴露）的iSCSI启动固件表（iBFT）来检测系统是否支持iSCSI启动设备。借助iBFT，Winload可以获知远程磁盘的位置、路径和认证信息。如果存在该表，Winload会打开并加载制造商提供的网络接口驱动程序，这些驱动程序采用CM_SERVICE_NETWORK_ BOOT_LOAD (0x1)启动标志。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx9391.png" style="width: 100%" />
+<p class="图题">图12-9　iSCSI启动架构</p>
+<p class="zw">此外，Windows安装程序也可以读取该表来确定可启动的iSCSI设备，进而直接安装到此类设备上，这样就不需要使用安装镜像了。在Microsoft iSCSI发起程序的帮助下，Windows就获得了从iSCSI启动的能力。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":9,"parentId":"7de50c71-6922-40ef-8532-4dcba3bf6021","id":"fcd8b453-84ff-4eaf-8eb7-dd5af7d3c24f"}</p>

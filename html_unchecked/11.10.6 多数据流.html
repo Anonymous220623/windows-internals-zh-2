@@ -1,0 +1,47 @@
+<h3 class="bt3" id="sigil_toc_id_235">11.10.6　多数据流</h3>
+<p class="zw">在NTFS中，每个与文件相关联的信息单元（包括其名称、所有者、时间戳、内容等）都是作为文件属性实现的（NTFS对象属性）。每个属性都由一个单一的流（stream），即一种简单的字节序列组成。这种通用的实现方式使得我们可以非常方便地向文件添加更多的属性（即添加更多的流）。由于文件的数据其实也只是文件的“另一个属性”，并且可以添加新的属性，因此，NTFS文件（以及文件目录）可以包含多个数据流。</p>
+<p class="zw">NTFS文件有一个没有名字的默认数据流。应用程序可以创建额外的命名数据流，并通过名称访问这些数据流。为避免改变Windows I/O API，该API可将一个字符串作为文件名参数，而数据流的名称是通过在文件名后附加一个冒号（:）来指定的。由于冒号是保留字符，因此可以作为文件名和数据流名称之间的分隔符，例如：</p>
+<pre class="代码无行号"><code>myfile.dat:stream2 </code></pre>
+<p class="zw">每个流都有单独的分配大小（定义为每个流保留多少磁盘空间）、实际大小（调用方已使用的字节数）以及有效数据长度（数据流有多少已被初始化）。此外，每个流有一个单独的文件锁，可用于锁定字节范围以进行并发访问。</p>
+<p class="zw">Windows中有一个组件使用了多数据流：附件执行服务（Attachment Execution Service），当Edge或Outlook等应用程序使用标准Windows API保存来自互联网的附件时就会调用该服务。取决于下载文件的来源区域（例如“我的电脑”区域、内网区域或不信任区域），Windows资源管理器可能会警告用户该文件可能来自不可信的位置，甚至可能彻底禁止用户访问该文件。例如，当从Sysinternals网站下载并执行Process Explorer时，会看到如图11-24所示的对话框。此类数据流也叫$Zone.Identifier，也俗称为“Web标记”。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1499.png" style="width: 100%" />
+<p class="图题">图11-24 从互联网下载的文件在执行时显示的安全警报</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　如果反选“打开此文件前总是询问”选项，该文件的Zone identifier数据流将被移除。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">其他应用程序也可以使用多数据流功能。例如备份工具，可以使用额外的数据流在文件上存储与备份有关的时间戳。或者归档工具可以借此实现具备层级的存储，从而将寿命超过某个日期的文件，或者一定时间内未被访问过的文件移动至脱机存储位置。该工具可将文件复制到脱机存储位置，将文件的默认数据流设置为0，并添加一个数据流来指定文件的存储位置。</p>
+<p class="zwtsh">实验：查看流</p>
+<p class="zwts1">大部分Windows应用程序并未被设计用来处理备用命名流，但echo和more命令都支持。因此，查看流的最简单办法就是使用echo创建一个命名流，随后用more命令显示出来。下列的命令序列会创建一个名为test的文件，且该文件包含一个名为stream的流：</p>
+<pre class="代码无行号"><code>c:\Test&gt;echo Hello from a named stream! &gt; test:stream 
+c:\Test&gt;more &lt; test:stream 
+Hello from a named stream! 
+　
+c:\Test&gt; </code></pre>
+<p class="zwts1">如果列出目录内容，就会发现Test的文件大小并未反映出备用流中存储的数据，因为NTFS在文件查询（包括目录列出）操作中只返回未命名数据流的大小。</p>
+<pre class="代码无行号"><code>c:\Test&gt;dir test
+ Volume in drive C is OS.
+ Volume Serial Number is F080-620F
+　
+ Directory of c:\Test 
+　
+12/07/2018 05:33 PM                0 test 
+              1 File(s)             0 bytes 
+              0 Dir(s) 18,083,577,856 bytes free 
+c:\Test&gt; </code></pre>
+<p class="zwts1">我们可以使用Sysinternals提供的Streams工具（见下方的输出结果）或使用dir命令的/r开关来确定系统中的哪些文件和目录包含备用数据流。</p>
+<pre class="代码无行号"><code>c:\Test&gt;streams test 
+　
+streams v1.60 - Reveal NTFS alternate streams. 
+Copyright (C) 2005-2016 Mark Russinovich 
+Sysinternals - www.sysinternals.com 
+　
+c:\Test\test: 
+          :stream:$DATA 29 </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":5,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"3200923a-9e6f-4b73-b1c6-1b8a3ea6628b"}</p>

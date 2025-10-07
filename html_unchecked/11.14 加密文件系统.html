@@ -1,0 +1,18 @@
+<h2 class="bt2" id="sigil_toc_id_288"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 11.14　加密文件系统</h2>
+<p class="zw">Windows包含一种名为Windows BitLocker驱动器加密的全卷加密功能。BitLocker可加密并保护卷免受脱机攻击，可一旦系统已成功启动，BitLocker的工作就完成了。此时可由加密文件系统（Encrypting File System，EFS）保护特定文件和目录不被系统中其他已通过身份验证的用户访问。当为数据选择保护方法时，BitLocker和EFS之间并不是“非此即彼”的选择，这两种技术都针对一些具体，但并不重叠的威胁提供保护。通过配合使用，BitLocker和EFS可以联手为系统中的数据提供“深度防御”。</p>
+<p class="zw">EFS使用对称加密（文件的加密和解密使用同一个密钥）的范式加密文件和目录。随后，这个对称加密密钥会使用获得授权可访问文件的每位用户所持有的非对称加密（一个密钥用于加密，称为公钥；另一个密钥用于解密，称为私钥）密钥进行加密。这些加密方法的细节和背后的理论已超出了本书范围，相关入门知识可参阅：https://docs.microsoft. com/windows/desktop/SecCrypto/cryptography-essentials。</p>
+<p class="zw">EFS能够与Windows下一代加密技术（Cryptography Next Generation，CNG）API配合工作，因此可配置为使用CNG所能支持（或加入其中）的任何算法。默认情况下，EFS将使用高级加密标准（Advanced Encryption Standard，AES）进行对称加密（256位密钥），并使用Rivest-Shamir-Adleman（RSA）公钥算法进行非对称加密（2048位密钥）。</p>
+<p class="zw">用户可以通过Windows资源管理器来加密文件，为此需要打开文件的“属性”对话框，点击“高级”，随后选中“加密内容以便保护数据”选项，如图11-68所示（文件可以被加密或压缩，但无法同时被加密和压缩）。用户也可以通过命令行工具Cipher（%SystemRoot%\System32\Cipher.exe）加密文件，或以编程的方式使用Windows API，例如使用EncryptFile和AddUsersToEncryptedFile来加密文件。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2884.png" style="width: 100%" />
+<p class="图题">图11-68 使用<strong style="color:#0092dd">高级属性</strong>对话框加密文件</p>
+<p class="zw">对于设置为加密的目录，Windows会自动加密目录中包含的所有文件。当文件被加密时，EFS会为该文件生成一个随机数，EFS将其称为文件加密密钥（File Encryption Key，FEK）。EFS会使用FEK通过对称加密方法加密文件的内容，随后EFS会使用该用户的非对称公钥加密FEK，并将加密后的FEK存储在文件的$EFS备用数据流中。公钥的来源可以由管理员通过分配X.509证书或智能卡的方式指定，也可以随机生成。生成的证书会被加入用户的证书存储中，随后即可使用证书管理器（%SystemRoot%\System32\Certmgr.msc）查看。EFS完成这些步骤后，文件即可受到保护。其他用户没有文件的解密FEK，因而无法解密数据；同时因为没有该用户的私钥，自然也就无法解密FEK。</p>
+<p class="zw">对称加密算法通常速度很快，因此很适合用于加密大量数据，如文件数据。然而对称加密算法也有弱点：只要获得了密钥，即可绕过它的安全保护。如果多个用户希望共享只使用对称加密算法保护的加密文件，那么每个用户都需要访问该文件的FEK。不对FEK加密这明显是一个安全问题；但如果只对FEK进行一次加密，这需要所有用户共享同一个FEK解密密钥，这也是一种潜在的安全问题。</p>
+<p class="zw">确保FEK的安全是一个棘手的难题，而EFS通过加密架构中基于公钥的这部分机制解决了这个问题。为需要访问文件的每个用户分别加密文件的FEK，这样即可让多个用户共享同一个加密文件。EFS可以用每个用户的公钥加密文件的FEK，随后将每个用户加密后的FEK存储在文件的$EFS数据流中。任何人都可以访问用户的公钥，但任何人都无法使用公钥来解密这个公钥所加密的数据。用户只能使用自己的私钥来解密文件，而操作系统必须能访问这些私钥。用户的私钥可以成功解密文件中该用户对应的加密FEK副本。基于公钥的算法通常速度很慢，但EFS只使用这些算法加密FEK。将密钥管理工作拆分为公钥和私钥两部分，使得密钥管理工作相比对称加密算法更容易一些，同时也解决了FEK安全保护的难题。</p>
+<p class="zw">EFS的架构如图11-69所示，其中包含多个组件。对EFS的支持已经被并入NTFS驱动程序中。当NTFS遇到加密文件时，它会执行文件中包含的EFS函数。当应用程序访问加密文件时，由EFS函数对文件数据进行加密和解密。虽然EFS会将FEK与文件数据存储在一起，但FEK会使用用户的公钥进行加密。若要加密或解密文件数据，EFS必须先借助驻留在用户模式下的CNG密钥管理服务解密文件的FEK。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2892.png" style="width: 100%" />
+<p class="图题">图11-69　EFS的架构</p>
+<p class="zw">本地安全机构子系统（LSASS，%SystemRoot%\System32\Lsass.exe）负责管理登录会话，同时也承载了EFS服务（Efssvc.dll）。例如，当EFS需要解密FEK以便解密用户想要访问的文件数据时，NTFS会向LSASS内部的EFS服务发出请求。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":13,"parentId":"12042f06-13bb-4487-b2cc-12b9114bd68f","id":"8e765ccd-1733-46fe-b48f-23c09944a7ed"}</p>

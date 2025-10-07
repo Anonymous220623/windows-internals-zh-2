@@ -1,0 +1,223 @@
+<h3 class="bt3" id="sigil_toc_id_110">10.1.4　注册表的逻辑结构</h3>
+<p class="zw">我们可以通过存储在注册表中的数据来描绘注册表的组织结构。如表10-2所示，用来存储信息的根键共有九个（无法添加根键或删除现有的根键）。</p>
+<p class="表题">表10-2　九个根键</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">值类型</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_CURRENT_USER</p> </td> 
+   <td> <p class="bg">存储与当前登录用户有关的数据</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_CURRENT_USER_LOCAL_<br> SETTINGS</p> </td> 
+   <td> <p class="bg">存储与当前登录用户有关的数据，这些数据位于计算机本机，未包含在漫游的用户配置文件中</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_USERS</p> </td> 
+   <td> <p class="bg">存储与计算机上所有账户有关的信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_CLASSES_ROOT</p> </td> 
+   <td> <p class="bg">存储文件关联和COM对象注册信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE</p> </td> 
+   <td> <p class="bg">存储与系统有关的信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_PERFORMANCE_DATA</p> </td> 
+   <td> <p class="bg">存储性能信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_PERFORMANCE_NLSTEXT</p> </td> 
+   <td> <p class="bg">存储以计算机系统运行地区的当地语言描述性能计数器的文本字符串</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_PERFORMANCE_TEXT</p> </td> 
+   <td> <p class="bg">存储以美国英语描述性能计数器的文本字符串</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_CURRENT_CONFIG</p> </td> 
+   <td> <p class="bg">存储与当前硬件配置文件有关的信息（已弃用）</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">为何根键名称的首字母是“H”？因为根键名称表示Windows对键（KEY）的处理（Handle，H）。正如本书卷1第1章所述，HKEY_LOCAL_MACHINE可以缩写为HKLM。表10-3列出了所有根键及其缩写。下面还将详细介绍每个根键包含的内容和用途。</p>
+<p class="表题">表10-3　注册表根键</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">根键</p> </th> 
+   <th> <p class="bt">缩写</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+   <th> <p class="bt">链接</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_CURRENT_USER</p> </td> 
+   <td> <p class="bg">HKCU</p> </td> 
+   <td> <p class="bg">指向当前登录用户的用户配置文件</p> </td> 
+   <td> <p class="bg">HKEY_USERS下的子键对应当前已登录的用户</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_CURRENT_USER_<br> LOCAL_SETTINGS</p> </td> 
+   <td> <p class="bg">HKCULS</p> </td> 
+   <td> <p class="bg">指向当前登录用户的本地设置</p> </td> 
+   <td> <p class="bg">链接到HKCU\Software\Classes\Local Settings</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_USERS</p> </td> 
+   <td> <p class="bg">HKU</p> </td> 
+   <td> <p class="bg">包含所有已加载用户配置文件的子键</p> </td> 
+   <td> <p class="bg">非链接</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_CLASSES_ROOT</p> </td> 
+   <td> <p class="bg">HKCR</p> </td> 
+   <td> <p class="bg">包含文件关联和COM注册信息</p> </td> 
+   <td> <p class="bg">非直接链接，但其实是HKLM\SOFTWARE\<br> Classes与HKEY_USERS\&lt;SID&gt;\SOFTWARE\<br> Classes合并后的视图</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_LOCAL_MACHINE</p> </td> 
+   <td> <p class="bg">HKLM</p> </td> 
+   <td> <p class="bg">计算机的全局设置</p> </td> 
+   <td> <p class="bg">非链接</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_CURRENT_CONFIG</p> </td> 
+   <td> <p class="bg">HKCC</p> </td> 
+   <td> <p class="bg">当前硬件配置文件</p> </td> 
+   <td> <p class="bg">HKLM\SYSTEM\CurrentControlSet\Hardware Profiles\Current</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_PERFORMANCE_<br> DATA</p> </td> 
+   <td> <p class="bg">HKPD</p> </td> 
+   <td> <p class="bg">性能计数器</p> </td> 
+   <td> <p class="bg">非链接</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_PERFORMANCE_<br> NLSTEXT</p> </td> 
+   <td> <p class="bg">HKPNT</p> </td> 
+   <td> <p class="bg">性能计数器文本字符串</p> </td> 
+   <td> <p class="bg">非链接</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">HKEY_PERFORMANCE_<br> TEXT</p> </td> 
+   <td> <p class="bg">HKPT</p> </td> 
+   <td> <p class="bg">使用美国英语的性能计数器文本字符串</p> </td> 
+   <td> <p class="bg">非链接</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">HKEY_CURRENT_USER</h4>
+<p class="zw">HKCU根键包含与本地已登录用户的偏好和软件配置有关的数据。它会指向当前登录用户的用户配置文件，配置文件位于硬盘\Users\&lt;username&gt;\Ntuser.dat处（有关根键如何映射到硬盘文件的详情，请参阅下文“注册表的内部原理”一节）。在加载用户配置文件时（例如用户登录或服务进程以特定用户的身份运行），将自动创建HKCU来映射该用户在HKEY_USERS下的键（这样，如果多个用户登录到同一个系统，则每个用户可看到不同的HKCU）。表10-4列出了HKCU下的一些子键。</p>
+<p class="表题">表10-4　HKEY_CURRENT_USER</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">子键</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">AppEvents</p> </td> 
+   <td> <p class="bg">声音/事件关联</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Console</p> </td> 
+   <td> <p class="bg">命令行窗口设置（如宽度、高度、配色）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Control Panel</p> </td> 
+   <td> <p class="bg">屏幕保护、桌面方案、键盘和鼠标设置，以及无障碍访问功能与区域设置</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Environment</p> </td> 
+   <td> <p class="bg">环境变量定义</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">EUDC</p> </td> 
+   <td> <p class="bg">有关最终用户定义的字符信息</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Keyboard Layout</p> </td> 
+   <td> <p class="bg">键盘布局设置（如美国或英国）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Network</p> </td> 
+   <td> <p class="bg">网络驱动器映射和设置</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Printers</p> </td> 
+   <td> <p class="bg">打印机连接设置</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Software</p> </td> 
+   <td> <p class="bg">用户指定的软件首选项</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">Volatile Environment</p> </td> 
+   <td> <p class="bg">易失的环境变量定义</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<h4 class="bt4 sigil_not_in_toc">HKEY_USERS</h4>
+<p class="zw">对于每个已加载的用户配置文件和系统中的每个用户类注册数据库，HKCU都会包含一个对应的子键。它还包含一个名为HKU\.DEFAULT的子键，会链接到系统配置文件（供通过Local System账户运行的进程使用，详见下文“Windows服务”一节）。例如Winlogon就会使用该配置文件，因此对该配置文件桌面背景设置进行的改动会体现在登录界面上。当用户首次登录系统并且用户账户不依赖漫游的域配置文件时（漫游配置文件可通过域控制器指定的中央网络位置获取），系统会根据存储在%SystemDrive%\Users\Default下的配置文件为这个用户的账户创建配置文件。</p>
+<p class="zw">系统存储配置文件的位置是通过注册表值HKLM\Software\Microsoft\Windows NT\ CurrentVersion\ProfileList\ProfilesDirectory定义的，其默认设置为%SystemDrive%\Users。ProfileList键还存储了系统中现存配置文件列表。有关每个配置文件的信息位于一个子键中，该子键的名称可体现对应账户的安全描述符（security identifier，SID，有关SID的详细信息请参阅卷1第7章）。存储在配置文件对应键中的数据包括该配置文件最后一次加载的时间（LocalProfileLoadTimeLow值）、账户SID的二进制表示（Sid值），以及该配置文件在硬盘上配置单元（Ntuser.dat文件，详见本章下文“配置单元”一节）的目录路径（ProfileImagePath值）。Windows会在图10-1所示的用户配置文件管理对话框中显示系统中存储的配置文件，我们可以在控制面板的用户账户下点击“配置高级用户配置文件属性”来打开该对话框。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx566.png" style="width: 100%" />
+<p class="图题">图10-1　用户配置文件管理对话框</p>
+<p class="zwtsh">实验：观察配置文件的加载和卸载</p>
+<p class="zwts1">我们可以使用Runas命令，以当前未登录到本机的用户账户身份启动一个进程，以此观察配置文件如何载入注册表，随后又从注册表中卸载。新进程运行过程中，运行Regedit并记录HKEY_USERS下已加载的配置文件键。随后终止该进程，在Regedit中按下F5进行刷新，会看到该配置文件已消失。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx573.png" style="width: 100%" />
+<h4 class="bt4 sigil_not_in_toc">HKEY_CLASSES_ROOT</h4>
+<p class="zw">HKCR包含三类信息：文件扩展关联、COM类注册，以及用于用户账户控制（UAC）的虚拟化后的注册表根（有关UAC的详细信息请参阅卷1第7章）。每个已注册的文件名扩展都有一个对应的键，大多数键包含一个REG_SZ值，该值指向HKCR中的另一个键，这个被指向的键包含对应扩展所表示的文件类的关联信息。</p>
+<p class="zw">例如，HKCR\.xls指向有关Microsoft Office Excel文件的信息。举例来说，其默认值包含“Excel.Sheet.8”，可用于对Excel COM对象进行实例化。其他键包含系统中所有已注册COM对象的详细的配置信息。UAC虚拟化注册表位于VirtualStore键下，该键与HKCR下存储的其他类型的数据并无关联。</p>
+<p class="zw">HKEY_CLASSES_ROOT下的数据有两个来源。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 每用户类注册数据，位于HKCU\SOFTWARE\Classes下（会映射至磁盘文件\Users\ &lt;username&gt;\AppData\Local\Microsoft\Windows\Usrclass.dat）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 系统级类注册数据，位于HKLM\SOFTWARE\Classes下。</p>
+<p class="zw">每用户注册数据与系统级注册数据会被分开，这样可以使漫游配置文件包含自定义的内容。非特权用户和应用程序可以读取系统级数据，可以为系统级数据添加新的键和值（添加的内容会被镜像到自己的每用户数据），但只能修改自己私有数据中的现有的键和值。这种设计弥补了一个安全漏洞：非特权用户无法更改或删除HKEY_CLASSES_ROOT的系统级版本，因此无法影响系统中应用程序的运行。</p>
+<h4 class="bt4 sigil_not_in_toc">HKEY_LOCAL_MACHINE</h4>
+<p class="zw">HKLM这个根键包含所有系统级的配置子键：BCD00000000、COMPONENTS（按需动态加载）、HARDWARE、SAM、SECURITY、SOFTWARE以及SYSTEM。</p>
+<p class="zw">HKLM\BCD00000000子键包含以注册表配置单元形式加载的启动配置数据库（Boot Configuration DataBase，BCD）信息。该数据库取代了Windows Vista之前系统所用的Boot.ini文件，并为所安装的每个系统的启动配置数据带来了更高的灵活性和隔离能力。BCD00000000子键由隐藏的BCD文件支持，在UEFI系统中，该文件位于\EFI\Microsoft\ Boot目录下（有关BCD的详细信息，请参阅第12章）。</p>
+<p class="zw">BCD中的每一项（如Windows安装，或者该安装的命令行设置）都存储在Objects子键中，这些内容可以作为对象被GUID引用（对于启动项），或者作为数字子键来调用某个元素。这些原始元素大部分都在Microsoft Docs网站的BCD参考文档中给出了相关说明，它们定义了各种命令行设置或启动参数。与每个元素子键关联的值对应了相关命令行标记或启动参数的值。</p>
+<p class="zw">命令行工具BCDEdit可供我们使用元素和对象的符号名称修改BCD，它还为所有可用的启动选项提供了帮助。注册表配置单元可以远程打开，并能从配置单元文件导入，因此可以通过注册表编辑器修改或读取远程计算机的BCD。下列实验将介绍如何通过注册表编辑器启用内核调试。</p>
+<h4 class="bt4 sigil_not_in_toc">实验：远程编辑BCD</h4>
+<p class="zwts1">虽然可以使用bcdedit /store命令修改脱机的BCD存储，但在这个实验中，我们将通过在注册表中编辑BCD存储的方式启用调试。在这个例子中，我们需要编辑BCD的本地副本，但这项技术的重点在于可用于任何计算机的BCD配置单元。请通过如下操作添加/DEBUG命令行标记。</p>
+<p class="zwts1">1）打开注册表编辑器进入HKLM\BCD00000000键。展开每个子键，让每个Elements键的数值标识符完全可见。</p>
+<p class="zwts1">2）找到Type值为0x10200003的Description，以此确定当前Windows系统的启动项，随后选择Elements树中的12000004键。在该子键的Element值中，应该可以看到当前版本Windows的名称，例如Windows 10。在较新的系统中，可能会看到多个Windows安装或多个启动应用程序，例如Windows Recovery Environment（Windows恢复环境）或Windows Resume Application（Windows恢复应用程序）。在这种情况下，我们可能需要检查22000002这个Elements的子键，其中包含路径信息，例如\Windows。</p>
+<p class="zwts1">3）这样即可找到当前Windows系统的正确GUID，请在该GUID的Elements子键下新建一个子键，将其名称设置为0x260000a0。如果该子键已存在，则直接点击进入。找到的GUID应该与bcdedit /v命令输出结果中Windows Boot Loader节的identifier值一致（可以使用命令行选项/store检查脱机的文件存储）。</p>
+<p class="zwts1">4）如果需要创建子键，随后请在其中创建一个名为Element的二进制值。</p>
+<p class="zwts1">5）修改该值，将其设置为1。这样即可启用内核模式调试。这些更改看起来应该类似下图。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx582.png" style="width: 100%" />
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　0x12000004这个ID对应BcdLibraryString_ApplicationPath，而0x22000002这个ID对应BcdOSLoaderString_SystemRoot。最后，我们添加的0x260000a0这个ID对应BcdOSLoaderBoolean_KernelDebuggerEnabled。这些值均记录在Microsoft Docs网站上的BCD参考文档中。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">HKLM\COMPONENTS子键包含与基于组件的服务<sup>[1]</sup>（Component Based Servicing，CBS）堆栈有关的信息。该堆栈包含的多种文件和资源同时也是Windows安装映像（可供自动安装包或OEM预装包使用）或活跃安装的一部分。CBS API主要是为了提供各类维护服务，可以使用这个注册表键中包含的信息识别系统里已安装的组件及其配置信息。在安装、更新或删除个别组件（叫作“单位”）或一组组件（叫作“包”）时，都会用到这些信息。由于这个键可能变得相当大，为优化系统资源，只有当CBS堆栈为请求提供服务时，才会根据需要动态地加载和卸载这个键。该键由位于\Windows\system32\config目录下的COMPONENTS配置单元文件提供支持。</p>
+<p class="footnote">[1]此处的“服务”是指针对已安装好的系统进行的维护性操作，如安装更新。虽然本书沿袭微软产品和官方文档中的称呼将其直译为“服务”，但它与我们熟知的Windows后台服务（Service）并非同一个概念，请注意不要混淆。——译者注</p>
+<p class="zw">HKLM\HARDWARE子键存储了有关系统遗留硬件的描述和某些硬件在设备之间的映射关系。在现代操作系统中，此处可能只包含少量外设（如键盘、鼠标以及ACPI BIOS数据）。我们可以通过设备管理器工具查看注册表中的硬件信息。为获取这些信息，设备管理器会直接读取HARDWARE键中包含的数据（主要涉及HKLM\SYSTEM\CurrentControlSet\ Enum树下的信息）。</p>
+<p class="zw">HKLM\SAM存储了与本地账户和组有关的信息，例如用户密码、组定义以及与域的关联。作为域控制器的Windows Server操作系统会将域账户和组的信息存储在活动目录（active directory）中，这是一种数据库，其中保存了域级的设置和信息（本书不会介绍活动目录）。SAM键默认配置了安全描述符，因此即使是管理员账户也无法访问。</p>
+<p class="zw">HKLM\SECURITY子键存储了系统级的安全策略和用户权限分配。HKLM\SAM会链接至HKLM\SECURITY\SAM之下的SECURITY子键。默认情况下，我们无法查看HKLM\SECURITY或HKLM\SAM的内容，因为这些子键的安全设置只允许System账户访问（System账户的详细介绍请参阅下面内容）。我们可以更改安全描述符让管理员账户获得读取访问的权限，或者使用PsExec以Local System账户身份运行Regedit，即可进一步查看其中的内容。然而，这种“窥视”并不能获得太多有用的信息，因为相关数据是不公开的，并且密码也通过单向映射的方式进行了加密，也就是说，我们无法从加密后的密码推导出真实密码。SAM和SECURITY子键由启动分区\Windows\system32\config路径下的SAM和SECURITY配置单元文件提供支持。</p>
+<p class="zw">HKLM\SOFTWARE子键存储了系统启动过程中用到的Windows系统级配置信息。此外，第三方应用程序也可以在这里存储自己的系统级设置，例如，应用程序文件和目录的路径，或者许可和过期日期等信息。</p>
+<p class="zw">HKLM\SYSTEM子键包含系统启动过程中会用到的系统级配置信息，例如要加载的设备驱动程序以及要启动的服务。该子键由\Windows\system32\config目录下的SYSTEM配置单元文件提供支持。Windows加载器会使用启动库（boot library）提供的注册表服务读取并查阅SYSTEM配置单元文件中的数据。</p>
+<h4 class="bt4 sigil_not_in_toc">HKEY_CURRENT_CONFIG</h4>
+<p class="zw">HKEY_CURRENT_CONFIG实际上是指向当前硬件配置文件（存储于HKLM\SYSTEM\ CurrentControlSet\Hardware Profiles\Current）的链接。Windows已不再支持硬件配置文件，但这些键依然被保留下来，主要是为了向需要该键的遗留应用程序提供向后兼容性。</p>
+<h4 class="bt4 sigil_not_in_toc">HKEY_PERFORMANCE_DATA和HKEY_PERFORMANCE_TEXT</h4>
+<p class="zw">注册表也可以作为访问Windows性能计数器（这些性能计数器可以来自操作系统组件或服务器应用程序）的机制。通过注册表访问性能计数器，这种做法带来的附带好处是：可以实现“免费的”远程性能监控，因为我们可以通过常规的注册表API轻松实现注册表的远程访问。</p>
+<p class="zw">只需打开名为HKEY_PERFORMANCE_DATA的特殊键并查询其中的值，即可直接访问注册表性能计数器信息。但直接使用注册表编辑器是找不到该键的，该键只能以编程方式通过Windows注册表函数（如RegQueryValueEx）查看。性能信息实际上并未存储在注册表中，注册表函数会将对该键的访问重定向至通过性能数据提供程序获得的实时性能信息。</p>
+<p class="zw">HKEY_PERFORMANCE_TEXT也是一个可用于获取性能计数器信息（通常为名称和描述）的特殊键。我们可以查询Counter这个特殊注册表值的数据来获取任何性能计数器的名称。另一个特殊注册表值Help提供了所有计数器的描述信息。这些特殊键返回的信息都使用了美式英语，HKEY_PERFORMANCE_NLSTEXT则能提供与操作系统运行所用语言一致的性能计数器名称和描述。</p>
+<p class="zw">我们还可以通过性能数据助手API（Pdh.dll）提供的性能数据助手（Performance Data Helper，PDH）函数获取性能计数器信息。图10-2展示了访问性能计数器信息所涉及的组件。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx646.png" style="width: 100%" />
+<p class="图题">图10-2　注册表性能计数器架构</p>
+<p class="zw">如图10-2所示，注册表键由静态链接至Advapi32.dll的性能库（Perflib）进行抽象。Windows内核对HKEY_PERFORMANCE_DATA注册表键一无所知，这也解释了为何这些信息无法显示在注册表编辑器中的原因。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"5a53b69b-1f5b-45b1-989a-6fe8c9cf2a82","id":"a205e35a-0dd2-4e7e-be71-c70e7f49deec"}</p>

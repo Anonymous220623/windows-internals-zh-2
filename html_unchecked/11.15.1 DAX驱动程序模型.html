@@ -1,0 +1,12 @@
+<h3 class="bt3" id="sigil_toc_id_296">11.15.1　DAX驱动程序模型</h3>
+<p class="zw">为了支持DAX卷，Windows需要引入一种全新的存储驱动程序模型。SCM总线驱动程序（Scmbus.sys）是一种全新的总线驱动程序，它可以枚举系统中的物理和逻辑持久性内存（Persistent Memory，PM）设备，而这些设备会连接到内存总线（枚举的执行通过NFIT ACPI表进行）。该总线驱动程序并非I/O路径的一部分，而是一种由ACPI枚举器管理的主总线驱动程序，由HAL（硬件抽象层）通过硬件数据库注册表键（HKLM\ SYSTEM\CurrentControlSet\Enum\ACPI）提供。有关即插即用设备枚举的详细信息请参阅卷1第6章。</p>
+<p class="zw">图11-74展示了SCM存储驱动程序模型的架构。SCM总线驱动程序会创建两个不同类型的设备对象。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 代表物理PM设备的物理设备对象（Physical Device Object，PDO）。NVDIMM设备通常包含一个或多个相互交错的NVDIMM-N模块，如果只有一个模块，则SCM总线驱动程序将只创建表示这个NVDIMM单元的一个物理设备对象；如果包含多个模块，则会创建两个不同设备，借此代表每个NVDIMM-N模块。所有的物理设备都由微型端口驱动程序Nvdimm.sys管理，它可以控制物理NVDIMM并监视其健康状况。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 代表单一DAX磁盘的功能设备对象（Functional Device Object，FDO），该对象由持久性内存驱动程序Pmem.sys管理。该驱动程序控制所有可由字节寻址的交错集，并负责针对DAX卷执行的所有的I/O。持久性内存驱动程序是每个DAX磁盘的类驱动程序（取代了传统存储堆栈中的Disk.sys）。</p>
+<p class="zw">SCM总线驱动程序和NVDIMM微型端口驱动程序都公开了一些可用于与PM类驱动器通信的接口。这些接口是通过IRP_MJ_PNP主函数使用IRP_MN_QUERY_INTERFACE请求公开的。接收到请求后，SCM总线驱动程序会知道应该公开自己的通信接口，因为调用方指定了{8de064ff-b63042e4-ea88-6f24c8641175}这个接口GUID。同样，持久性内存驱动程序需要通过{0079c21b-917e-405e-cea9-0732b5bbcebd}这个GUID与NVDIMM设备通信。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3083.png" style="width: 100%" />
+<p class="图题">图11-74　SCM存储驱动程序模型</p>
+<p class="zw">新的存储驱动程序模型实现了明确的责任划分：PM类驱动程序管理逻辑磁盘功能（打开、关闭、读取、写入、内存映射等），而NVDIMM驱动程序管理物理设备及其运行状况。未来，只需更新Nvdimm.sys驱动程序即可增加对新类型NVDIMM的支持（无须更改Pmem.sys）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"79bbbed1-3a35-4d22-b579-86536ea07e54","id":"94e51aa8-557a-4290-b8af-a7df9db2acda"}</p>

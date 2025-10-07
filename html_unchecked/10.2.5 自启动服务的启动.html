@@ -1,0 +1,60 @@
+<h3 class="bt3" id="sigil_toc_id_127">10.2.5　自启动服务的启动</h3>
+<p class="zw">SvcCtrlMain可以调用SCM的ScAutoStartServices函数启动所有Start值被设定为“自启动”的服务（延迟启动服务和用户服务除外）。ScAutoStartServices还会启动所有设置为自启动的驱动程序。为避免混淆，除非另有说明，否则可将“服务”这个词理解为服务和驱动程序。ScAutoStartServices首先会启动两个重要且基础的服务：Plug and Play（实现于Umpnpmgr.dll库中）和Power（实现于Umpo.dll库中），系统管理即插即用硬件和电源接口必须用到这两个服务。随后SCM会注册自己的Autostart WNF状态，该状态用于向Power和其他服务告知当前的自启动阶段。</p>
+<p class="zw">在可以开始启动其他服务之前，ScAutoStartService例程会调用ScGetBootAndSystemDriverState来扫描服务数据库，查找“引导启动”和“系统启动”的设备驱动程序项。ScGetBootAndSystemDriverState会判断启动类型被设置为Boot Start或System Start的驱动程序是否已成功启动，为此会在设备管理器命名空间目录\Driver下寻找驱动程序的名称。当一个设备驱动程序成功加载时，I/O管理器会将该驱动程序对象插入该命名空间的这个目录下，因此，如果名称不存在，则意味着驱动程序未加载。图10-15展示了WinObj中显示的Driver目录内容。ScGetBootAndSystemDriverState会在一个名为ScStoppedDrivers的列表中记录尚未启动，但属于当前配置文件的驱动程序的名称。稍后在SCM初始化完成后，将使用该列表向系统事件日志记录事件（ID 7036），其中包含了启动失败的“启动驱动程序”列表。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1631.png" style="width: 100%" />
+<p class="图题">图10-15　驱动程序对象列表</p>
+<p class="zw">ScAutoStartServices中按照正确顺序启动服务的算法是分阶段进行的，每个阶段对应一个组，而不同阶段将按照HKLM\SYSTEM\CurrentControlSet\Control\ServiceGroupOrder\ List注册表值中存储的组排序所定义的顺序来处理。List值的内容如图10-16所示，其中包含了组的名称，SCM将按照这里的排序来依次启动。因此将服务分配到一个组中，只能微调该服务的启动，无法影响其他组中的服务。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1638.png" style="width: 100%" />
+<p class="图题">图10-16　ServiceGroupOrder注册表键</p>
+<p class="zw">当一个阶段开始时，ScAutoStartServices会标记属于该阶段对应的组包含的所有服务项，并将其启动。随后ScAutoStartServices会遍历标记的服务，以确定自己是否可以启动每个服务。这个检查还会判断服务是否被标记为延迟自启动或属于用户模板服务，这两种情况的服务会被SCM在稍后的一个阶段启动（延迟自启动服务还必须未加入任何组，用户服务详见下文“用户服务”一节）。在这个检查过程中，还需要确定服务是否依赖其他组，这是由服务在注册表键中的DependOnGroup值确定的。如果存在依赖性，则该服务依赖的另一个组必须已经完成了初始化，并且被依赖的组中至少需要有一个服务已经成功启动。如果在组的启动顺序中，服务依赖的组是晚于自己所在的组启动的，SCM会为该服务记录一个“循环依赖”的错误信息。如果ScAutoStartServices所处理的是Windows服务或自动启动的设备驱动程序，那么随后还要检查该服务是否依赖一个或多个其他服务。如果依赖，那么还要判断被依赖的服务是否已启动。服务的依赖性可通过服务注册表键中的DependOnService值来表示。如果一个服务依赖的其他服务所属的组在ServiceGroupOrder\List中处于靠后的位置，SCM也会生成“循环依赖”错误并且无法启动该服务。如果一个服务依赖同组中尚未启动的其他服务，那么该服务的启动将会被跳过。</p>
+<p class="zw">当服务的依赖性被完全满足后，在正式启动该服务前，ScAutoStartServices还会进行一次最终检查，以确认该服务是否是当前启动配置的一部分。如果系统以安全模式启动，SCM会确保该服务无论按照名称或组来看，都处于适合的安全启动注册表键中。安全启动注册表键有两个：Minimal&nbsp;和&nbsp;Network，均位于HKLM\SYSTEM\CurrentControlSet\ Control\SafeBoot下，SCM具体用哪个键来检查，这取决于用户具体选择了哪种安全模式。如果通过现代或遗留启动菜单选择“安全模式”或“带命令提示符的安全模式”，SCM会使用Minimal键；如果选择“网络安全模式”，SCM会使用Network键。SafeBoot键下还存在一个名为Option的字符串值，该值不仅表明系统以安全模式启动，还能表明用户选择的安全模式类型。有关安全启动的详细信息，请参阅第12章的“安全模式”一节。</p>
+<h4 class="bt4 sigil_not_in_toc">服务启动</h4>
+<p class="zw">SCM决定启动服务后将调用StartInternal，后者会对服务和设备驱动程序采取不同的操作。如果StartInternal启动的是Windows服务，它首先会确定运行该服务进程的文件的名称，为此需要从服务的注册表键中读取ImagePath值。如果服务文件与LSASS.exe相对应，SCM将初始化一个控制管道，连接到已经运行的LSASS进程，并等待LSASS进程的响应。当管道就绪后，LSASS进程会调用经典的StartServiceCtrlDispatcher例程以连接到SCM。如图10-17所示，一些服务（如凭据管理器或加密文件系统）需要与本地安全机构子系统服务（LSASS）进行协调，这通常是为了给本地系统策略（如密码、特权、安全审核，详见卷1第7章）执行密码学操作。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1791.png" style="width: 100%" />
+<p class="图题">图10-17 有本地安全机构子系统服务（LSASS）进程托管的服务</p>
+<p class="zw">随后SCM会判断该服务是否为关键服务（通过分析FailureAction注册表值）或运行在WoW64下（对于32位服务，SCM将应用文件系统重定向，详见第8章的“WoW64（Windows-on-Windows）”一节）。此外SCM还会检查服务的Type值。如果下列条件适用，SCM还会在内部的映像记录数据库（Image Record Database）中进行搜索。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 服务Type值包含SERVICE_WINDOWS_SHARE_PROCESS (0x20)。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 服务上次出错后还未重新启动过。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 该服务不允许进行Svchost服务拆分（详见下文“Svchost服务拆分”一节）。</p>
+<p class="zw">映像记录是一种数据结构，表示一个已经启动，且至少托管了一个服务的进程。如果上述条件适用，SCM会搜索是否存在一个进程可执行文件名称与新服务的ImagePath值相同的映像记录。</p>
+<p class="zw">如果SCM使用与ImagePath值相同的名称找到了现有的映像数据库记录，则意味着这是一个可共享的服务，并且已经有一个正在运行的托管进程。SCM会保证所找到的托管进程，其运行账户与打算启动的服务所指定的运行账户相同（这是为了确保服务不会使用错误的账户启动，例如LocalService账户，而是会使用ImagePath指向的运行中的Svchost，例如通过LocalSystem运行的netsvcs服务）。服务的ObjectName注册表值存储了运行该服务所需的用户账户信息。不具备ObjectName或ObjectName为LocalSystem的服务会使用Local System账户运行。一个进程只能用一个账户登录。因此如果一个服务所指定的运行账户不同于同一个进程中其他服务所用的账户，SCM将会报错。</p>
+<p class="zw">如果映像记录存在，在新服务可以运行之前，还需要执行另一个最终检查：SCM要打开当前执行中的主机进程的令牌，并检查令牌中是否包含必要的服务SID（以及所有必需的特权是否均已启用）。即便此时，如果无法验证条件，SCM依然会报错。请注意，正如下一节（“服务登录”）将要介绍的，对于共享的服务，创建令牌时会添加所托管的每个服务的SID。当令牌已经创建好后，任何用户模式组件均无法向其中添加组SID。</p>
+<p class="zw">如果映像数据库中不包含新服务ImagePath值对应的项，SCM会创建一个。当SCM创建新项时，会存储服务所用的登录账户名以及来自服务ImagePath值的数据。SCM要求服务必须具备ImagePath值，如果没有ImagePath值，SCM会报错称找不到服务的路径并且无法启动该服务。当SCM创建了映像记录后，会登录服务账户并启动新的托管进程（该过程详见下一节“服务登录”的描述）。</p>
+<p class="zw">当服务成功登录并且托管进程正确启动后，SCM会等待来自服务的初始“连接”消息。服务会通过SCM RPC管道（\Pipe\Ntsvcs，详见“服务控制管理器（SCM）”一节）和LogonAndStartImage例程建立的通道上下文数据结构连接至SCM。当SCM收到第一条消息后，会开始向服务进程发送SERVICE_CONTROL_START控制消息，借此启动服务。请注意，在所描述的通信协议中，始终是由服务连接到SCM。</p>
+<p class="zw">服务应用程序可以借助StartServiceCtrlDispatcher API（详见上文“服务应用程序”一节）中的消息循环顺利处理这条消息。服务应用程序会在自己的令牌中启用服务组SID（如果需要的话），并新建服务线程（用于执行服务的Main函数）。随后它会回调SCM创建指向新服务的句柄，将该句柄存储在一个内部数据结构（INTERNAL_DISPATCH_ TABLE）中。该数据结构类似于作为输入提供给StartServiceCtrlDispatcher API的服务表，可用于跟踪托管进程中的活动服务。如果服务未能在超时时限内对启动命令做出积极响应，SCM将会放弃，并在系统事件日志中记录一条错误，表明该服务未能及时启动。</p>
+<p class="zw">如果SCM通过调用StartInternal启动的服务其Type注册表值为SERVICE_KERNEL_ DRIVER或SERVICE_FILE_SYSTEM_DRIVER，则意味着这是一个设备驱动程序，此时StartInternal会为SCM进程启用加载驱动程序的安全特权，随后调用内核服务NtLoadDriver，并解析驱动程序的注册表键ImagePath值的数据。与服务不同，驱动程序无须指定ImagePath值，并且如果该值不存在，SCM会将驱动程序的名称附加到字符串%SystemRoot%\System32\Drivers\末尾，从而构建一个映像路径。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　启动值为SERVICE_AUTO_START或SERVICE_DEMAND_START的驱动程序是由SCM以运行时驱动程序的形式启动的，这意味着所加载的映像会使用共享页面，并且有一个描述自己的控制区。这与启动值为SERVICE_BOOT_START或SERVICE_SYSTEM_START的驱动程序完全不同，这些驱动程序由Windows加载器加载，并由I/O管理器启动。这些驱动程序都使用私有页面，不可共享，也没有相关的控制区。更多信息请参阅卷1第5章。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">ScAutoStartServices会继续循环遍历同一个组的所有服务，直到所有服务均已启动，或者产生了依赖项错误。SCM就是通过这种循环，实现了对一个组中的所有服务按照相应的DependOnService依赖性进行自动排序。SCM会在循环的早期阶段启动其他服务都依赖的服务，而跳过需要依赖其他服务的服务直到下一次循环再开始处理。请注意，SCM会忽略Windows服务的Tag值，该值通常位于HKLM\SYSTEM\CurrentControlSet\Services键的子键中；但是对于“引导启动”以及“系统启动”驱动程序，I/O管理器则会通过Tag值对一个组中所有设备驱动程序的启动顺序进行排序。当SCM针对ServiceGroupOrder\ List值列出的所有服务组完成了所有阶段的操作后，还会通过一个阶段对该值中未列出组的服务执行操作，随后针对不包含在组中的服务执行最终阶段的操作。</p>
+<p class="zw">处理完自启动的服务后，SCM会调用ScInitDelayStart，这个函数会将一个延迟工作项加入队列，该工作项所关联的工作线程负责处理所有因为被标记为延迟自启动（通过DelayedAutostart注册表值）而被ScAutoStartServices跳过的服务。这个工作线程会在延迟结束后开始执行，默认延迟为120秒，不过可在HKLM\SYSTEM\ CurrentControlSet\ Control下创建AutoStartDelay值来修改默认延迟。对于延迟自启动服务，SCM会执行与非延迟自启动服务相同的操作。</p>
+<p class="zw">当完成所有自动启动服务和驱动程序的启动，并且设置了延迟自动启动工作项后，SCM会向\BaseNamedObjects\SC_AutoStartComplete事件发送信号。Windows安装程序会使用该事件测量安装过程中的启动进度。</p>
+<h4 class="bt4 sigil_not_in_toc">服务登录</h4>
+<p class="zw">在启动过程中，如果SCM未找到任何现有的映像记录，这意味着需要创建托管进程。实际上这意味着新服务是不可共享的、是要被第一个执行的、被重启动了，或这是一个用户服务。在启动进程前，SCM需要为服务托管进程创建一个访问令牌。LogonAndStartImage函数的主要用途就是创建令牌并启动服务的托管进程。该过程取决于要启动的服务的类型。</p>
+<p class="zw">用户服务（更确切地说是用户服务实例）是通过检索当前登录用户的令牌（通过UserMgr.dll库中实现的函数）来启动的。在这种情况下，LogonAndStartImage函数会复制用户令牌并添加“WIN://ScmUserServic”安全特性（该特性的值通常被设置为0）。该安全特性主要被服务控制管理器在接收来自服务的连接请求时进行验证。虽然SCM可以通过服务SID（或系统账户SID，如果服务以Local System账户运行的话）识别托管经典服务的进程，但会使用这个SCM安全特性来识别托管用户服务的进程。</p>
+<p class="zw">对于所有其他类型的服务，SCM会从注册表（ObjectName值）读取用于启动服务的账户，并调用ScCreateServiceSids函数为新进程托管的每个服务创建一个服务SID（SCM会在自己的内部服务数据库中为每个服务进行循环执行该操作）。请注意，如果服务使用LocalSystem账户运行（不包含受限或非受限SID），将不执行该步骤。</p>
+<p class="zw">SCM调用LSASS的LogonUserExEx函数登录未使用System账户运行的服务。LogonUserExEx通常需要密码，但一般来说，SCM会告知LSASS：密码是以服务的LSASS“机密”形式存储在HKLM\SECURITY\Policy\Secrets下的注册表键中的（请注意，SECURITY的内容通常不可见，因为其默认安全设置只允许System账户访问）。当SCM调用LogonUserExEx时，需要指定一个“服务登录”作为登录类型，这样LSASS即可在“_SC_&lt;Service Name&gt;”形式的名称对应的Secrets子键下查找所需的密码。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　使用虚拟服务账户运行的服务无须密码即可让LSA服务创建服务令牌。对于这种服务，SCM也不会向LogonUserExEx API提供任何密码。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">在配置服务的登录信息时，SCM会指示LSASS使用LsaStorePrivateData函数将登录密码存储为机密。如果登录成功，LogonUserEx会向调用方返回一个指向访问令牌的句柄。SCM会将必要的服务SID添加到返回的令牌中，并且如果新服务使用了受限SID，还会调用ScMakeServiceTokenWriteRestricted函数将令牌转换为“写入-限制”令牌（添加相应的受限SID）。Windows会使用访问令牌来表示用户的安全上下文，随后SCM会将访问令牌关联给实现该服务的进程。</p>
+<p class="zw">接下来，SCM会创建用户环境块和安全描述符，并将其关联给新的服务进程。如果要启动的是一个打包的服务，SCM会从注册表读取与程序包有关的所有信息（包全名、来源、应用程序用户模型ID）并调用Appinfo服务，由该服务使用必要的AppModel安全特性为令牌添加戳记，并让服务进程为现代程序包的激活做好准备（有关AppModel的详情请参阅第8章的“打包的应用程序”一节）。</p>
+<p class="zw">成功登录后，SCM会加载账户的配置文件信息，如果配置文件尚未加载，则会调用用户配置文件基础API DLL（%SystemRoot%\System32\Profapi.dll）的LoadProfileBasic函数。HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\&lt;user profile key&gt;\ProfileImagePath值包含了LoadUserProfile载入注册表的注册表配置单元在磁盘上的位置，这样配置单元中的信息即可供服务的HKEY_CURRENT_USER键使用。</p>
+<p class="zw">下一步，LogonAndStartImage将继续启动服务的进程。SCM会通过Windows的CreateProcessAsUser函数以暂停状态启动进程（但使用Local System账户的进程托管服务除外，这类服务是通过标准CreateProcess API创建的，SCM已经使用SYSTEM令牌运行，因此不需要其他任何登录）。</p>
+<p class="zw">进程恢复前，SCM将会创建通信数据结构，借此让服务应用程序和SCM能通过异步RPC进行通信。该数据结构包含一个控制序列、一个指向控制和响应缓冲区的指针、服务和托管进程数据（如PID、服务SID等）、一个同步事件，以及一个指向异步RPC状态的指针。</p>
+<p class="zw">SCM会通过ResumeThread函数恢复服务进程，并等待服务连接到自己的SCM管道。注册表值HKLM\SYSTEM\ CurrentControlSet\Control\ServicesPipeTimeout如果存在，将借此确定服务调用StartServiceCtrlDispatcher函数并建立连接之前的等待时长，超过这个时间后，SCM将放弃，终止进程，并认定服务启动失败（注意，此时是SCM终止进程，这与上文“服务启动”一节讨论的服务不响应启动请求的情况不同）。如果ServicesPipeTimeout函数不存在，SCM将使用默认的30秒超时值。SCM会为自己的所有服务通信使用相同的超时值。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":4,"parentId":"1cbfd336-a8a2-4665-b935-06b6507ec061","id":"f000f67c-a0d5-45d0-b49c-454210ccaa5d"}</p>

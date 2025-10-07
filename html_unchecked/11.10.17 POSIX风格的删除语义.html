@@ -1,0 +1,55 @@
+<h3 class="bt3" id="sigil_toc_id_246">11.10.17　POSIX风格的删除语义</h3>
+<p class="zw">POSIX子系统已被废弃，无法在Windows操作系统中使用。Windows Subsystem for Linux（WSL）取代了最初的POSIX子系统。NTFS文件系统驱动程序已经通过更新统一了Windows和Linux中在对I/O的操作支持方面存在的一些差异。例如，Linux的unlink（或rm）命令，可以删除文件或文件夹。在Windows中，应用程序无法删除正在被其他应用程序使用的文件（文件有打开的句柄）；相反，Linux通常支持这种做法：在源文件已被删除的情况下，其他进程依然可以正常运行。为了支持WSL，Windows 10中的NTFS文件系统驱动程序支持一种新操作，即POSIX Delete。</p>
+<p class="zw">Win32 DeleteFile API实现了标准的文件删除。目标文件将被打开（新建一个句柄），再通过NtSetInformationFile这个原生API为文件附加一个处置标签。该标签只是告诉NTFS文件系统驱动程序该文件即将被删除。文件系统驱动程序会检查对FCB（文件控制块）的引用数量是否等于1，这意味着该文件没有其他未处理的打开句柄。如果等于1，则文件系统驱动程序会将文件标记为“关闭时删除”并返回。只有在文件句柄关闭之后，IRP_MJ_CLEANUP调度例程才会从底层介质中将该文件物理删除。</p>
+<p class="zw">但类似的架构无法兼容Linux的unlink命令。WSL子系统需要删除文件时，会采用POSIX风格的删除：使用新增的FileDispositionInformationEx信息类调用NtSetInformationFile的原生API，指定一个标记（FILE_DISPOSITION_POSIX_SEMANTICS）。NTFS文件系统驱动程序通过在CCB（上下文控制块，一种代表磁盘上对象的打开实例的数据结构）中插入一个标记的方式将文件标记为“POSIX删除”。随后它会用一个特殊的内部例程重新打开该文件，将新句柄（可以称为PosixDeleted句柄）附加给SCB（流控制块）。在原始句柄关闭后，NTFS文件系统驱动程序会检测是否存在PosixDeleted句柄，并将关闭该句柄的工作项加入队列。该工作项完成后，清理例程检测到该句柄已标记为“POSIX删除”，随后将该文件从物理上移至隐藏目录“\$Extend\$Deleted”。其他文件依然可以对源文件执行操作，但该文件已不再位于原始的命名空间中，只有当最后一个句柄关闭后，该文件才会被删除（第一个删除请求已将FCB标记为“关闭时删除”）。</p>
+<p class="zw">如果因任何不寻常原因导致系统无法删除目标文件（例如有缺陷的内核驱动造成了悬空引用，或突然断电），当NTFS文件系统下次有机会挂载该卷时，会检查\$Extend\$Deleted目录，并使用标准文件删除例程删除其中的所有文件。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　从2019年5月更新（19H1）开始，Windows 10已经使用POSIX delete作为默认文件删除方法。这意味着DeleteFile API也将表现出全新的行为。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zwtsh">实验：观察POSIX删除</p>
+<p class="zwts1">在这个实验中，我们将借助本书随附资源中包含的FsTool工具观察POSIX删除的运作。该实验需要在Windows Server 2019（RS5）版本中进行。实际上，更新的客户端版本Windows已经默认实现了POSIX删除。首先打开一个命令提示符窗口，使用FsTool的命令行参数/touch生成一个被应用程序独占使用的txt文件：</p>
+<pre class="代码无行号"><code>D:\&gt;FsTool.exe /touch d:\Test.txt 
+NTFS / ReFS Tool v0.1 
+Copyright (C) 2018 Andrea Allievi (AaLl86) 
+　
+Touching "d:\Test.txt" file... Success. 
+   The File handle is valid... Press Enter to write to the file. </code></pre>
+<p class="zwts1">看到上述提示后，不要按下回车键，打开另一个命令提示符窗口，然后试着打开并删除该文件：</p>
+<pre class="代码无行号"><code>D:\&gt;type Test.txt 
+The process cannot access the file because it is being used by another process. 
+　
+D:\&gt;del Test.txt 
+　
+D:\&gt;dir Test.txt 
+ Volume in drive D is DATA 
+ Volume Serial Number is 62C1-9EB3 
+　
+ Directory of D:\ 
+　
+12/13/2018  12:34 AM                 49 Test.txt 
+               1 File(s)             49 bytes 
+               0 Dir(s)  1,486,254,481,408 bytes free </code></pre>
+<p class="zwts1">毫不意外，在被FsTool独占访问时，我们无法打开该文件。试图删除该文件时，</p>
+<p class="zwts1">系统会将其标记为删除，但系统无法将其从文件系统命名空间中移除。如果尝试通过文件资源管理器再次删除该文件，也将遇到类似的行为。当我们在第一个命令提示符窗口中按下回车键并退出FsTool工具时，该文件实际上已经被NTFS文件系统驱动程序删掉了。</p>
+<p class="zwts1">下一步是使用POSIX删除来处理该文件。为此可以为FsTool工具指定命令行参数/pdel。在第一个命令提示符窗口中使用命令行参数/touch重启动FsTool（源文件已标记为删除，无法再次删除）。按下回车键之前，切换至第二个窗口并执行下列命令：</p>
+<pre class="代码无行号"><code>D:\&gt;FsTool /pdel Test.txt 
+NTFS / ReFS Tool v0.1 
+Copyright (C) 2018 Andrea Allievi (AaLl86) 
+　
+Deleting "Test.txt" file (Posix semantics)... Success. 
+Press any key to exit... 
+D:\&gt;dir Test.txt 
+ Volume in drive D is DATA 
+ Volume Serial Number is 62C1-9EB3 
+　
+ Directory of D:\ 
+　
+File Not Found </code></pre>
+<p class="zwts1">这次Test.txt文件已完全从文件系统的命名空间中删除，但依然有效。如果在第一个命令提示符窗口中按下回车键，FsTool依然可以向文件写入数据。这是因为在内部，该文件已被移入\$Extend\$Deleted隐藏系统目录。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":16,"parentId":"4e1b28f8-e2a9-4fda-aeea-4d6f22a941c7","id":"3a0d24a5-50d0-4eb4-912c-04037d10be61"}</p>

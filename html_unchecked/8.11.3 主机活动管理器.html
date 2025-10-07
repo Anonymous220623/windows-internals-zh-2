@@ -1,0 +1,23 @@
+<h3 class="bt3" id="sigil_toc_id_61">8.11.3　主机活动管理器</h3>
+<p class="zw">系统中原本有很多组件会以不够协调的方式与打包的应用程序状态进行交互，但Windows 10对这些组件进行了统一。因此一个名为主机活动管理器（Host Activity Manager，HAM）的全新组件开始成为中心组件，独自负责管理打包应用程序的状态并向其所有客户端提供统一的API集。</p>
+<p class="zw">与原先的方式不同，主机活动管理器会向自己的客户端暴露基于活动的接口。“主机”是应用程序模型所认可的最小的隔离单元对象。而打包应用程序中代表Windows作业对象的资源状态、暂停/恢复状态、冻结状态，以及优先级，都可以作为一种单元加以管理。对于简单的应用程序，作业对象可能只包含一个进程；但对于拥有多个后台任务的应用程序（如多媒体播放器），其中也可能包含多个不同进程。</p>
+<p class="zw">在这种新的现代应用程序模型中，作业的类型分为三种。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Mixed：前台和后台活动的混合，但通常会与应用程序的前台部分相关联。包含后台任务的应用程序（例如音乐播放或打印）会使用这种类型的作业。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Pure：纯粹用于后台工作的主机。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> System：代表应用程序执行Windows代码的主机（例如后台下载）。</p>
+<p class="zw">活动（Activity）始终归属于主机，它代表了客户端某些概念（例如窗口、后台任务、任务完成等）的通用接口。如果主机的作业未处于冻结状态，并且有至少一个运行中的活动，那么这样的主机会被视为“活跃的”。HAM客户端组件负责管理活动的交互并控制其寿命。很多组件都可以看成HAM客户端：视图管理器、代理基础架构、各种Shell组件（例如Shell Experience Host）、AudioSrv、任务完成，甚至Windows服务控制管理器。</p>
+<p class="zw">现代应用程序的生命周期由四种状态组成：运行中（Running）、暂停中（Suspending）、暂停完成（Suspend-complete）以及已暂停（Suspended）。这些状态及其相互之间的交互请参考图8-43。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">运行中</strong>。该状态下的应用程序正在执行自己的部分代码，而并未暂停运行。不仅仅是处于前台的应用程序，运行后台任务（如播放音乐、打印，或执行其他任何后台任务）的应用程序也可以处于该状态下。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">暂停中</strong>。这是一种持续时间有限的过渡状态，当HAM要求应用程序暂停时会出现该状态。HAM可能会出于不同原因提出此要求，例如，应用程序失去了前台焦点，系统资源不足或即将进入省电状态，或仅仅只是因为应用正在等待某些UI事件。出现这种情况后，应用程序需要在有限的时间（通常最多5秒）内进入已暂停状态，否则将会被终止。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">暂停完成</strong>。该状态下的应用程序已完成暂停操作，并将情况告知系统。因此，其暂停过程会被视为已完成。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> <strong style="color:#0092dd">已暂停</strong>。一旦应用程序完成暂停过程并通知系统，系统将使用NtSetInformationJobObject API调用（通过JobObjectFreezeInformation信息类）冻结该应用程序的作业对象，随后该应用程序的任何代码均将无法运行。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx5521.png" style="width: 100%" />
+<p class="图题">图8-43　打包应用程序的生命周期结构图</p>
+<p class="zw">以维持系统效率并节约系统资源为目标的主机活动管理器，默认情况下会始终要求应用程序暂停。HAM客户端需要向HAM发出请求才能让应用程序始终保持活跃。对于前台应用程序，由视图管理器这个组件负责保持应用程序活跃状态。对于后台任务，则由代理基础架构负责判断要让承载后台活动的哪些进程保持活跃（同样要向HAM请求保持应用程序活跃）。</p>
+<p class="zw">打包的应用程序没有终止（Terminated）状态。这意味着应用程序没有真正意义上的退出或终止状态这样的概念，并且应用程序也不应该试图终止自己。终止打包应用程序的实际模式是：首先将其暂停，随后如果有必要，由HAM针对应用程序的作业对象调用NtTerminateJobObject API。HAM可以自动管理应用程序的寿命，并只在需要时销毁进程。但终止应用程序的决定并不是由HAM自己做出的，而是由客户端（例如视图管理器或应用程序激活管理器）发出相关请求。打包的应用程序无法分辨出自己是被暂停还是被终止。这样Windows就可以自动还原应用程序原本的状态，哪怕应用程序已经被终止或系统已经重启动。因此可以说，打包应用程序模型完全不同于标准的Win32应用程序模型。</p>
+<p class="zw">为了正确地暂停并恢复打包的应用程序，主机活动管理器会使用新增的PsFreezeProcess和PsThawProcess内核API。进程的冻结（Freeze）和解冻（Thaw）操作类似于暂停和恢复，但也存在如下两个重大差异。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在深度冻结进程的上下文中注入或新建的线程将无法运行，哪怕在创建时并未使用CREATE_SUSPENDED标记或通过调用NtResumeProcess API来启动线程的情况下也是如此。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 在EPROCESS数据结构中实现了一个新的Freeze计数器。这意味着进程可以被多次冻结。为了让进程解冻，解冻请求的总数必须等于冻结请求的数量。只有在这种情况下，非暂停状态的线程才允许运行。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"9334f317-a4b1-4935-821c-b084138eb566","id":"80a81da5-4c0a-4890-9d07-491756b1588b"}</p>

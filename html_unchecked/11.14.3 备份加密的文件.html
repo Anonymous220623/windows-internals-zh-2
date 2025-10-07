@@ -1,0 +1,25 @@
+<h3 class="bt3" id="sigil_toc_id_291">11.14.3　备份加密的文件</h3>
+<p class="zw">任何文件加密设施在设计上都有一个重要的问题需要注意：除了通过加密设施访问文件的应用程序之外，文件数据永远不能以未加密的形式出现。这种限制会对使用存档介质存储文件的备份工具产生较大影响。EFS通过为备份工具提供一种专用设施解决了该问题，借此备份工具可以备份并恢复处于加密状态的文件。同时，备份工具无须解密文件数据，也不需要在自己的备份过程中重新加密文件数据。</p>
+<p class="zw">备份工具可以使用EFS API的OpenEncryptedFileRaw、ReadEncryptedFileRaw、WriteEncryptedFileRaw&nbsp;和&nbsp;CloseEncryptedFileRaw&nbsp;函数访问文件加密后的内容。在备份过程中，当备份工具以原始访问（raw access）的形式打开一个文件时，将能调用ReadEncryptedFileRaw来获取文件数据。所有EFS备份工具API都可以向NTFS发出FSCTL。例如，ReadEncryptedFileRaw API首先会向NTFS驱动程序发出FSCTL_ ENCRYPTION_FSCTL_IO控制代码以读取$EFS流，随后即可读取文件的所有流（包括$DATA流和可选的备用数据流）。如果流被加密，则可通过ReadEncryptedFileRaw API使用FSCTL_READ_RAW_ENCRYPTED控制代码向文件系统驱动程序请求加密后的流数据。</p>
+<p class="zwtsh">实验：查看EFS信息</p>
+<p class="zwts1">EFS还提供其他一些可供应用程序操作加密后的文件的API函数。例如，应用程序可使用AddUsersToEncryptedFile API函数允许其他用户访问加密文件，并使用</p>
+<p class="zwts1">RemoveUsersFromEncryptedFile撤销其他用户对加密文件的访问。应用程序可使用QueryUsersOnEncryptedFile函数获取文件相关DDF和DRF密钥字段的信息，或使用QueryUsersOnEncryptedFile返回SID、证书哈希值，并显示所包含的每个DDF和DRF密钥字段的相关信息。下列输出结果来自Sysinternals的EFSDump工具，在通过命令行参数指定加密文件后，该工具将输出下列内容：</p>
+<pre class="代码无行号"><code>C:\Andrea&gt;efsdump Test.txt 
+EFS Information Dumper v1.02 
+Copyright (C) 1999 Mark Russinovich 
+Systems Internals - http://www.sysinternals.com 
+　
+C:\Andrea\Test.txt: 
+DDF Entries: 
+    WIN-46E4EFTBP6Q\Andrea: 
+        Andrea(Andrea@WIN-46E4EFTBP6Q) 
+    Unknown user: 
+        Tony(Tony@WIN-46E4EFTBP6Q) 
+DRF Entry: 
+    Unknown user: 
+        EFS Data Recovery </code></pre>
+<p class="zwts1">从以上内容中可知，Test.txt文件有两个DDF项，分别对应用户Andrea和Tony，有一个DRF项对应EFS数据恢复代理，这也是当前系统中注册的唯一的一个恢复代理。我们可以使用Cipher工具添加或移除文件DDF项中的用户。例如：</p>
+<pre class="代码无行号"><code>cipher /adduser /user:Tony Test.txt</code></pre>
+<p class="zwts1">上述命令可以允许用户Tony访问加密文件Test.txt（向文件的DDF中添加一项）。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"8e765ccd-1733-46fe-b48f-23c09944a7ed","id":"a2bcc93f-b082-4363-a920-f6cd7592282b"}</p>

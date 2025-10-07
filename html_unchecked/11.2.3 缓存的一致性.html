@@ -1,0 +1,16 @@
+<h3 class="bt3" id="sigil_toc_id_177">11.2.3　缓存的一致性</h3>
+<p class="zw">缓存管理器的一个重要功能是，确保任何访问缓存数据的进程都能得到最新版本的数据。但当一个进程打开了一个文件进而导致该文件被缓存时，如果其他进程（使用Windows的MapViewOfFile函数）直接将该文件映射至自己的地址空间，此时将会出现问题。不过在Windows下并不会出现这种潜在问题，因为缓存管理器和将文件映射到自己地址空间的用户应用程序使用了同一个内存管理文件映射服务。由于内存管理器可以保证对每个映射的唯一文件都只有一个表达（无论产生了多少个节对象或映射视图），因此可以将一个文件的所有视图（哪怕视图有所重叠）都映射至物理内存的同一组页面内，如图11-2所示（有关内存管理器处理映射文件的方法，请参阅卷1第5章）。</p>
+<p class="zw">举例来说，如果进程1有一个映射到自己的用户地址空间的文件视图（视图1），进程2正在通过系统缓存访问同一个视图，进程2将看到进程1对文件进行的所有改动，而无须等待缓存刷新。内存管理器不会刷新所有用户映射的页面，只会刷新自己知道已经被写入数据的页面（因为这些页面已设置了“已修改”位）。因此，任何在Windows下访问文件的进程始终都能看到该文件的最新版本，哪怕其他进程已经通过I/O系统打开了该文件，并且还有其他进程使用Windows文件映射函数将文件映射到了自己的地址空间。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx459.png" style="width: 100%" />
+<p class="图题">图11-2　一致缓存结构</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　这里的缓存一致性是指用户映射的数据和缓存的I/O之间的一致性，并非“非缓存”和“缓存”的硬件访问与I/O之间的一致性，后者几乎可以保证是无法一致的。此外，网络重定向器的缓存一致性往往比本地文件系统缓存一致性更难实现，因为网络重定向器必须实现额外的刷新和清除操作，以保证访问网络数据时的缓存一致性。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"3ad34383-9660-4e89-b628-a8cbdfed9828","id":"e6cb4600-c7b7-486c-8b18-cdf5818a7800"}</p>

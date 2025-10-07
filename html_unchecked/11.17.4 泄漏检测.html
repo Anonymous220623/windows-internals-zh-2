@@ -1,0 +1,29 @@
+<h3 class="bt3" id="sigil_toc_id_319">11.17.4　泄漏检测</h3>
+<p class="zw">簇泄漏（leak）是指这样的情况：某个簇被标记为已分配，但没有对该簇的任何引用。ReFS中可能因为不同的原因发生这样的簇泄漏。当检测到某个目录损坏时，联机抢救可以隔离损坏并重建树，最终只会丢失一些位于根目录下的文件。如果在树更新算法将Minstore事务写入磁盘之前系统崩溃，这可能导致文件名丢失。这种情况下，文件的数据已被正确写入磁盘，但ReFS没有指向该数据的元数据。代表该文件本身的B+树表可能依然存在于磁盘上的某个位置，但其嵌入表已不再链接到任何目录B+树。</p>
+<p class="zw">Windows自带的refsutil.exe工具支持泄漏检测操作，可扫描整个卷，并使用Minstore浏览卷的整个命名空间。随后它可以用自己在命名空间中找到的每个B+树构建一个列表（每个树可以用一种包含标识符头的已知数据结构来识别），并查询&nbsp;Minstore&nbsp;分配器，将识别出来的每个树的列表与分配器标记为有效的树列表进行比较。如果发现存在差异，泄漏检测工具会通知&nbsp;ReFS&nbsp;驱动程序，将所发现的未泄漏的树分配的簇标记为空闲。</p>
+<p class="zw">卷发生的另一种泄漏可能会影响到块引用计数器表，例如，当某个簇的范围所处的行，其引用计数器数值高于实际引用该簇的文件的计数器数值时就会发生这种情况。lower-case工具可以计算出正确的引用计数并修复该问题。</p>
+<p class="zw">为了正确识别并修复泄漏，泄漏检测工具必须在脱机卷上执行操作，但通过使用与NTFS联机扫描类似的技术，这类工具也可以针对目标卷的只读快照执行操作，而这种快照是由卷影复制服务提供的。</p>
+<p class="zwtsh">实验：使用Refsutil查找并修复ReFS卷上的泄漏</p>
+<p class="zwts1">在这个实验中，我们将使用系统自带的refsutil.exe工具，查找并修复ReFS卷可能出现的簇泄漏问题。默认情况下，该工具不需要卸载卷，因为它可以针对卷的只读快照执行操作。要通过该工具修复找到的泄漏，我们可以使用/x命令行参数覆盖默认设置。请以管理员身份打开命令提示符窗口并运行下列命令（在本例中，1&nbsp;TB的ReFS卷被挂载为E:盘，/v参数可以启用该工具的详细输出模式）。</p>
+<pre class="代码无行号"><code>C:\&gt;refsutil leak /v e: 
+Creating volume snapshot on drive \\?\Volume{92aa4440-51de-4566-8c00-bc73e0671b92}...
+Creating the scratch file... 
+Beginning volume scan... This may take a while... 
+Begin leak verification pass 1 (Cluster leaks)... 
+End leak verification pass 1. Found 0 leaked clusters on the volume. 
+　
+Begin leak verification pass 2 (Reference count leaks)... 
+End leak verification pass 2. Found 0 leaked references on the volume. 
+　
+Begin leak verification pass 3 (Compacted cluster leaks)... 
+End leak verification pass 3. 
+　
+Begin leak verification pass 4 (Remaining cluster leaks)... 
+End leak verification pass 4. Fixed 0 leaks during this pass. 
+　
+Finished. 
+Found leaked clusters: 0 
+Found reference leaks: 0 
+Total cluster fixed : 0 </code></pre>
+
+<p class="epubit-contents-id" style="display: none">{"index":3,"parentId":"bfef1a76-a058-4e31-96a2-fa59897a014e","id":"72c75910-3c16-437a-9ee3-316ce4684cd1"}</p>

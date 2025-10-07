@@ -1,0 +1,136 @@
+<h3 class="bt3" id="sigil_toc_id_158">10.5.8　ETW的安全性</h3>
+<p class="zw">ETW会话的启动和停止被视为一种高特权操作，因为事件中可能包含可利用系统完整性的系统数据（对于系统记录器来说，这种情况尤为重要）。Windows安全模型通过扩展可以为ETW的安全性提供支持。正如上文所述，ETW执行的每个操作都需要一个明确定义的访问权限，该权限需要由保护会话、提供程序或提供程序组（取决于具体操作）的安全描述符来赋予。表10-18列出了ETW中引入的所有新访问权限及其用途。</p>
+<p class="表题">表10-18　ETW安全访问权限及其用途</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">值</p> </th> 
+   <th> <p class="bt">描述</p> </th> 
+   <th> <p class="bt">适用于</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WMIGUID_QUERY</p> </td> 
+   <td> <p class="bg">可供用户查询与跟踪会话有关的信息</p> </td> 
+   <td> <p class="bg">会话</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">WMIGUID_NOTIFICATION</p> </td> 
+   <td> <p class="bg">可供用户向会话的通知提供程序发送通知</p> </td> 
+   <td> <p class="bg">会话</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TRACELOG_CREATE_<br> REALTIME</p> </td> 
+   <td> <p class="bg">可供用户启动或更新实时会话</p> </td> 
+   <td> <p class="bg">会话</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TRACELOG_CREATE_ONDISK</p> </td> 
+   <td> <p class="bg">可供用户启动或更新向日志文件写入事件的会话</p> </td> 
+   <td> <p class="bg">会话</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TRACELOG_GUID_ENABLE</p> </td> 
+   <td> <p class="bg">可供用户启用提供程序</p> </td> 
+   <td> <p class="bg">提供程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TRACELOG_LOG_EVENT</p> </td> 
+   <td> <p class="bg">如果会话运行在安全模式下，可供用户将事件记录至跟踪会话</p> </td> 
+   <td> <p class="bg">会话</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TRACELOG_ACCESS_<br> REALTIME</p> </td> 
+   <td> <p class="bg">可供消费者应用程序实时消费事件</p> </td> 
+   <td> <p class="bg">会话</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TRACELOG_REGISTER_GUIDS</p> </td> 
+   <td> <p class="bg">可供用户注册提供程序（创建由ETW_REG_ENTRY数据结构支持的EtwRegistration对象）</p> </td> 
+   <td> <p class="bg">提供程序</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">TRACELOG_JOIN_GROUP</p> </td> 
+   <td> <p class="bg">可供用户向提供程序组插入基于清单的提供程序或Tracelogging提供程序（属于ETW特征的一部分，本书未涉及）</p> </td> 
+   <td> <p class="bg">提供程序</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">大部分ETW访问权限会自动授予SYSTEM账户，以及Administrators、Local Service和Network Service组的成员。这意味着普通用户不允许与ETW交互（除非会话和提供程序的安全描述符明确允许）。为解决该问题，Windows提供了一个Performance Log Users组，按照设计，该组可以让普通用户与ETW交互（尤其是可以控制跟踪会话）。虽然默认安全描述符将所有ETW访问权限都授予了Performance Log Users组，但Windows还为另一个组Performance Monitor Users提供了支持，该组在设计上只用于向会话通知提供程序收发通知。这是因为该组在设计上可以访问系统性能计数器，可以通过诸如性能监视器和资源监视器等工具进行枚举，但无法访问完整的ETW事件。这两个工具的详细信息请参阅卷1第1章。</p>
+<p class="zw">正如上文“ETW会话”一节所述，所有ETW安全描述符均以一种二进制格式存储在HKLM\System\ CurrentControlSet\Control\Wmi\Security注册表键下。在ETW中，一切可由GUID表示的东西均可使用自定义的安全描述符加以保护。为了管理ETW安全性，应用程序通常并不直接与存储在注册表中的安全描述符交互，而是会使用Sechost.dll中实现的EventAccessControl和EventAccessQuery API。</p>
+<p class="zwtsh">实验：查看ETW会话的默认安全描述符</p>
+<p class="zwts1">借助内核调试器可以轻松查看与ETW会话相关，但没有明确指定的默认安全描述符。在这个实验中，我们需要一台运行Windows 10的计算机，以及通过内核调试器附加并连接的主机系统。或者也可以使用本地内核调试器或LiveKd（下载地址：https:// docs.microsoft.com/sysinternals/downloads/livekd）。配置了正确的符号后，即可使用下列命令转储默认安全描述符：</p>
+<pre class="代码无行号"><code>!sd poi(nt!EtwpDefaultTraceSecurityDescriptor) </code></pre>
+<p class="zwts1">随后应该能看到类似下列输出结果（为节约版面，输出内容有所删减）：</p>
+<pre class="代码无行号"><code>-&gt;Revision: 0x1 
+-&gt;Sbz1    : 0x0 
+-&gt;Control : 0x8004 
+             SE_DACL_PRESENT 
+             SE_SELF_RELATIVE 
+-&gt;Owner    : S-1-5-32-544 
+-&gt;Group    : S-1-5-32-544 
+-&gt;Dacl     : 
+-&gt;Dacl     : -&gt;AclRevision: 0x2 
+-&gt;Dacl     : -&gt;Sbz1       : 0x0 
+-&gt;Dacl     : -&gt;AclSize    : 0xf0 
+-&gt;Dacl     : -&gt;AceCount   : 0x9 
+-&gt;Dacl     : -&gt;Sbz2       : 0x0 
+-&gt;Dacl     : -&gt;Ace[0]: -&gt;AceType: ACCESS_ALLOWED_ACE_TYPE 
+-&gt;Dacl     : -&gt;Ace[0]: -&gt;Aceflags: 0x0 
+-&gt;Dacl     : -&gt;Ace[0]: -&gt;AceSize: 0x14 
+-&gt;Dacl     : -&gt;Ace[0]: -&gt;Mask : 0x00001800 
+-&gt;Dacl     : -&gt;Ace[0]: -&gt;SID: S-1-1-0 
+　
+-&gt;Dacl     : -&gt;Ace[1]: -&gt;AceType: ACCESS_ALLOWED_ACE_TYPE 
+-&gt;Dacl     : -&gt;Ace[1]: -&gt;Aceflags: 0x0 
+-&gt;Dacl     : -&gt;Ace[1]: -&gt;AceSize: 0x14 
+-&gt;Dacl     : -&gt;Ace[1]: -&gt;Mask : 0x00120fff 
+-&gt;Dacl     : -&gt;Ace[1]: -&gt;SID: S-1-5-18 
+　
+-&gt;Dacl     : -&gt;Ace[2]: -&gt;AceType: ACCESS_ALLOWED_ACE_TYPE 
+-&gt;Dacl     : -&gt;Ace[2]: -&gt;Aceflags: 0x0 
+-&gt;Dacl     : -&gt;Ace[2]: -&gt;AceSize: 0x14 
+-&gt;Dacl     : -&gt;Ace[2]: -&gt;Mask : 0x00120fff 
+-&gt;Dacl     : -&gt;Ace[2]: -&gt;SID: S-1-5-19 
+　
+-&gt;Dacl     : -&gt;Ace[3]: -&gt;AceType: ACCESS_ALLOWED_ACE_TYPE 
+-&gt;Dacl     : -&gt;Ace[3]: -&gt;Aceflags: 0x0 
+-&gt;Dacl     : -&gt;Ace[3]: -&gt;AceSize: 0x14 
+-&gt;Dacl     : -&gt;Ace[3]: -&gt;Mask : 0x00120fff 
+-&gt;Dacl     : -&gt;Ace[3]: -&gt;SID: S-1-5-20 
+　
+-&gt;Dacl     : -&gt;Ace[4]: -&gt;AceType: ACCESS_ALLOWED_ACE_TYPE 
+-&gt;Dacl     : -&gt;Ace[4]: -&gt;Aceflags: 0x0 
+-&gt;Dacl     : -&gt;Ace[4]: -&gt;AceSize: 0x18 
+-&gt;Dacl     : -&gt;Ace[4]: -&gt;Mask : 0x00120fff 
+-&gt;Dacl     : -&gt;Ace[4]: -&gt;SID: S-1-5-32-544 
+-&gt;Dacl     : -&gt;Ace[5]: -&gt;AceType: ACCESS_ALLOWED_ACE_TYPE 
+-&gt;Dacl     : -&gt;Ace[5]: -&gt;Aceflags: 0x0 
+-&gt;Dacl     : -&gt;Ace[5]: -&gt;AceSize: 0x18 
+-&gt;Dacl     : -&gt;Ace[5]: -&gt;Mask : 0x00000ee5 
+-&gt;Dacl     : -&gt;Ace[5]: -&gt;SID: S-1-5-32-559 
+　
+-&gt;Dacl     : -&gt;Ace[6]: -&gt;AceType: ACCESS_ALLOWED_ACE_TYPE 
+-&gt;Dacl     : -&gt;Ace[6]: -&gt;Aceflags: 0x0 
+-&gt;Dacl     : -&gt;Ace[6]: -&gt;AceSize: 0x18 
+-&gt;Dacl     : -&gt;Ace[6]: -&gt;Mask : 0x00000004 
+-&gt;Dacl     : -&gt;Ace[6]: -&gt;SID: S-1-5-32-558 </code></pre>
+<p class="zwts1">我们可以使用&nbsp;Psgetsid&nbsp;工具（下载地址为https://docs.microsoft.com/sysinternals/ downloads/psgetsid），将SID转换为人工易读的名称。从上述输出结果可以看到，所有ETW访问权限均已授予SYSTEM（S-1-5-18）、LOCAL SERVICE（S-1-5-19）、NETWORK SERVICE（S-1-5-18）以及Administrators（S-1-5-32-544）组。如上文所述，Performance Log Users组（S-1-5-32-559）几乎拥有所有ETW访问权限，而Performance Monitor Users组（S-1-5-32-558）只具备会话的默认安全描述符所授予的WMIGUID_NOTIFICATION访问权限。</p>
+<pre class="代码无行号"><code>C:\Users\andrea&gt;psgetsid64 S-1-5-32-559 
+　
+PsGetSid v1.45 - Translates SIDs to names and vice versa 
+Copyright (C) 1999-2016 Mark Russinovich 
+　
+Sysinternals - www.sysinternals.com 
+　
+Account for AALL86-LAPTOP\S-1-5-32-559: 
+Alias: BUILTIN\Performance Log Users </code></pre>
+<h4 class="bt4 sigil_not_in_toc">安全审核记录器</h4>
+<p class="zw">安全审核记录器（security audit logger）是一种ETW会话，Windows Event logger服务（wevtsvc.dll）会使用它来监听Security Lsass提供程序生成的事件。Security Lsass提供程序（GUID为{54849625-5478-4994-a5ba-3e3b0328c30d}）只能由NT内核在ETW初始化过程中注册，永远不会插入全局提供程序的哈希表中。只有将EnableSecurityProvider注册表值配置为1的安全审核记录器和自动记录器可以从Security Lsass提供程序接收事件。当内部函数EtwStartAutoLogger遇到设置为1的这个值后，便会启用相关ETW会话的SECURITY_TRACE标记，将会话添加到可接收安全审核事件的记录器列表中。</p>
+<p class="zw">该标记还会产生一个重要影响：用户模式应用程序将无法继续查询、停止、刷新或控制会话，除非应用程序以受保护进程轻型（Antimalware、Windows或WinTcb级别）形式运行（有关受保护进程的详情请参阅卷1第3章）。</p>
+<h4 class="bt4 sigil_not_in_toc">安全记录器</h4>
+<p class="zw">经典（MOF）和WPP提供程序在设计上并不能支持基于清单的提供程序和Tracelogging提供程序所实现的所有安全功能。因此，可以使用EVENT_TRACE_SECURE_MODE标记创建自动记录器或通用ETW会话，借此将会话标记为安全的。安全会话意在确保自己只从可信赖的实体接收事件。该标记的影响主要有以下两个。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 防止经典（MOF）和WPP提供程序将事件写入安全会话。如果安全会话中启用了经典提供程序，则该提供程序将无法生成任何事件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 要求补充TRACELOG_LOG_EVENT访问权限，该权限由会话的安全描述符授予控制器应用程序的访问令牌，同时会在安全会话中启用提供程序。</p>
+<p class="zw">TRACE_LOG_EVENT访问权限可用于在会话的安全描述符中指定更细化的安全设置。如果安全描述符只向一个不受信任的用户授予TRACELOG_GUID_ENABLE，并且ETW会话由另一个实体（内核驱动程序或更高特权的应用程序）创建为安全会话，那么这个不受信任的用户将无法在安全会话中启用任何提供程序。如果该会话是非安全会话，那么这个不受信任的用户就可以在其中启用任何提供程序。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":7,"parentId":"0a817dad-0fff-43aa-90f7-5114d262a9ee","id":"91b2e4a7-615f-4049-ae24-9ff928077fec"}</p>

@@ -1,0 +1,41 @@
+<h3 class="bt3" id="sigil_toc_id_189">11.5.1　系统级缓存数据结构</h3>
+<p class="zw">如上文所述，缓存管理器会使用一个名为虚拟地址控制块（VACB）的数据结构数组来跟踪系统缓存中的视图状态，该数组位于非分页池中。在32位系统中，每个VACB大小为32字节，VACB数组大小为128&nbsp;KB，因此每个数组包含4096个VACB。在64位系统中，VACB大小为40字节，因此每个数组可包含3276个VACB。缓存管理器会在系统初始化阶段分配初始VACB数组，并将其链接至名为CcVacbArrays的系统级VACB数组列表。如图11-6所示，每个VACB代表系统缓存中一个大小为256&nbsp;KB的视图。VACB的数据结构如图11-7所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx607.png" style="width: 100%" />
+<p class="图题">图11-6　系统VACB数组</p>
+<p class="zw">此外，每个VACB数组都包含两类VACB：低优先级映射VACB和高优先级映射VACB。系统会为每个VACB数组分配64个初始高优先级VACB。高优先级VACB有一个特点，即它们的视图都是从系统地址空间预分配的。当内存管理器映射某些数据时，如果无法为缓存管理器提供视图，并且如果映射请求被标记为高优先级，缓存管理器将会使用高优先级VACB中一个预分配的视图。例如，可以使用这些高优先级VACB映射关键的文件系统元数据或从缓存中清除数据。不过在高优先级VACB用完后，任何需要VACB视图的操作都会因为资源不足而失败。通常来说，映射优先级默认设置为低，但在使用PIN_HIGH_PRIORITY标记固定（Pin，详见下文）缓存数据时，如果需要，文件系统可以请求转为使用高优先级VACB。</p>
+<p class="zw">如图&nbsp;11-7&nbsp;所示，VACB中的第一个字段是数据在系统缓存中的虚拟地址。第二个字段是一个指针，指向共享缓存映射结构，以此识别哪些文件被缓存。第三个字段标识了视图在文件中起始位置的偏移量（粒度始终为256&nbsp;KB）。在这种粒度下，文件偏移量最底部的16位将始终为0，因此这些位会重新用于存储视图的引用数量，即有多少活跃的读取和写入操作正在访问该视图。当缓存管理器释放VACB时，第四个字段可将VACB链接至最近最少使用（Least-Recently-Used，LRU）的VACB列表，分配新的VACB时，缓存管理器会首先检查该列表。最后，第五个字段可将该VACB链接至VACB数组头，这个数组头代表存储该VACB的数组。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx656.png" style="width: 100%" />
+<p class="图题">图11-7 VACB的数据结构</p>
+<p class="zw">在对文件执行I/O操作的过程中，文件的VACB引用计数会增大，I/O操作结束后则会减小。当引用计数非零时，VACB就处于活动状态。对于文件系统元数据的访问来说，活动计数代表了视图中有多少个文件系统驱动程序的页面被锁定在内存中。</p>
+<p class="zwtsh">实验：查看VACB和VACB统计信息</p>
+<p class="zwts1">缓存管理器内部跟踪调试时记录的各种值可以对开发者和支持工程师的崩溃转储调试提供很大帮助。所有这些调试变量均以CcDbg为前缀，因此可以使用x命令很轻松地看到完整列表：</p>
+<pre class="代码无行号"><code>1: kd&gt; x nt!*ccdbg* 
+fffff800`d052741c nt!CcDbgNumberOfFailedWorkQueueEntryAllocations = &lt;no type <br>information&gt; 
+fffff800`d05276ec nt!CcDbgNumberOfNoopedReadAheads = &lt;no type information&gt; 
+fffff800`d05276e8 nt!CcDbgLsnLargerThanHint = &lt;no type information&gt; 
+fffff800`d05276e4 nt!CcDbgAdditionalPagesQueuedCount = &lt;no type information&gt; 
+fffff800`d0543370 nt!CcDbgFoundAsyncReadThreadListEmpty = &lt;no type information&gt; 
+fffff800`d054336c nt!CcDbgNumberOfCcUnmapInactiveViews = &lt;no type information&gt;
+fffff800`d05276e0 nt!CcDbgSkippedReductions = &lt;no type information&gt; 
+fffff800`d0542e04 nt!CcDbgDisableDAX = &lt;no type information&gt; 
+... </code></pre>
+<p class="zwts1">由于32位和64位在实现方式上的差异，一些系统中的变量名称可能有所区别。在这个实验中，确切的变量名称并不重要，我们需要关注的是这些变量所解释的方法。借助这些变量以及对VACB数组头数据结构的理解，我们可以使用内核调试器列出所有VACB数组头。</p>
+<p class="zwts1">CcVacbArrays变量是一种指向VACB数组头的指针数组，解除对它的引用即可转储_VACB_ARRAY_HEADER的内容。首先我们需要取得最高数组索引：</p>
+<pre class="代码无行号"><code>1: kd&gt; dd nt!CcVacbArraysHighestUsedIndex l1 
+fffff800`d0529c1c 00000000 </code></pre>
+<p class="zwts1">随后即可解除对每个索引的引用，直到抵达最大索引。在本例所用的系统中（同时也是常规情况下），最高索引为0，这意味着只需要对一个头解除引用：</p>
+<pre class="代码无行号"><code>1: kd&gt; ?? (*((nt!_VACB_ARRAY_HEADER***)@@(nt!CcVacbArrays)))[0] 
+struct _VACB_ARRAY_HEADER * 0xffffc40d`221cb000 
+   +0x000 VacbArrayIndex   : 0 
+   +0x004 MappingCount     : 0x302 
+   +0x008 HighestMappedIndex : 0x301 
+   +0x00c Reserved         : 0 </code></pre>
+<p class="zwts1">如果有更多索引，则需要将命令末尾的数组索引改为更大数字，直到抵达已使用的最高索引。由输出结果可知，该系统只有一个VACB数组，其中包含770（0x302）个活动的VACB。</p>
+<p class="zwts1">最后，CcNumberOfFreeVacbs变量存储了可用VACB列表中的VACB数量。对实验系统中该变量进行转储得到的结果为2506（0x9ca）个：</p>
+<pre class="代码无行号"><code>1: kd&gt; dd nt!CcNumberOfFreeVacbs l1 
+fffff800`d0527318 000009ca </code></pre>
+<p class="zwts1">这符合我们的预期：在只使用了一个VACB数组的64位系统中，可用VACB（0x9ca，十进制为2506个）和活动VACB（0x302，十进制为770个）的总数等于3276个，即一个VACB数组中的VACB总数量。如果系统的可用VACB耗尽，那么缓存管理器会分配一个新的VACB数组。由于该实验存在易失性，所以实际做实验使用的系统可能会在这两个步骤（转储活动VACB及转储可用VACB）期间创建和释放额外的VACB。这可能导致实际看到的可用和活动VACB总数不等于3276个。如果遇到这种情况，不妨快速重复几次该实验，不过可能永远也无法得到稳定的数值，尤其是在系统中正在进行大量文件系统活动的情况下。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"8276520e-535f-49dc-bc50-adc1ba72e352","id":"9d7b4920-d121-4221-9204-c9da904f1890"}</p>

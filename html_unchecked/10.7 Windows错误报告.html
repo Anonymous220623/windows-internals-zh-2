@@ -1,0 +1,16 @@
+<h2 class="bt2" id="sigil_toc_id_162"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/bt2.png" style=""> 10.7　Windows错误报告</h2>
+<p class="zw">Windows错误报告（Windows Error Reporting，WER）是一种复杂的机制，可自动提交用户模式进程和内核模式系统崩溃报告。为了在用户模式进程、受保护进程、Trustlet或内核崩溃后生成报告，该机制设计了多种系统组件。</p>
+<p class="zw">与前身不同，Windows 10并未提供图形化对话框，以供用户配置WER在应用程序崩溃后应该获取并向微软（或系统管理员配置的内部服务器）发送哪些信息。如图10-38所示，在Windows 10中，控制面板中的安全性和维护界面可以向用户展示应用程序或内核崩溃后，Windows错误报告生成的历史报告信息。该界面还可以显示与报告有关的基础信息。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx3424.png" style="width: 100%" />
+<p class="图题">图10-38　控制面板中安全性和维护界面下的可靠性监视器</p>
+<p class="zw">Windows错误报告通过操作系统中的多个组件实现，主要是因为它需要处理各种类型的崩溃。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Windows Error Reporting服务（WerSvc.dll）作为主服务，管理了用户模式进程、受保护进程或Trustlet崩溃后的报告生成和发送工作。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Windows Fault Reporting和Secure Fault Reporting（WerFault.exe与WerFaultSecure. exe）主要用于获取崩溃应用程序的快照，生成报告并发送给微软在线崩溃分析网站（或在配置后，发送给内部错误报告服务器）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 报告的实际生成和传输工作由Windows Error Reporting Dll（Wer.dll）执行。该库包含了WER引擎使用的全部内部函数，并包含一些导出的API，应用程序可以借助这些API与Windows Error Reporting交互（详见https://docs.microsoft.com/ windows/win32/api/_wer/）。请注意，某些WER API也实现于Kernelbase.dll和Faultrep.dll中。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Windows User Mode Crash Reporting DLL（Faultrep.dll）包含用户模式应用程序崩溃或不响应后系统模块（Kernel32.dll、WER服务等）使用的常用WER存根代码。其中还包含生成崩溃签名以及向WER服务报告不响应情况所需的服务，这些服务还负责管理报告创建和传输过程中的安全上下文（包括在正确的安全令牌下创建WerFault可执行文件）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Windows Error Reporting转储编码库（Werenc.dll）被Secure Fault Reporting用于加密Trustlet崩溃后生成的转储文件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Windows Error Reporting内核驱动程序（WerKernel.sys）是一个内核库，它导出了捕获实时内核内存转储，并将报告提交给微软在线崩溃分析网站所需的函数。此外，该驱动程序还包含通过内核模式驱动程序为用户模式错误创建和提交报告所需的API。</p>
+<p class="zw">WER完整架构的详细讨论已超出了本书范围。本节将主要探讨用户模式应用程序和NT内核（或内核驱动程序）崩溃后的错误报告。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":6,"parentId":"162693e7-e7e7-41c7-8477-5ccbc444fdec","id":"e82c68f3-ce07-4590-87fa-97745b952b95"}</p>

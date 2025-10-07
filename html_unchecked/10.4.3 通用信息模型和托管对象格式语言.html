@@ -1,0 +1,62 @@
+<h3 class="bt3" id="sigil_toc_id_146">10.4.3　通用信息模型和托管对象格式语言</h3>
+<p class="zw">CIM借鉴了C++和C#等面向对象语言的步骤。在这些语言中，建模者会将表征设计为类。通过使用类，开发者可以配合使用各种自己早已熟悉的强大建模技术。子类可以继承父类的属性，可以添加自己的特征并重写自己从父类继承的特征。如果类A从类B继承了属性，那么可以看作类A是从类B中派生出来的。类还可以组合，开发者可以创建包含其他类的类。CIM类由属性和方法组成，属性描述了WMI托管资源的配置和状态，方法则是一种可以针对WMI托管资源执行操作的可执行函数。</p>
+<p class="zw">作为WBEM标准的一部分，DMTF提供了多个类。这些类是CIM的基础语言，表示适用于所有管理领域的对象。这些类也是CIM核心模型的一部分。例如CIM_ ManagedSystemElement就是一种核心类，这个类包含一些可用于识别物理组件（如物理设备）和逻辑组件（如进程和文件）的基本属性。属性包含标题、描述、安装日期和状态等信息，因此CIM_LogicalElement和CIM_PhysicalElement类可继承CIM_ManagedSystemElement类的属性。这两个类也是CIM核心模型的一部分。WBEM标准将这些类称作“抽象类”，因为它们只作为可被其他类继承的类而存在（也就是说，抽象类不存在对象实例）。我们可以把抽象类看成模板，借此可定义供其他类使用的属性。</p>
+<p class="zw">第二种类表示管理领域特有，但与特定实现无关的对象。这种类构成了通用模型，可以看作核心模型的拓展。例如CIM_FileSystem就是一种通用模型类，它继承了CIM_ LogicalElement的属性。由于几乎每个操作系统（包括Windows、Linux以及其他UNIX变体）都依赖基于文件系统的结构化存储，因此CIM_FileSystem类也是通用模型中一个非常适合的组成部分。</p>
+<p class="zw">最后一种类是扩展模型，包含对通用模型进行的、与特定技术有关的额外补充。Windows定义了大量这种类来表示Windows环境所特有的对象。由于所有操作系统都会将数据存储在文件中，CIM模型也描述了CIM_LogicalFile类。CIM_DataFile类继承了CIM_LogicalFile类，Windows还为这些Windows文件类型增加了Win32_PageFile和Win32_ShortcutFile文件类。</p>
+<p class="zw">Windows包含的不同WMI管理应用程序可供管理员与WMI命名空间和类进行交互。WMI命令行工具（WMIC.exe）和Windows PowerShell均可连接到WMI，执行查询，并调用WMI类对象方法。图10-28展示了一个PowerShell窗口，其正在从事件日志提供程序中的Win32_NTEventlogFile类提取信息。该类大量使用了继承，由CIM_DataFile派生而来。事件日志文件是具备额外事件日志特性的数据文件，例如，日志文件名（LogfileName）和文件包含的记录数量（NumberOfRecords）等属性。Win32_NTEventlogFile基于多个层次的继承，其中CIM_DataFile派生自CIM_LogicalFile，后者派生自CIM_LogicalElement，而CIM_LogicalElement又派生自CIM_ManagedSystemElement。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2629.png" style="width: 100%" />
+<p class="图题">图10-28　Windows PowerShell正在从Win32_NTEventlogFile类提取信息</p>
+<p class="zw">如上文所述，WMI提供程序开发者可以用MOF语言编写自己的类。下列输出结果显示了事件日志提供程序中Win32_NTEventlogFile的定义，图10-28中查询的就是这个类。</p>
+<pre class="代码无行号"><code>[dynamic: ToInstance, provider("MS_NT_EVENTLOG_PROVIDER"): ToInstance, SupportsUpdate,
+Locale(1033): ToInstance, UUID("{8502C57B-5FBB-11D2-AAC1-006008C78BC7}"): ToInstance]
+class Win32_NTEventlogFile : CIM_DataFile 
+{
+   [Fixed: ToSubClass, read: ToSubClass] string LogfileName;
+   [read: ToSubClass, write: ToSubClass] uint32 MaxFileSize;
+   [read: ToSubClass] uint32 NumberOfRecords;
+   [read: ToSubClass, volatile: ToSubClass, ValueMap{"0", "1..365", "4294967295"}:
+    ToSubClass] string OverWritePolicy;
+   [read: ToSubClass, write: ToSubClass, Range("0-365 | 4294967295"): ToSubClass]
+    uint32 OverwriteOutDated;
+   [read: ToSubClass] string Sources[];
+   [ValueMap{"0", "8", "21", ".."}: ToSubClass, implemented, Privileges{
+    "SeSecurityPrivilege", "SeBackupPrivilege"}: ToSubClass] 
+      uint32 ClearEventlog([in] string ArchiveFileName); 
+   [ValueMap{"0", "8", "21", "183", ".."}: ToSubClass, implemented, Privileges{ 
+    "SeSecurityPrivilege", "SeBackupPrivilege"}: ToSubClass] 
+      uint32 BackupEventlog([in] string ArchiveFileName); 
+}; </code></pre>
+<p class="zw">上述内容中需要注意Dynamic（动态）这个术语，这是一种描述性代号，应用于MOF文件中的Win32_NTEventlogFile类。Dynamic意味着每当管理应用程序查询对象属性时，WMI基础架构都会要求WMI提供程序提供与该类对象相关的属性值。静态类位于WMI存储库中，WMI基础架构会引用存储库以获取值，而不会要求提供程序提供值。由于存储库的更新是一种开销较高的操作，为属性频繁更改的对象使用动态提供程序就是一种更高效的做法。</p>
+<p class="zwtsh">实验：查看WMI类的MOF定义</p>
+<p class="zwts1">我们可以使用Windows中自带的Windows Management Instrumentation测试器工具（WbemTest）查看任何WMI类的MOF定义。在这个实验中，我们将查看Win32_ NTEventLogFile类的MOF定义。</p>
+<p class="zwts1">1）在搜索框中输入Wbemtest并按下回车键，随后将打开Windows Management Instrumentation测试器。</p>
+<p class="zwts1">2）点击“<strong style="color:#0092dd">连接</strong>”按钮，将命名空间改为root\cimv2并连接。该工具将启用所有命令按钮，如下图所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2636.png" style="width: 100%" />
+<p class="zwts1">3）点击“<strong style="color:#0092dd">枚举类</strong>”按钮，选择“<strong style="color:#0092dd">递归</strong>”单选框并点击“<strong style="color:#0092dd">确定</strong>”按钮。</p>
+<p class="zwts1">4）在类列表中找到Win32_NTEventLogFile，随后双击查看类属性。</p>
+<p class="zwts1">5）点击“<strong style="color:#0092dd">显示</strong>MOF”按钮，即可打开一个新窗口，其中显示了MOF定义。</p>
+<p class="zw">在MOF中构建了类后，WMI开发者可通过多种方式将类的定义提供给WMI。WDM驱动程序开发者可将MOF文件编译为二进制MOF（BMF）文件（这是一种比MOF文件更紧凑的二进制表示格式），并可选择动态地将BMF文件提供给WDM基础架构，或静态地将其包含在自己的二进制文件中。另一种方法是编译MOF文件，随后使用WMI COM API将定义提供给WMI基础架构。最后，提供程序可以使用MOF编译器（Mofcomp.exe）工具直接为WMI基础架构提供编译后的类的表示。</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <td style="vertical-align:top;border:none;"> <p class="cxtu"><img src="https://cdn.ptpress.cn/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tu.png" style=""></p> </td> 
+   <td style="vertical-align:top;border:none;"> <p class="zwzy"><strong style="color:#0092dd">注意</strong>　以前的Windows版本（Windows 7及以前的版本）在WMI管理工具中提供了一个名为WMI CIM Studio的图形化工具。该工具能以图形化方式展示WMI命名空间、类、属性以及方法。目前该工具已停止支持，也不再提供下载，因为其功能已被Windows PowerShell的WMI功能所取代。PowerShell是一种无须GUI即可运行的脚本语言。一些第三方工具提供了与CIM Studio类似的界面，例如WMI Explorer：https://github.com/vinaypamnani/wmie2/releases。</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">通用信息模型（CIM）存储库位于%SystemRoot%\System32\wbem\Repository，其中包含：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Index.btr：二叉树（btree）索引文件。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> MappingX.map：事务控制文件（X是一个从1开始的数字）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Objects.data：CIM存储库，其中存储了托管的资源定义。</p>
+<h4 class="bt4 sigil_not_in_toc">WMI命名空间</h4>
+<p class="zw">类定义了对象，对象由WMI提供程序提供。对象是类在系统中的实例。WMI使用的命名空间包含多个子命名空间，WMI会按照层次结构整理所有对象。管理应用程序必须连接到命名空间，随后应用程序才能访问其中的对象。</p>
+<p class="zw">WMI的命名空间根目录名为ROOT。所有WMI安装都包含四个预定义的命名空间，它们位于ROOT之下，分别是CIMV2、Default、Security、WMI。其中一些命名空间内部还有其他命名空间。例如，CIMV2下包含子命名空间Applications和ms_409。提供程序有时也会定义自己的命名空间，我们可以在Windows的ROOT之下看到WMI命名空间（这些命名空间由Windows设备驱动程序WMI提供程序定义）。</p>
+<p class="zw">与通过目录和文件组成层次结构的文件系统的命名空间不同，WMI命名空间的深度只有一个层级。并且不像文件系统会使用名称，WMI会使用自己定义的对象属性作为识别对象所使用的键。管理应用程序通过键名称指定类的名称，借此在命名空间中定位特定的对象。因此，类的每个实例必须能用自己的唯一键值来识别。例如，事件日志提供程序使用Win32_NTLogEvent类表示事件日志中的记录。该类有两个键：字符串Logfile，以及无符号整数RecordNumber。查询事件日志记录WMI实例的管理应用程序可以从识别记录的提供程序“键对”中获得这些信息。应用程序会使用下列对象路径名称示例中所示的语法引用一条记录。</p>
+<pre class="代码无行号"><code>\\ANDREA-LAPTOP\root\CIMV2:Win32_NTLogEvent.Logfile="Application", 
+                                                     RecordNumber="1" </code></pre>
+<p class="zw">名称中的第一个组件（\\ANDREA-LAPTOP）标识了对象所在的计算机，第二个组件（\root\CIMV2）是对象所在的命名空间。冒号后面是类名称，句号后面是键名称和相关的值，键值可使用逗号分隔。</p>
+<p class="zw">WMI提供的接口可供应用程序枚举特定类下的所有对象，或进行查询并返回与查询条件匹配的类实例。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"ec163a78-fcab-4693-8b52-1929b927085a","id":"ec292496-98f5-48f3-8a3e-3578553bd003"}</p>

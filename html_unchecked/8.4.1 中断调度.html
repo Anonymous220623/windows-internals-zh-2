@@ -1,0 +1,524 @@
+<h3 class="bt3" id="sigil_toc_id_15">8.4.1　中断调度</h3>
+<p class="zw">硬件生成的中断通常源自那些需要通知处理器自己何时需要服务的I/O设备。中断驱动的设备可以用重叠的方式集中处理I/O操作，以此让操作系统最大限度地充分利用处理器。当线程向/从一个设备启动I/O传输后，即可在设备完成传输操作的过程中执行其他工作。当设备传输操作完成后，会向处理器发出中断，以便要求获得服务。指点设备、打印机、键盘、磁盘驱动器以及网卡通常都属于中断驱动的设备。</p>
+<p class="zw">系统软件也可以产生中断。举例来说，内核产生软件中断以初始化线程调度，并以异步的方式打断线程的执行。内核还可以禁用中断，这样处理器就不会再遇到中断，但这种情况并不常见，通常只发生在一些关键时刻，如对中断控制器进行编程或调度异常时。</p>
+<p class="zw">为响应设备中断，内核会安装中断陷阱处理程序。中断陷阱处理程序可以将控制权转交给处理该中断的外部例程（ISR），或者转交给响应该中断的内部内核例程。设备驱动程序会为设备中断的相关服务提供ISR，其他类型的中断则由内核提供中断处理例程。</p>
+<p class="zw">在下面几节我们将介绍硬件向处理器发出设备中断通知的方式、内核可支持的中断类型、设备驱动程序与内核交互的方式（这是中断处理工作的一部分）、内核可识别的软件中断（以及用于实现中断的内核对象）。</p>
+<h4 class="bt4 sigil_not_in_toc">硬件中断处理</h4>
+<p class="zw">在Windows可支持的硬件平台上，外部I/O中断将成为中断控制器（例如I/O高级可编程中断控制器，I/O Advanced Programmable Interrupt Controller，IOAPIC）的一种输入。随后控制器将打断一个或多个处理器的本地高级可编程中断控制器（Local Advanced Programmable Interrupt Controller，LAPIC），最终在输入线上中断处理器。</p>
+<p class="zw">被中断的处理器会向控制器查询全局系统中断向量（Global System Interrupt Vector，GSIV），GSIV有时会表现为一个中断请求（Interrupt Request，IRQ）编号。中断控制器可将GSIV转换为处理器中断向量，随后将该向量作为中断调度表（Interrupt Dispatch Table，IDT）这种数据结构的索引，IDT存储在CPU的IDT寄存器（即IDTR）中，可以为中断向量返回匹配的IDT项。</p>
+<p class="zw">根据IDT项所包含的信息，处理器可以将控制转交给Ring 0级别下运行的相应中断调度例程（这一进程的具体描述可参阅本节开头处），或者也可以使用一种名为中断门（interrupt gate）的进程，加载新的TSS并更新任务寄存器（TR）。对于Windows，在系统引导过程中，内核会向IDT中填充指针，这些指针指向部分专用内核与HAL例程，它们与每个异常以及内部处理过的中断相对应。此外，还有一些指针会指向一种名为KiIsrThunk的形式转换（Thunk）内核例程，借此处理第三方设备驱动程序可注册的外部中断。在x86和x64架构的处理器中，与中断向量0～31所关联的前32个IDT项是为处理器陷阱保留的，详见表8-3的介绍。</p>
+<p class="表题">表8-3　处理器陷阱</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">向量（助记缩写）</p> </th> 
+   <th> <p class="bt">含义</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0 (#DE)</p> </td> 
+   <td> <p class="bg">除法错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">1 (#DB)</p> </td> 
+   <td> <p class="bg">调试陷阱</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">2 (NMI)</p> </td> 
+   <td> <p class="bg">不可屏蔽的中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">3 (#BP)</p> </td> 
+   <td> <p class="bg">断点陷阱</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">4 (#OF)</p> </td> 
+   <td> <p class="bg">溢出错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">5 (#BR)</p> </td> 
+   <td> <p class="bg">边界错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">6 (#UD)</p> </td> 
+   <td> <p class="bg">未定义的操作码错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">7 (#NM)</p> </td> 
+   <td> <p class="bg">FPU错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">8 (#DF)</p> </td> 
+   <td> <p class="bg">双重错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">9 (#MF)</p> </td> 
+   <td> <p class="bg">协处理器错误（已弃用）</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">10 (#TS)</p> </td> 
+   <td> <p class="bg">TSS错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">11 (#NP)</p> </td> 
+   <td> <p class="bg">段错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">12 (#SS)</p> </td> 
+   <td> <p class="bg">栈错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">13 (#GP)</p> </td> 
+   <td> <p class="bg">常规保护错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">14 (#PF)</p> </td> 
+   <td> <p class="bg">页面错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">15</p> </td> 
+   <td> <p class="bg">保留</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">16 (#MF)</p> </td> 
+   <td> <p class="bg">浮点错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">17 (#AC)</p> </td> 
+   <td> <p class="bg">对齐检查错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">18 (#MC)</p> </td> 
+   <td> <p class="bg">机器检查中止</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">19 (#XM)</p> </td> 
+   <td> <p class="bg">SIMD错误</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">20 (#VE)</p> </td> 
+   <td> <p class="bg">虚拟化异常</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">21 (#CP)</p> </td> 
+   <td> <p class="bg">控制保护异常</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">22～31</p> </td> 
+   <td> <p class="bg">保留</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">其余IDT项包含硬编码的值（例如向量30～34始终用于与Hyper-V有关的VMBus中断）以及设备驱动程序、硬件、中断控制器与平台软件（如ACPI）协商获得的值。例如，键盘控制器可能会在一个Windows系统中发出中断向量82，而在另一个系统中可能会发出中断向量67。</p>
+<p class="zwtsh">实验：查看64位IDT</p>
+<p class="zwts1">我们可以使用调试器命令!idt查看IDT的内容，包括与Windows为中断（包括异常和IRQ）分配的陷阱处理程序相关的信息。在不包含任何标记的情况下运行!idt命令，可以显示简化后的输出结果，其中仅包含已注册的硬件中断（在64位计算机上还会包含处理器陷阱处理程序）。</p>
+<p class="zwts1">下列范例展示了在x64系统上运行!idt命令后看到的结果：</p>
+<pre class="代码无行号"><code>0: kd&gt; !idt 
+　
+Dumping IDT: fffff8027074c000 
+　
+00:     fffff8026e1bc700 nt!KiDivideErrorFault 
+01:     fffff8026e1bca00 nt!KiDebugTrapOrFault  Stack = 0xFFFFF8027076E000 
+02:     fffff8026e1bcec0 nt!KiNmiInterrupt  Stack = 0xFFFFF8027076A000 
+03:     fffff8026e1bd380 nt!KiBreakpointTrap 
+04:     fffff8026e1bd680 nt!KiOverflowTrap 
+05:     fffff8026e1bd980 nt!KiBoundFault 
+06:     fffff8026e1bde80 nt!KiInvalidOpcodeFault 
+07:     fffff8026e1be340 nt!KiNpxNotAvailableFault 
+08:     fffff8026e1be600 nt!KiDoubleFaultAbort  Stack = 0xFFFFF80270768000 
+09:     fffff8026e1be8c0 nt!KiNpxSegmentOverrunAbort 
+0a:     fffff8026e1beb80 nt!KiInvalidTssFault 
+0b:     fffff8026e1bee40 nt!KiSegmentNotPresentFault 
+0c:     fffff8026e1bf1c0 nt!KiStackFault 
+0d:     fffff8026e1bf500 nt!KiGeneralProtectionFault 
+0e:     fffff8026e1bf840 nt!KiPageFault 
+10:     fffff8026e1bfe80 nt!KiFloatingErrorFault 
+11:     fffff8026e1c0200 nt!KiAlignmentFault 
+12:     fffff8026e1c0500 nt!KiMcheckAbort  Stack = 0xFFFFF8027076C000 
+13:     fffff8026e1c0fc0 nt!KiXmmException 
+14:     fffff8026e1c1380 nt!KiVirtualizationException 
+15:     fffff8026e1c1840 nt!KiControlProtectionFault 
+1f:     fffff8026e1b5f50 nt!KiApcInterrupt 
+20:     fffff8026e1b7b00 nt!KiSwInterrupt 
+29:     fffff8026e1c1d00 nt!KiRaiseSecurityCheckFailure 
+2c:     fffff8026e1c2040 nt!KiRaiseAssertion 
+2d:     fffff8026e1c2380 nt!KiDebugServiceTrap 
+2f:     fffff8026e1b80a0 nt!KiDpcInterrupt 
+30:     fffff8026e1b64d0 nt!KiHvInterrupt 
+31:     fffff8026e1b67b0 nt!KiVmbusInterrupt0 
+32:     fffff8026e1b6a90 nt!KiVmbusInterrupt1 
+33:     fffff8026e1b6d70 nt!KiVmbusInterrupt2 
+34:     fffff8026e1b7050 nt!KiVmbusInterrupt3 
+35:     fffff8026e1b48b8 hal!HalpInterruptCmciService (KINTERRUPT fffff8026ea59fe0)
+b0:     fffff8026e1b4c90 ACPI!ACPIInterruptServiceRoutine (KINTERRUPT ffffb88062898dc0)
+ce:     fffff8026e1b4d80 hal!HalpIommuInterruptRoutine (KINTERRUPT fffff8026ea5a9e0)
+d1:     fffff8026e1b4d98 hal!HalpTimerClockInterrupt (KINTERRUPT fffff8026ea5a7e0)
+d2:     fffff8026e1b4da0 hal!HalpTimerClockIpiRoutine (KINTERRUPT fffff8026ea5a6e0)
+d7:     fffff8026e1b4dc8 hal!HalpInterruptRebootService (KINTERRUPT fffff8026ea5a4e0)
+d8:     fffff8026e1b4dd0 hal!HalpInterruptStubService (KINTERRUPT fffff8026ea5a2e0)
+df:     fffff8026e1b4e08 hal!HalpInterruptSpuriousService (KINTERRUPT fffff8026ea5a1e0)
+e1:     fffff8026e1b8570 nt!KiIpiInterrupt 
+e2:     fffff8026e1b4e20 hal!HalpInterruptLocalErrorService (KINTERRUPT fffff8026ea5a3e0)
+e3:     fffff8026e1b4e28 hal!HalpInterruptDeferredRecoveryService 
+                         (KINTERRUPT fffff8026ea5a0e0) 
+fd:     fffff8026e1b4ef8 hal!HalpTimerProfileInterrupt (KINTERRUPT fffff8026ea5a8e0)
+fe:     fffff8026e1b4f00 hal!HalpPerfInterrupt (KINTERRUPT fffff8026ea5a5e0) </code></pre>
+<p class="zwts1">在执行上述实验的系统中，ACPI SCI ISR位于中断编号B0h。此外，我们还可以看到，中断14 (0Eh)对应了KiPageFault，由上文的介绍可知，这是一种预定义的CPU陷阱。</p>
+<p class="zwts1">另外我们还会注意到，有些中断（尤其是1、2、8、12）的旁边有一个栈指针。这些栈指针对应了上文“任务状态段”中所介绍的陷阱，需要由专用的安全内核栈来处理。通过转储IDT项，调试器可以得知这些栈指针的存在，而我们也可以使用dx命令并取消对IDT中某个中断向量的引用来达到相同的目的。虽然我们可以从处理器的IDTR获得IDT，但其实也可以从内核的KPCR结构中获得，该结构在一个名为IdtBase的字段中有一个指向IDT的指针。</p>
+<pre class="代码无行号"><code>0: kd&gt; dx @$pcr-&gt;IdtBase[2].IstIndex 
+@$pcr-&gt;IdtBase[2].IstIndex : 0x3 [Type: unsigned short] 
+　
+0: kd&gt; dx @$pcr-&gt;IdtBase[0x12].IstIndex 
+@$pcr-&gt;IdtBase[0x12].IstIndex : 0x2 [Type: unsigned short] </code></pre>
+<p class="zwts1">将上述IDT值与上一个实验中转储的x64 TSS值进行比较，就会看到与该实验有关的可匹配的内核栈指针。</p>
+<p class="zw">每个处理器都有自己的IDT（由自己的IDTR所指向），因此必要时，不同的处理器可以运行不同的ISR。例如在多处理器系统中，每个处理器都能收到时钟中断，但只有一个处理器可以更新系统时钟以响应此中断。不过所有的处理器都可以使用该中断来衡量线程量程，并在线程量程结束后发起重调度。类似地，有些系统配置可能需要由特定的处理器来处理某些设备中断。</p>
+<h4 class="bt4 sigil_not_in_toc">可编程中断控制器架构</h4>
+<p class="zw">传统x86系统依赖i8259A可编程中断控制器（Programmable Interrupt Controller，PIC），这是一项源自早期IBM PC的标准。i8259A PIC仅适用于单处理器系统，且只包含8条中断线（interrupt line）。然而IBM PC体系结构还额外定义了一种名为Secondary的第二个PIC，其中断可通过多路传输（multiplexed）进入主PIC的一条中断线中。这样总共就可以提供15个中断（7个位于主PIC，8个位于辅PIC，通过主PIC的第八条中断线进行多路传输）。由于PIC会通过如此奇特的方式处理8个以上的设备，并且15个中断依然不太够用，以及受各种电气问题（很容易造成虚假的中断）以及单处理器支持本身存在局限的影响，所以现代系统逐渐淘汰了这种类型的中断控制器，转而使用一种名为i82489高级可编程中断控制器（Advanced Programmable Interrupt Controller，APIC）的变体。</p>
+<p>由于APIC可适用于多处理器系统，所以Intel与其他公司还定义了多处理器规范（Multiprocessor Specification，MPS），这适用于x86多处理器系统的设计标准且以APIC的使用为中心，并将连接外部硬件设备的I/O APIC（IOAPIC）与连接处理器内核的本地APIC（LAPIC）进行了集成。随着时间的推移，MPS标准被融入高级配置和电源接口（Advanced Configuration and Power Interface，ACPI）中，这两个标准的首字母缩写如此相似纯属巧合。为了兼容单处理器操作系统以及在单处理器模式下启动多处理器系统的引导代码，APIC支持一种PIC兼容模式，该模式可提供15个中断，并且中断只会被传递给主处理器。APIC架构如图8-12所示。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1241.png" style="width: 100%" />
+<p class="图题">图8-12　APIC架构</p>
+<p class="zw">如上文所述，APIC包含多个组件：一个负责从设备接收中断的I/O APIC，多个在总线上接收来自I/O APIC的中断并打断所关联处理器的本地APIC，以及一个将APIC信号转换为等价PIC信号且可兼容i8259A的中断控制器。由于系统中可能存在多个I/O APIC，所以主板上通常会在它们以及处理器之间放置一定的核心逻辑。该逻辑负责实现中断路由算法，借此跨越多个处理器对设备中断的负载进行均衡，并充分利用位置的毗邻性，将设备中断发送给刚刚处理过相同类型中断的同一个处理器。软件程序可以通过一种固定的路由算法对I/O APIC重编程，进而绕过这种芯片组逻辑。大部分情况下，Windows会用自己的路由逻辑对I/O APIC重编程以便支持各种功能（如中断路由控制），但设备驱动程序和固件也可以这样做。</p>
+<p class="zw">因为x64架构可兼容x86操作系统，所以x64系统必须提供与x86相同的中断控制器。不过此时的一个重大差异在于，x64版本的Windows会拒绝在不包含APIC的系统中运行，因为x64版Windows需要使用APIC实现中断控制，而x86版的Windows可同时支持PIC和APIC硬件。这种情况在Windows 8和Windows后续版本中有所变化，无论CPU架构如何，这些系统都只能在APIC硬件上运行。x64系统的另一个差异在于，APIC的任务优先级寄存器（Task Priority Register，TPR）已经直接绑定至处理器的控制寄存器8（Control Register 8，CR8）。包括Windows在内的现代操作系统会使用该寄存器存储当前软件中断优先级（在Windows中这叫IRQL），并在做出路由决策时告知IOAPIC。下文很快将介绍有关IRQL处理的更多信息。</p>
+<p class="zwtsh">实验：查看PIC和APIC</p>
+<p class="zwts1">我们可以分别使用内核调试器命令!pic和!apic查看单处理器系统的PIC配置以及多处理器系统的当前本地APIC。单处理器系统中的!pic命令输出结果如下。请注意，即使在具备APIC的系统中，该命令依然可以生效，因为为了模拟老旧硬件，APIC系统始终包含相关联的等价PIC。</p>
+<pre class="代码无行号"><code>lkd&gt; !pic 
+----- IRQ Number ----- 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 
+Physically in service:  Y  .  .  .  .  .  .  .  .  Y  Y  Y  .  .  .  . 
+Physically masked:      Y  Y  Y  Y  Y  Y  Y  Y  Y  Y  Y  Y  Y  Y  Y  Y 
+Physically requested:   Y  .  .  .  .  .  .  .  .  Y  Y  Y  .  .  .  . 
+Level Triggered:        .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . </code></pre>
+<p class="zwts1">在启用Hyper-V的系统中运行!apic命令的输出结果如下，从中可见，由于SINTI项的存在，此处引用了Hyper-V的综合中断控制器（Synthetic Interrupt Controller，SynIC，详见第9章的介绍）。另外还请注意，在本地内核调试过程中，该命令可显示与当前处理器相关联的APIC，换句话说，也就是在运行该命令时恰好用于运行调试器线程的任何一个处理器。如果要查看崩溃转储或远程系统，可以使用~命令，后跟想要查看的本地APIC所对应的处理器编号。无论哪种情况，ID:标记旁边的编号都对应了我们想要查看的处理器。</p>
+<pre class="代码无行号"><code>lkd&gt; !apic 
+Apic (x2Apic mode)  ID:1 (50014)  LogDesc:00000002  TPR 00 
+TimeCnt: 00000000clk  SpurVec:df  FaultVec:e2  error:0 
+Ipi Cmd: 00000000`0004001f  Vec:1F  FixedDel    Dest=Self    edg high 
+Timer..: 00000000`000300d8  Vec:D8  FixedDel    Dest=Self    edg high    m 
+Linti0.: 00000000`000100d8  Vec:D8  FixedDel    Dest=Self    edg high    m 
+Linti1.: 00000000`00000400  Vec:00  NMI         Dest=Self    edg high 
+Sinti0.: 00000000`00020030  Vec:30  FixedDel    Dest=Self    edg high 
+Sinti1.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sinti2.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sinti3.: 00000000`000000d1  Vec:D1  FixedDel    Dest=Self    edg high 
+Sinti4.: 00000000`00020030  Vec:30  FixedDel    Dest=Self    edg high 
+Sinti5.: 00000000`00020031  Vec:31  FixedDel    Dest=Self    edg high 
+Sinti6.: 00000000`00020032  Vec:32  FixedDel    Dest=Self    edg high 
+Sinti7.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sinti8.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sinti9.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sintia.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sintib.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sintic.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sintid.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sintie.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+Sintif.: 00000000`00010000  Vec:00  FixedDel    Dest=Self    edg high    m 
+TMR: 95, A5, B0 
+IRR: 
+ISR: </code></pre>
+<p class="zwts1">Vec后跟的各种编号代表了特定命令的IDT中所关联的向量。例如，在上述输出结果中，中断编号0x1F关联了中断处理器中断（Interrupt Processor Interrupt，IPI）向量，而中断编号0xE2负责处理APIC错误。再次查看上一个实验中!idt命令的输出结果将会发现，0x1F是内核的APC中断（意味着刚刚使用了IPI从一个处理器向另一个处理器发送了APC），而0xE2当然就是HAL的本地APIC错误处理程序。</p>
+<p class="zwts1">下列输出是!ioapic命令的运行结果，其中显示了I/O APIC的配置，以及连接到设备的中断控制器组件。例如，请留意GSIV/IRQ 9（系统控制中断，System Control Interrupt，SCI）是如何关联到向量B0h的，而在上一个实验的!idt命令输出结果中，当时关联的是ACPI.SYS。</p>
+<pre class="代码无行号"><code>0: kd&gt; !ioapic 
+Controller at 0xfffff7a8c0000898 I/O APIC at VA 0xfffff7a8c0012000 
+IoApic @ FEC00000  ID:8 (11)  Arb:0 
+Inti00.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti01.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti02.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti03.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti04.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti05.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti06.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti07.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti08.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti09.: ff000000`000089b0  Vec:B0  LowestDl  Lg:ff000000      lvl high 
+Inti0A.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m 
+Inti0B.: 00000000`000100ff  Vec:FF  FixedDel  Ph:00000000      edg high    m</code></pre>
+<h4 class="bt4 sigil_not_in_toc">软件中断请求级别（IRQL）</h4>
+<p class="zw">虽然中断控制器会按照一定的优先级顺序来执行中断，但Windows会强制实行自己的中断优先级方案，名为中断请求级别（Interrupt Request Level，IRQL）。在内部，内核会使用数字0～31（x86）或0～15（x64以及ARM/ARM64）代表IRQL，数字越大，中断优先级越高。虽然内核为软件中断定义了一套标准的IRQL，但HAL会将硬件中断编号映射至这些IRQL。图8-13展示了为x86架构和x64（以及ARM/ARM64）架构定义的IRQL。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1248.png" style="width: 100%" />
+<p class="图题">图8-13　x86和x64的中断请求级别（IRQL）</p>
+<p class="zw">中断会按照优先级顺序获得服务，较高优先级的中断可以抢占低优先级中断获得服务的机会。当发生高优先级中断后，处理器会保存被中断线程的状态，并调用与该中断关联的陷阱调度程序。陷阱调度程序会提升IRQL并调用中断的服务例程。该服务例程执行完毕后，中断调度程序会将处理器的IRQL降低为该中断发生之前的级别，随后加载保存的计算机状态。被中断的线程可以从之前断掉的地方恢复执行。当内核降低IRQL时，之前被遮蔽的低优先级中断可能会被具体化（materialize）。如果发生这种情况，内核会重复执行该过程来处理新中断。</p>
+<p class="zw">IRQL优先级与线程调度优先级（详见本书卷1第5章）有着截然不同的含义。调度优先级是线程本身的一种属性，而IRQL是中断来源（如键盘或鼠标）的一种属性。此外，每个处理器都有一个会随操作系统代码执行而改变的IRQL设置。正如上文所述，在x64系统中，IRQL会存储在CR8寄存器中，后者会映射回APIC的TPR上。</p>
+<p class="zw">每个处理器的IRQL设置决定了处理器可以接收哪些中断。IRQL还可用于对内核模式数据结构进行同步访问（下面将详细介绍同步）。当内核模式线程运行时，会调用KeRaiseIrql和KeLowerIrql直接提升或降低处理器的IRQL，或者更常见的做法是通过调用获取内核同步对象的函数来间接更改IRQL。如图8-14所示，如果中断来源的IRQL高于当前级别，则这种中断会打断处理器的执行；而如果中断来源的IRQL等于或低于当前级别，那么在有执行线程低于该IRQL之前，此类中断会被遮蔽。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1255.png" style="width: 100%" />
+<p class="图题">图8-14　中断的遮蔽</p>
+<p class="zw">根据所要执行的操作，内核模式线程可以提高或降低自己运行所在处理器的IRQL。例如，当发生中断后，陷阱处理程序（或者也可能是处理器本身，这取决于具体架构）会将处理器的IRQL提升至中断来源所分配的IRQL。这种提升会使得（仅这一个处理器上）所有等于或低于该IRQL的中断被遮蔽，这样即可确保处理器对高IRQL中断提供的服务不会被同级或更低级别的中断拦截。被遮蔽的中断可以被其他处理器处理，或一直等待，直到IRQL降低。因此系统中的所有组件（包括内核和设备驱动程序）都会尽可能地保持IRQL为被动级别（有时也叫低级别）。这样做是因为，即使IRQL在很长时间里没能保持非必要的提升状态，设备驱动程序也可以及时响应硬件中断。因此，当系统没有执行任何中断工作（或需要与中断同步）或处理诸如DPC或APC等软件中断时，IRQL可以始终为“0”。很明显，这也适用于所有用户模式的处理，因为允许用户模式代码碰触IRQL可能会对系统运行产生极大影响。实际上，以大于0的IRQL返回到用户模式线程会导致系统立即崩溃（BugCheck），对驱动程序来说这是一种非常严重的Bug。</p>
+<p class="zw">最后请注意，调度程序自身是以IRQL 2级别运行的（例如，因为抢占而从一个线程上下文切换至另一个线程），因此才有了“调度级别”（dispatch level）的概念，意味着处理器在这个级别以及更高级别上将表现为类似单线程合作运行的工作方式。然而此时的一些做法是非法的，例如，等待处于这种IRQL的调度程序对象（有关该话题的详情请参阅下文“同步”一节），因为通过上下文切换进入另一个线程（或Idle线程）的情况永远不会发生。另一个限制在于，仅未分页的内存可以在DPC/Dispatch级别或更高IRQL级别上访问。</p>
+<p class="zw">这一规则实际上属于第一个限制所产生的副作用，因为试图访问非常驻内存的操作会导致页面错误。当发生页面错误时，内存管理器会发起磁盘I/O操作，随后需要等待文件系统驱动程序从磁盘中读取页面内容。进而，这个等待过程需要调度器执行上下文切换（如果没有别的用户线程等待运行，也许会切换至Idle线程），而这就违反了“调度器无法被调用”这一规则（因为在读取磁盘时，IRQL依然处于DPC/Dispatch级别或更高级别）。进一步还会导致另一个问题：I/O完成操作通常发生在APC_LEVEL，即使有时并不需要等待，I/O也永远无法完成，因为真正需要“完成”的APC根本没有机会运行。</p>
+<p class="zw">如果违反上述两个限制中的任何一个，系统会崩溃并显示IRQL_NOT_LESS_OR_ EQUAL或DRIVER_IRQL_NOT_LESS_OR_EQUAL崩溃代码（有关系统崩溃的详细讨论请参阅第10章）。违反这些限制是设备驱动程序最常见的Bug之一。Windows驱动程序验证器（Windows driver verifier）提供了一个选项，可以帮助我们查找这种类型的Bug。</p>
+<p class="zw">反之，这也意味着当运行在IRQL 1（也叫APC级别）时，依然可以进行抢占或上下文切换。这使得IRQL 1的行为结果在本质上更像是一种线程本地IRQL而非处理器本地IRQL，因为在IRQL 1上执行的等待或抢占操作会导致调度器将当前IRQL保存到线程的控制块（位于KTHREAD结构中，详见本书卷1第5章）中，并将处理器的IRQL还原为新执行线程的IRQL。这意味着处于被动级别（IRQL 0）的线程依然可以抢占运行在APC级别（IRQL 1）的线程，因为在IRQL 2以下的级别中，是由调度器来决定由哪个线程控制处理器的。</p>
+<p class="zwtsh">实验：查看IRQL</p>
+<p class="zwts1">我们可以使用调试器命令!irql查看处理器已保存的IRQL。已保存的IRQL代表调试器进入之前那一刻的IRQL，在这之后，IRQL将提升至一个静态且无实际意义的值：</p>
+<pre class="代码无行号"><code>kd&gt; !irql 
+Debugger saved IRQL for processor 0x0 -- 0 (LOW_LEVEL) </code></pre>
+<p class="zwts1">请注意，IRQL值会保存在两个位置。第一个位置是处理器控制区（Processor Control Region，PCR），其中所存储的值代表当前的IRQL；第二个位置是PCR的扩展，即处理器区控制块（Processor Region Control Block，PRCB），其中包含了DebuggerSavedIRQL字段中已保存的IRQL。使用这种保存方式的原因在于，远程内核调试器的使用会将IRQL升高至HIGH_LEVEL，以便在用户调试计算机时阻止所有异步的处理器操作，因为这种操作会导致!irql命令的输出结果变得毫无意义。因此会使用这种“保存”的值代表调试器连接之前那一刻的IRQL。</p>
+<p class="zwts1">每个中断级别都有具体的用途。例如，内核会发出处理器间中断（Inter-processor</p>
+<p class="zwts1">Interrupt，IPI）来请求另一个处理器执行某操作，如调度要执行的特定线程，或者更新自己的转译后备缓冲区（TLB）缓存。系统时钟会以固定间隔生成中断，内核通过更新时钟并衡量线程执行时间作为对此的响应。HAL为中断驱动的设备提供了中断级别，而具体数字取决于处理器和系统配置。内核会使用软件中断（详见本章下文）来发起线程调度，并以异步方式打断线程的执行。</p>
+<h4 class="bt4 sigil_not_in_toc">将中断向量映射至IRQL</h4>
+<p class="zw">在非APIC架构的系统中，GSIV/IRQ与IRQL之间的映射必须非常严格。为避免一些情况下中断控制器可能认为某个中断线的优先级比其他中断线更高，在Windows的世界里，IRQL其实会反映一种相反的情况。好在凭借APIC，Windows可以轻松地通过APIC的TPR暴露这些IRQL，这些IRQL随后可被APIC用于做出更完善的交付决策。此外，在APIC系统中，每个硬件中断的优先级并不会绑定至自己的GSIV/IRQ，而是会绑定至中断向量，具体来说，会将向量中较高的4位重新映射为优先级。由于IDT中最多可包含256个项，因此就可以产生16个可能的优先级（例如向量0x40可以代表优先级4），这与TPR可以保存的16个数字相同，这些数字也可以重新映射至Windows所实现的相同的16个IRQL！</p>
+<p class="zw">因此，Windows为了判断要为某个中断分配哪个IRQL，首先必须判断该中断对应的中断向量，并对IOAPIC进行编程，以便相关的硬件GSIV使用该向量。或者反过来看，如果硬件设备需要某个特定的IRQL，Windows必须选择一个能重新映射至该优先级的中断向量。这些决策是由即插即用管理器与一种名为“总线驱动程序”的设备驱动程序配合做出的，借此可确定总线上所连接的设备（PCI、USB设备等）以及要为每个设备分配的中断。</p>
+<p class="zw">总线驱动程序会将这些信息上报至即插即用管理器，后者在权衡过所有其他设备可接受的中断分配情况后，决定具体为每个设备分配哪个中断。随后，即插即用管理器会调用一个即插即用中断仲裁程序（Arbiter），借此将中断映射至IRQL。该仲裁程序由HAL（Hardware Abstraction Layer，硬件抽象层）暴露，同时也需要与ACPI总线驱动程序及PCI总线驱动程序配合，共同决定相应的映射关系。大多数情况下，会通过轮询的方式选择最终的向量编号，因此无法通过计算的方式预先得知该编号。本节稍后的一个实验将展示调试器如何通过中断仲裁程序查询这些信息。</p>
+<p class="zw">除了与硬件中断相关的仲裁中断向量，Windows还有一系列预定义的中断向量（见表8-4），这些向量在IDT中始终具备相同的索引。</p>
+<p class="表题">表8-4　预定义的中断向量</p>
+<table> 
+ <tbody> 
+  <tr> 
+   <th> <p class="bt">向量</p> </th> 
+   <th> <p class="bt">用途</p> </th> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0x1F</p> </td> 
+   <td> <p class="bg">APC中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0x2F</p> </td> 
+   <td> <p class="bg">DPC中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0x30</p> </td> 
+   <td> <p class="bg">Hypervisor中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0x31～0x34</p> </td> 
+   <td> <p class="bg">VMBus中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0x35</p> </td> 
+   <td> <p class="bg">CMCI中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xCD</p> </td> 
+   <td> <p class="bg">Thermal中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xCE</p> </td> 
+   <td> <p class="bg">IOMMU中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xCF</p> </td> 
+   <td> <p class="bg">DMA中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xD1</p> </td> 
+   <td> <p class="bg">时钟计时器中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xD2</p> </td> 
+   <td> <p class="bg">时钟IPI中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xD3</p> </td> 
+   <td> <p class="bg">时钟Always on中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xD7</p> </td> 
+   <td> <p class="bg">Reboot中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xD8</p> </td> 
+   <td> <p class="bg">Stub中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xD9</p> </td> 
+   <td> <p class="bg">Test中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xDF</p> </td> 
+   <td> <p class="bg">Spurious中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xE1</p> </td> 
+   <td> <p class="bg">IPI中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xE2</p> </td> 
+   <td> <p class="bg">LAPIC错误中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xE3</p> </td> 
+   <td> <p class="bg">DRS中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xF0</p> </td> 
+   <td> <p class="bg">Watchdog中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xFB</p> </td> 
+   <td> <p class="bg">Hypervisor HPET中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xFD</p> </td> 
+   <td> <p class="bg">Profile中断</p> </td> 
+  </tr> 
+  <tr> 
+   <td> <p class="bg">0xFE</p> </td> 
+   <td> <p class="bg">Performance中断</p> </td> 
+  </tr> 
+ </tbody> 
+</table>
+<p class="zw">通过表8-4可知，这些向量编号的优先级（上文曾经提到，优先级信息存储在较高的4位或半字节（Nibble）中）通常会与图8-14中所示的IRQL保持匹配，例如APC中断为1，DPC中断为2，IPI中断为14，Profile中断为15。关于这个话题，下面一起看看在现代Windows系统中这些预定义的IRQL分别是什么。</p>
+<h4 class="bt4 sigil_not_in_toc">预定义的IRQL</h4>
+<p class="zw">接下来一起详细看看这些预定义的IRQL的使用，首先从图8-13中所示的最高级别开始：</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 通常只有在内核将系统停止于KeBugCheckEx状态并对所有中断进行屏蔽（masking out）或连接了远程内核调试器的情况下，才会使用高级别。在非x86系统中，Profile级别共享了相同的值，在启用该功能的情况下，Profile计时器也是在该级别下运行的。Performance中断（与如Intel Processor Trace，即Intel PT及其他硬件性能监视单元，即PMU功能有关）也运行在该级别下。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Interprocessor interrupt级别可用于请求另一个处理器执行某个操作，如更新处理器的TLB缓存或修改所有处理器的控制寄存器。Deferred Recovery Service（DRS）级别也共享了相同的值，在x64系统中，Windows Hardware Error Architecture（WHEA，Windows硬件错误架构）会使用该级别从某些机器检查错误（Machine Check Errors，MCE）中恢复。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Clock级别被系统时钟所使用，内核可借此跟踪时间，并为线程衡量和分配CPU时间。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Synchronization IRQL供调度程序和调度器代码内部使用，借此保护全局线程调度和等待/同步代码的访问过程。通常，该级别会被定义为Device IRQL之下最高的级别。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Device IRQL可用于对设备中断划分优先级（有关硬件中断级别映射至IRQL的具体方法请参阅上一节）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 当CPU或固件通过机器检查错误（MCE）接口上报了严重但已纠正的硬件状况后，可通过Corrected machine check interrupt级别向操作系统发出信号。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> DPC/Dispatch级别和APC级别的中断是内核与设备驱动程序生成的软件中断（下文将详细介绍DPC和APC）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> Passive级别是最低的IRQL，严格来说，该级别并非真正的中断级别，而是一种设置，常规线程可在该设置下执行并产生所有其他中断。</p>
+<h4 class="bt4 sigil_not_in_toc">中断对象</h4>
+<p class="zw">内核提供了一种可移植机制（一种名为中断对象的内核控制对象，即KINTERRUPT），设备驱动程序可借此为自己的设备注册ISR。中断对象包含了内核将设备ISR关联至特定硬件中断所需的全部信息，如ISR的地址、中断的极性（polarity）和触发器模式、设备中断所处的IRQL、共享状态、GSIV和其他中断控制器数据，以及性能统计信息的主机。</p>
+<p class="zw">这些中断对象是从一个通用内存池分配的，当设备驱动程序（通过IoConnectInterrupt或IoConnectInterruptEx）注册中断时，其中一个中断对象会被初始化所有的必要信息。基于有资格接收该中断（由设备驱动程序指定的中断相关性决定该资格）的处理器编号，每个有资格的处理器将会分配到一个KINTERRUPT对象，通常来说，这包括计算机上的每个处理器。随后，当选择了中断向量后，每个有资格的处理器的KPRCB中会有一个数组（名为InterruptObject）被更新，借此即可指向专为该处理器分配的KINTERRUPT对象。</p>
+<p class="zw">KINTERRUPT分配完成后，系统会检查和验证所选中断向量是否为可共享的向量；如果可共享，还会检查是否有现有的KINTERRUPT已经声明了该向量。如果已声明，内核会更新（KINTERRUPT数据结构的）DispatchAddress字段，使其指向KiChainedDispatch函数，并将这个KINTERRUPT添加到第一个已与该向量关联的现有KINTERRUPT所包含的链表（InterruptListEntry）中。但如果是专用向量，则会使用KiInterruptDispatch函数。</p>
+<p class="zw">中断对象还存储了与中断有关的IRQL，这样KiInterruptDispatch或KiChainedDispatch就可以在调用ISR之前将IRQL提升至正确的级别，并在ISR返回后降低IRQL。这个包含两个步骤的过程是必需的，因为初始调度是通过硬件执行的，因此无法在初始调度上传递指向中断对象或其他参数的指针。</p>
+<p class="zw">当中断发生时，IDT会指向KiIsrThunk函数的256个副本之一，每个副本都有一个不同的汇编代码行负责推送内核栈上的中断向量（因为该向量并非由处理器提供的），随后调用一个共享的KiIsrLinkage函数执行后续处理工作。此外，按照上文介绍，该函数还会构建相应的陷阱帧，并最终调用存储在KINTERRUPT中的调度地址（上述两个函数之一）。这个函数会读取当前KPRCB的InterruptObject数组以查找KINTERRUPT，并将栈上的中断向量用作索引进而取消对匹配指针的引用。如果KINTERRUPT不存在，那么该中断会被视为非预期中断。根据注册表HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Kernel键下BugCheckUnexpectedInterrupts的值，系统可能会因KeBugCheckEx而崩溃，或者中断会被悄然忽略，执行过程会恢复至原始控制点。</p>
+<p class="zw">在x64 Windows系统中，内核会使用特定例程来优化中断调度，这些例程通过忽略不需要的功能进而节省处理器运行周期。例如为没有关联内核管理自旋锁的中断（此类中断通常被希望与ISR保持同步的驱动程序所用）使用KiInterruptDispatchNoLock例程，为不希望使用ETW性能跟踪的中断使用KiInterruptDispatchNoLockNoEtw例程，为激活之后无须发送“中断终止”信号的虚假中断使用KiSpuriousDispatchNoEOI例程。</p>
+<p class="zw">最后，还可以为将APIC设置为Auto-End-of-Interrupt（Auto-EOI）模式的中断使用KiInterruptDispatchNoEOI例程，因为中断控制器会自动发送EOI信号，内核无须额外的代码来亲自执行EOI。例如，很多HAL中断例程会利用“无锁”调度代码，因为HAL无须内核与自己的ISR保持同步。</p>
+<p class="zw">另一个内核中断处理程序是KiFloatingDispatch，它可用于需要保存浮点状态的中断。内核模式代码通常不允许使用浮点（MMX、SSE、3DNow!）操作，因为这些寄存器无法跨越上下文切换过程保存，ISR可能需要使用这些寄存器（例如显卡ISR执行快速绘图操作）。连接中断时，驱动程序可将FloatingSave参数设置为TRUE，进而请求内核使用浮点调度例程来保存浮点寄存器（但这会大幅增加中断延迟）。请注意，仅32位系统支持此做法。</p>
+<p class="zw">无论使用哪个调度例程，最终都需要调用KINTERRUPT中的ServiceRoutine字段，这里存储了驱动程序的ISR。或者对于下文即将介绍的消息信号中断（Message Signaled Interrupt，MSI），作为指向KiInterruptMessageDispatch的指针，随后可由该中断调用KINTERRUPT中的MessageServiceRoutine指针。请注意，在某些情况下，例如处理内核模式驱动程序框架（Kernel Mode Driver Framework，KMDF）驱动程序或处理基于NDIS或StorPort等某些微型端口（Miniport）驱动程序时（有关驱动程序框架的详情请参阅本书卷1第6章），可能需要用到这些框架或端口驱动程序特定的例程，由这些例程在最终调用底层驱动程序之前执行进一步的处理工作。</p>
+<p class="zw">图8-15展示了与中断对象有关的中断所包含的典型中断控制流。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx1363.png" style="width: 100%" />
+<p class="图题">图8-15　典型的中断控制流</p>
+<p class="zw">将ISR与特定中断级别进行关联的过程也称“连接中断对象”，而将ISR与IDT分离的过程称为“断开中断对象”。这些操作需要通过调用内核函数IoConnectInterruptEx和IoDisconnectInterruptEx来完成，可供设备驱动程序在载入系统时“开启”ISR，并在卸载驱动程序时“关闭”ISR。</p>
+<p class="zw">如上文所述，使用中断对象注册ISR可防止设备驱动程序无谓地直接与中断硬件交互（具体方式因不同处理器架构而异），并且无须了解有关IDT的任何细节。内核的这一功能有助于开发可移植的设备驱动程序，因为该功能使得我们无须使用汇编语言开发驱动程序代码，也无须在设备驱动程序代码中考虑不同处理器的差异。中断对象还提供了其他好处。通过使用中断对象，内核可将ISR的执行过程与设备驱动程序中可能需要与ISR共享数据的其他部分保持同步（有关设备驱动程序如何响应中断的详细信息请参阅本书卷1第6章）。</p>
+<p class="zw">上文还提到了链式调度（chained dispatch）的概念，该功能使得内核能够非常轻松地为任何中断级别调用多个ISR。如果多个设备驱动程序创建了中断对象并将其连接到同一个IDT项，在特定中断线发生中断后，KiChainedDispatch例程可调用每一个ISR。借此内核即可轻松地支持菊花链式（daisy-chain）配置，让多个设备共享同一个中断线。当任何一个ISR向中断调度程序返回一种状态，借此声明中断的所有权后，这种链便会断开。</p>
+<p class="zw">如果共享同一个中断的多个设备同时需要服务，那么无法通过ISR确认的设备会在中断调度程序降低IRQL后再次中断系统。只有在所有希望使用同一个中断的设备驱动程序告知内核自己可以共享中断（这种情况可由KINTERRUPT对象中的ShareVector字段来代表）的情况下，才允许创建链式配置；如果无法共享中断，即插即用管理器会重新调整它们的中断分配情况，以保证中断的分配符合每个驱动程序有关共享的要求。</p>
+<p class="zwtsh">实验：查看中断的内部机理</p>
+<p class="zwts1">我们可以通过内核调试器查看中断对象的内部细节，包括其IRQL、ISR地址以及自定义中断分发代码。首先请执行调试器命令!idt以检查能否找到一个引用了I8042KeyboardInterruptService的项，这是适用于PS2键盘设备的ISR例程。此外，也可以查看指向Stornvme.sys或Scsiport.sys，或者指向我们可识别的其他任何第三方驱动程序的项。在Hyper-V虚拟机中则可以直接使用Acpi.sys项。具备PS2键盘设备项的系统会显示如下结果：</p>
+<pre class="代码无行号"><code>70:    fffff8045675a600 i8042prt!I8042KeyboardInterruptService (KINTERRUPT <br>ffff8e01cbe3b280)</code></pre>
+<p class="zwts1">运行dt命令后，可以直接点击调试器提供的链接查看该中断所关联的中断对象的内容，或者也可以手动使用<strong style="color:#0092dd">dx</strong>命令查看。本次实验中所用计算机上的KINTERRUPT内容如下所示：</p>
+<pre class="代码无行号"><code>6: kd&gt; dt nt!_KINTERRUPT ffff8e01cbe3b280 
+   +0x000 Type             : 0n22 
+   +0x002 Size             : 0n256 
+   +0x008 InterruptListEntry : _LIST_ENTRY [ 0x00000000`00000000 - 0x00000000`00000000 ]
+   +0x018 ServiceRoutine   : 0xfffff804`65e56820 
+                             unsigned char i8042prt!I8042KeyboardInterruptService
+   +0x020 MessageServiceRoutine : (null) 
+   +0x028 MessageIndex     : 0 
+   +0x030 ServiceContext   : 0xffffe50f`9dfe9040 Void 
+   +0x038 SpinLock         : 0 
+   +0x040 TickCount        : 0 
+   +0x048 ActualLock       : 0xffffe50f`9dfe91a0 -&gt; 0 
+   +0x050 DispatchAddress  : 0xfffff804`565ca320 void nt!KiInterruptDispatch+0
+   +0x058 Vector           : 0x70 
+   +0x05c Irql             : 0x7 '' 
+   +0x05d SynchronizeIrql  : 0x7 '' 
+   +0x05e FloatingSave     : 0 '' 
+   +0x05f Connected        : 0x1 '' 
+   +0x060 Number           : 6 
+   +0x064 ShareVector      : 0 '' 
+   +0x065 EmulateActiveBoth : 0 '' 
+   +0x066 ActiveCount      : 0 
+   +0x068 InternalState    : 0n4 
+   +0x06c Mode             : 1 ( Latched ) 
+   +0x070 Polarity         : 0 ( InterruptPolarityUnknown ) 
+   +0x074 ServiceCount     : 0 
+   +0x078 DispatchCount    : 0 
+   +0x080 PassiveEvent     : (null) 
+   +0x088 TrapFrame        : (null) 
+   +0x090 DisconnectData   : (null) 
+   +0x098 ServiceThread    : (null) 
+   +0x0a0 ConnectionData   : 0xffffe50f`9db3bd90 _INTERRUPT_CONNECTION_DATA 
+   +0x0a8 IntTrackEntry    : 0xffffe50f`9d091d90 Void 
+   +0x0b0 IsrDpcStats      : _ISRDPCSTATS 
+   +0x0f0 RedirectObject   : (null) 
+   +0x0f8 Padding          : [8] "" </code></pre>
+<p class="zwts1">本例中，Windows为该中断分配的IRQL为7，这与中断向量0x70是一致的（该向量的高4位为7）。此外，我们可从DispatchAddress字段中看到这是一个常规的KiInterruptDispatch样式中断，不包含额外优化或共享。</p>
+<p class="zwts1">如果想查看该中断关联了哪个GSIV（IRQ），此时可通过两种方式实现。首先，新版Windows会将该数据以INTERRUPT_CONNECTION_DATA结构嵌入KINTERRUPT的ConnectionData字段，具体情况可参阅上一个命令的输出结果。此外，我们也可以使用<strong style="color:#0092dd">dt</strong>命令从自己的系统中转储指针，方法如下：</p>
+<pre class="代码无行号"><code>6: kd&gt; dt 0xffffe50f`9db3bd90 _INTERRUPT_CONNECTION_DATA Vectors[0].. 
+nt!_INTERRUPT_CONNECTION_DATA 
+   +0x008 Vectors      : [0] 
+      +0x000 Type         : 0 ( InterruptTypeControllerInput ) 
+      +0x004 Vector       : 0x70 
+      +0x008 Irql         : 0x7 '' 
+      +0x00c Polarity     : 1 ( InterruptActiveHigh ) 
+      +0x010 Mode         : 1 ( Latched ) 
+      +0x018 TargetProcessors : 
+      +0x000 Mask         : 0xff 
+      +0x008 Group        : 0 
+      +0x00a Reserved     : [3] 0 
+   +0x028 IntRemapInfo : 
+      +0x000 IrtIndex     : 0y000000000000000000000000000000 (0) 
+      +0x000 FlagHalInternal : 0y0 
+      +0x000 FlagTranslated : 0y0 
+      +0x004 u            : &lt;anonymous-tag&gt; 
+   +0x038 ControllerInput : 
+      +0x000 Gsiv         : 1 </code></pre>
+<p class="zwts1">上述输出结果中的Type表明，这是一个传统的、基于线/控制器的输入，而Vector和Irql字段确认了前一个实验中我们已经在KINTERRUPT中看到的数据。随后通过查看ControllerInput结构，我们可以看到GSIV为1（即IRQ 1）。如果查看的是不同类型的中断（如消息信号中断，详见下文），则应取消对MessageRequest字段的引用。</p>
+<p class="zwts1">我们还可以通过另一种方法将GSIV映射至中断向量：当通过所谓的仲裁程序管理设备资源时，Windows会持续跟踪整个过程。对于每一类资源，可通过仲裁程序维持虚拟资源的使用情况（如中断向量）和物理资源（如中断线）之间的关系。因此我们可以查询ACPI IRQ仲裁程序并获得相关映射关系。为此可使用<strong style="color:#0092dd">!apciirqarb</strong>命令获取有关ACPI IRQ仲裁程序的信息：</p>
+<pre class="代码无行号"><code>6: kd&gt; !acpiirqarb 
+　
+Processor 0 (0, 0): 
+Device Object: 0000000000000000 
+Current IDT Allocation: 
+... 
+  000000070 - 00000070 D ffffe50f9959baf0 (i8042prt) A:ffffce0717950280 IRQ(GSIV):1
+... </code></pre>
+<p class="zwts1">请注意，键盘的GSIV为IRQ 1，这是一个古老的遗留数值，甚至可以从今天一直追溯至IBM PC/AT时代。我们也可以使用<strong style="color:#0092dd">!arbiter 4</strong>（“4”可以让调试器只显示IRQ仲裁程序）查看ACPI IRQ仲裁程序内部包含的项：</p>
+<pre class="代码无行号"><code>6: kd&gt; !arbiter 4 
+　
+DEVNODE ffffe50f97445c70 (ACPI_HAL\PNP0C08\0) 
+  Interrupt Arbiter "ACPI_IRQ" at fffff804575415a0 
+    Allocated ranges: 
+      0000000000000001 - 0000000000000001 ffffe50f9959baf0 (i8042prt) </code></pre>
+<p class="zwts1">本例中要注意，上述范围代表了GSIV（IRQ）而非中断向量。此外要注意，上述这些输出结果中我们都可以看到向量的所有信息，这是以设备对象的类型来表示的（本例中为0xFFFFE50F9959BAF0）。随后即可使用<strong style="color:#0092dd">!devobj</strong>命令查看本例中i8042prt设备（对应着PS/2驱动程序）的相关信息：</p>
+<pre class="代码无行号"><code>6: kd&gt; !devobj 0xFFFFE50F9959BAF0 
+Device object (ffffe50f9959baf0) is for: 
+ 00000049 \Driver\ACPI DriverObject ffffe50f974356f0 
+Current Irp 00000000 RefCount 1 Type 00000032 flags 00001040 
+SecurityDescriptor ffffce0711ebf3e0 DevExt ffffe50f995573f0 DevObjExt ffffe50f9959bc40
+DevNode ffffe50f9959e670 
+Extensionflags (0x00000800) DOE_DEFAULT_SD_PRESENT 
+Characteristics (0x00000080) FILE_AUTOGENERATED_DEVICE_NAME 
+AttachedDevice (Upper) ffffe50f9dfe9040 \Driver\i8042prt 
+Device queue is not busy. </code></pre>
+<p class="zwts1">该设备对象关联了一个设备节点，其中存储了该设备的所有物理资源。至此我们已</p>
+<p class="zwts1">经可以使用<strong style="color:#0092dd">!devnode</strong>命令转储这些资源，并使用0xF标记同时查看原始数据和转换后的资源信息：</p>
+<pre class="代码无行号"><code>6: kd&gt; !devnode ffffe50f9959e670 f 
+DevNode 0xffffe50f9959e670 for PDO 0xffffe50f9959baf0 
+  InstancePath is "ACPI\LEN0071\4&amp;36899b7b&amp;0" 
+  ServiceName is "i8042prt" 
+  TargetDeviceNotify List - f 0xffffce0717307b20 b 0xffffce0717307b20 
+  State = DeviceNodeStarted (0x308) 
+  Previous State = DeviceNodeEnumerateCompletion (0x30d) 
+  CmResourceList at 0xffffce0713518330 Version 1.1 Interface 0xf Bus #0 
+    Entry 0 - Port (0x1) Device Exclusive (0x1) 
+      Flags (PORT_MEMORY PORT_IO 16_BIT_DECODE 
+      Range starts at 0x60 for 0x1 bytes 
+    Entry 1 - Port (0x1) Device Exclusive (0x1) 
+      Flags (PORT_MEMORY PORT_IO 16_BIT_DECODE 
+      Range starts at 0x64 for 0x1 bytes 
+    Entry 2 - Interrupt (0x2) Device Exclusive (0x1) 
+      Flags (LATCHED 
+      Level 0x1, Vector 0x1, Group 0, Affinity 0xffffffff 
+... 
+  TranslatedResourceList at 0xffffce0713517bb0 Version 1.1 Interface 0xf Bus #0
+    Entry 0 - Port (0x1) Device Exclusive (0x1) 
+      Flags (PORT_MEMORY PORT_IO 16_BIT_DECODE 
+      Range starts at 0x60 for 0x1 bytes 
+    Entry 1 - Port (0x1) Device Exclusive (0x1) 
+      Flags (PORT_MEMORY PORT_IO 16_BIT_DECODE 
+      Range starts at 0x64 for 0x1 bytes 
+    Entry 2 - Interrupt (0x2) Device Exclusive (0x1) 
+      Flags (LATCHED 
+      Level 0x7, Vector 0x70, Group 0, Affinity 0xff </code></pre>
+<p class="zwts1">通过设备节点可知，该设备有一个包含三项内容的资源列表，其中一项为对应于IRQ 1的中断项（级别和向量编号代表了GSIV而非中断向量）。从后续显示的转换后的资源列表可知IRQL为7（这是级别编号），而中断向量为0x70。</p>
+<p class="zwts1">在ACPI系统中，我们可以通过一种更简单的方式获取此类信息，为此可查看上述<strong style="color:#0092dd">!acpiirqarb</strong>命令的扩展输出结果。该输出结果还会显示IRQ与IDT之间的映射表：</p>
+<pre class="代码无行号"><code>Interrupt Controller (Inputs: 0x0-0x77): 
+    (01)Cur:IDT-70 Ref-1 Boot-0 edg hi    Pos:IDT-00 Ref-0 Boot-0 lev unk 
+    (02)Cur:IDT-80 Ref-1 Boot-1 edg hi    Pos:IDT-00 Ref-0 Boot-1 lev unk 
+    (08)Cur:IDT-90 Ref-1 Boot-0 edg hi    Pos:IDT-00 Ref-0 Boot-0 lev unk 
+    (09)Cur:IDT-b0 Ref-1 Boot-0 lev hi    Pos:IDT-00 Ref-0 Boot-0 lev unk
+    (0e)Cur:IDT-a0 Ref-1 Boot-0 lev low   Pos:IDT-00 Ref-0 Boot-0 lev unk
+    (10)Cur:IDT-b5 Ref-2 Boot-0 lev low   Pos:IDT-00 Ref-0 Boot-0 lev unk
+    (11)Cur:IDT-a5 Ref-1 Boot-0 lev low   Pos:IDT-00 Ref-0 Boot-0 lev unk
+    (12)Cur:IDT-95 Ref-1 Boot-0 lev low   Pos:IDT-00 Ref-0 Boot-0 lev unk
+    (14)Cur:IDT-64 Ref-2 Boot-0 lev low   Pos:IDT-00 Ref-0 Boot-0 lev unk
+    (17)Cur:IDT-54 Ref-1 Boot-0 lev low   Pos:IDT-00 Ref-0 Boot-0 lev unk
+    (1f)Cur:IDT-a6 Ref-1 Boot-0 lev low   Pos:IDT-00 Ref-0 Boot-0 lev unk
+    (41)Cur:IDT-96 Ref-1 Boot-0 edg hi    Pos:IDT-00 Ref-0 Boot-0 lev unk</code></pre>
+<p class="zwts1">不出所料，IRQ 1关联给了IDT项0x70。有关设备对象、资源以及相关概念的详细信息，请参阅卷1第6章。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"a89070c3-60d0-4159-89c3-afa07663a88a","id":"a1a30a27-9579-4d1e-ab4a-8d9cc87f27cd"}</p>

@@ -1,0 +1,10 @@
+<h3 class="bt3" id="sigil_toc_id_211">11.9.3　UDF</h3>
+<p class="zw">Windows通用磁盘格式（Universal Disk Format，UDF）文件系统的实现符合OSTA（Optical Storage Technology Association）制定的UDF规范（UDF是ISO-13346格式的一个子集，是对CD-R和DVD-R/RW等格式进行的扩展）。OSTA于1995年定义了UDF，将其作为取代ISO-9660格式的磁光存储介质格式（主要适用于DVD-ROM）。UDF已包含在DVD规范中，比CDFS更灵活。UDF文件系统格式有以下特点。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 目录和文件名可以有254个ASCII字符或127个Unicode字符的长度。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 文件可以是稀疏文件（稀疏文件的具体定义请参阅下文“压缩和稀疏文件”一节）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 文件大小可用64位来指定。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 支持访问控制列表（ACL）。</p>
+<p class="zwd"><span style="color: #0092dd">●</span> 支持备用数据流。</p>
+<p class="zw">UDF驱动程序最高可支持2.60版本的UDF。UDF格式最初在设计时主要针对可复写的介质。Windows UDF驱动程序（%SystemRoot%\System32\Drivers\Udfs.sys）在使用UDF 2.50版时，可为蓝光、DVD-RAM、CD-R/RW和DVD+-R/RW驱动器提供读/写支持，使用UDF 2.60版时可提供只读支持。不过Windows并未实现对某些UDF功能的支持，例如命名数据流和访问控制列表。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"c805d919-9167-4fd8-9d2c-90b8a17517a2"}</p>

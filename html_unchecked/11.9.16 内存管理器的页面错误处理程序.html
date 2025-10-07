@@ -1,0 +1,4 @@
+<h3 class="bt3" id="sigil_toc_id_224">11.9.16　内存管理器的页面错误处理程序</h3>
+<p class="zw">我们已经介绍了在显式文件I/O和缓存管理器预读取情况下页面错误处理程序的使用方式，但当任何应用程序访问作为映射文件视图的虚拟内存，并遇到代表文件中尚不位于内存中的部分对应的页面时，也会调用页面错误处理程序。内存管理器的MmAccessFault处理程序会执行与缓存管理器通过CcCopyRead或CcCopyWrite生成页面错误时相同的操作，通过IoPageRead向文件所在的文件系统发送IRP。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":15,"parentId":"0c1656e4-96a3-4397-a023-91a7bb19a11b","id":"020c91ae-8221-4eb5-b543-64377eaea2e6"}</p>

@@ -1,0 +1,82 @@
+<h3 class="bt3" id="sigil_toc_id_140">10.3.1　任务计划程序</h3>
+<p class="zw">任务计划程序实现了任务存储，借此保存每个任务。它还托管Scheduler idle（计划程序闲置）服务，借此可检测系统何时进入或离开闲置状态，此外还有事件陷阱提供程序，可以帮助任务计划程序在计算机状态发生变化时启动任务，并提供了内部事件日志触发系统。任务计划程序还包含另一个组件：UBPM代理（UBPM proxy），该组件可收集所有任务的操作和触发器，将其描述符转换成一种UBPM可理解的格式，随后发送给UBPM。</p>
+<p class="zw">图10-25展示了任务计划程序的架构概览。如图所示，任务计划程序与UBPM深度配合（两者的组件均运行在任务计划程序服务中，该服务通过一个共享的Svchost.exe进程运行）。UBPM负责管理任务状态，并通过WNF状态接收来自SEB、DAB以及资源管理器的通知。</p>
+<p class="zw">任务计划程序的一个重要工作是公开COM任务计划程序API的服务器部分。当任务控制（task control）程序调用这种API时，COM引擎会将任务计划程序COM API库（Taskschd.dll）载入应用程序的地址空间。该库会代表任务控制程序，通过RPC接口向任务计划程序请求服务。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2381.png" style="width: 100%" />
+<p class="图题">图10-25　任务计划程序架构</p>
+<p class="zw">通过类似的方式，任务计划程序WMI提供程序（Schedprov.dll）实现的COM类和方法可用于与任务计划程序COM API库通信。其WMI类、属性和事件可通过Windows PowerShell&nbsp;使用&nbsp;ScheduledTasks cmdlet（相关文档请访问&nbsp;https://docs.microsoft.com/powershell/ module/scheduledtasks/）调用。请注意，任务计划程序包含一个兼容性插件，借此可以让老旧的应用程序（如AT命令）配合任务计划程序使用。在Windows 10的2019年5月更新（19H1）中，AT工具已被正式弃用，用户可以转为使用schtasks.exe。</p>
+<h4 class="bt4 sigil_not_in_toc">初始化</h4>
+<p class="zw">在被服务控制管理器启动后，任务计划程序服务会开始自己的初始化过程。首先需要注册自己的基于清单的ETW事件提供程序（全局唯一ID为DE7B24EA-73C84A09-985D- 5BDADCFA9017）。任务计划程序生成的所有事件均可供UBPM使用。随后，任务计划程序会初始化凭据存储，该组件用于安全地访问凭据管理器和任务存储中所保存的用户凭据。凭据管理器还会检查任务存储的二级影子副本（该副本的产生是为了实现兼容性，通常位于%SystemRoot%\System32\Tasks下）中包含的所有XML任务描述符是否与任务存储缓存中的任务描述符保持同步。任务存储缓存由多个注册表键表示，其根键位于HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache。</p>
+<p class="zw">接下来，任务计划程序初始化过程需要初始化UBPM。任务计划程序服务会使用UBPM.dll导出的UbpmInitialize API启动UBPM的核心组件。该函数会注册一个任务计划程序事件提供程序的ETW使用方，并连接到资源管理器。资源管理器组件由进程状态管理器（Process State Manager，Psmsrv.dll，运行于代理基础架构服务上下文中）加载，可根据计算机状态和全局资源使用情况生成能够善用资源的策略。资源管理器可以帮助UBPM管理维护性质的任务。此类任务通常会在特定系统状态下运行，例如计算机CPU用量低时、游戏模式被关闭时、用户不在计算机前时等等。随后，UBPM初始化代码会从系统事件代理中检索代表任务条件的WNF状态名：交流电源、计算机空闲、可用IP地址或网络、计算机切换至电池供电（这些条件可在任务计划程序MMC管理单元的创建任务对话框的条件选项卡下使用）。</p>
+<p class="zw">UBPM会初始化自己的内部线程池工作线程，获取系统电源能力，读取维护任务和关键任务操作列表（从HKLM\ System\CurrentControlSet\Control\Ubpm注册表键和组策略设置读取），并订阅系统电源设置通知（借此UBPM即可了解系统的电源状态何时改变）。</p>
+<p class="zw">随后执行控制会返回到任务计划程序，最终由它为自己和UMPB注册全局RPC接口。这些接口将被任务计划程序API客户端DLL（Taskschd.dll）使用，以便为客户端进程提供一种通过任务计划程序，借助任务计划程序COM接口进行交互的方式，详见文档：https://docs.microsoft.com/windows/win32/api/taskschd/。</p>
+<p class="zw">初始化完成后，任务存储将枚举并分别启动系统中安装的每个任务。任务存储在缓存中的四个组内：Boot、Logon、Plain以及Maintenance task。每个组都关联了一个名为Index Group Tasks键的子键，位于任务存储的根注册表键（HKLM\SOFTWARE\Microsoft\ Windows NT\CurrentVersion\Schedule\TaskCache）下。在每个Index Tasks组键下，每个任务对应一个子键，不同任务可通过全局唯一标识符（GUID）区分。任务计划程序会枚举所有组子键的名称，对于每个子键，还会打开相关任务的主键（master key），该主键位于任务存储根注册表键的Tasks子键下。图10-26展示了一个Boot任务范例，其GUID为{0C7D8A27- 9B28-49F1-979C-AD37C4D290B1}。这个GUID在图中显示为Boot这个索引组键中的第一个项。从该图中还可以看到任务主键，其中存储了用于完全描述该任务的二进制数据。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2393.png" style="width: 100%" />
+<p class="图题">图10-26　一个Boot任务的主键</p>
+<p class="zw">任务的主键包含描述任务的所有信息。任务有两个最重要的属性：触发器（trigger）和操作（action），其中触发器指定了可触发任务的条件，操作指定了执行任务时要做的工作。这两个属性都存储在二进制注册表值（名为Triggers和Actions，如图10-26所示）中。任务计划程序首先会读取整个任务描述符的哈希（存储在Hash注册表值中），随后读取任务的配置数据以及有关触发器和操作的二进制数据。在解析这些数据后，即可将识别出的触发器和操作描述符存储到一个内部列表中。</p>
+<p class="zw">随后，任务计划程序会重新计算新任务描述符（其中包含了从注册表读取的所有数据）的SHA256哈希，并将其与预期值进行比较。如果两个哈希不匹配，任务计划程序会打开任务存储影子副本（%SystemRoot%\System32\Tasks文件夹）中与该任务关联的XML文件，解析其中的数据，并重新计算一个新的哈希，最终替换注册表中的任务描述符。实际上，任务既可以用注册表中的二进制数据描述，也可以用XML文件描述，该XML文件遵循一种明确定义的方案，详见：https://docs.microsoft.com/windows/win32/taskschd/task- scheduler-schema。</p>
+<p class="zwtsh">实验：查看任务的XML描述符</p>
+<p class="zwts1">如上文所述，任务描述符可由任务存储用两种格式来保存：XML文件和注册表数据。在这个实验中，我们将分别查看两个格式的内容。首先打开任务计划程序（在搜索框中输入taskschd.msc），展开任务计划程序库节点以及所有子节点，直到看到Microsoft\Windows文件夹。浏览这里的每个子节点，找出“<strong style="color:#0092dd">操作</strong>”选项卡下被设置为“<strong style="color:#0092dd">自定义句柄</strong>”（Custom Handler）<sup>[4]</sup>的任务。该操作类型描述了COM托管的任务，而任务计划程序并不支持此类任务。在本例中，我们选择了ProcessMemoryDiagnosticEvents，它位于MemoryDiagnostics文件夹下。选择操作为“自定义句柄”的其他任何任务也可以。</p>
+<p class="footnote">[4]通常来说，句柄是Handle，而Handler是执行某些处理任务的“处理程序”，微软的所有产品几乎都使用了这样的称呼。但如果使用简体中文版Windows系统执行该实验将会发现，此处需要查找的“Custom Handler”操作，在简体中文版Windows中被称为“自定义句柄”，这是错误的，正确叫法应为“自定义处理程序”。但为了与系统UI保持一致，正文依然沿用了“自定义句柄”的叫法。截至翻译这部分内容，译者在简体中文版Windows 11（21H2）系统中看到的依然是“自定义句柄”，不排除后续系统更新会修复这个小瑕疵的可能。——译者注</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2400.png" style="width: 100%" />
+<p class="zwts1">以管理员身份打开命令提示符窗口（在搜索框中输入CMD，选择“<strong style="color:#0092dd">以管理员身份运行</strong>”），随后输入下列命令（请将任务路径替换为实际的目标任务路径）：</p>
+<pre class="代码无行号"><code>schtasks /query /tn "Microsoft\Windows\MemoryDiagnostic\ProcessMemoryDiagnosticEvents" /xml </code></pre>
+<p class="zwts1">输出结果中显示了该任务的XML描述符，其中包含该任务的安全描述符（用于保护任务不被未经授权实体打开）、任务的作者和描述、可运行该任务的安全主体、任务设置，以及任务触发器和操作：</p>
+<pre class="代码无行号"><code>&lt;?xml version="1.0" encoding="UTF-16"?&gt; 
+&lt;Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"&gt; 
+  &lt;RegistrationInfo&gt; 
+    &lt;Version&gt;1.0&lt;/Version&gt; 
+    &lt;SecurityDescriptor&gt;D:P(A;;FA;;;BA)(A;;FA;;;SY)(A;;FR;;;AU)&lt;/SecurityDescriptor&gt;
+    &lt;Author&gt;$(@%SystemRoot%\system32\MemoryDiagnostic.dll,-600)&lt;/Author&gt; 
+    &lt;Description&gt;$(@%SystemRoot%\system32\MemoryDiagnostic.dll,-603)&lt;/Description&gt;
+    &lt;URI&gt;\Microsoft\Windows\MemoryDiagnostic\ProcessMemoryDiagnosticEvents&lt;/URI&gt; 
+  &lt;/RegistrationInfo&gt; 
+  &lt;Principals&gt; 
+    &lt;Principal id="LocalAdmin"&gt; 
+      &lt;GroupId&gt;S-1-5-32-544&lt;/GroupId&gt; 
+      &lt;RunLevel&gt;HighestAvailable&lt;/RunLevel&gt; 
+    &lt;/Principal&gt; 
+  &lt;/Principals&gt; 
+  &lt;Settings&gt; 
+    &lt;AllowHardTerminate&gt;false&lt;/AllowHardTerminate&gt; 
+    &lt;DisallowStartIfOnBatteries&gt;true&lt;/DisallowStartIfOnBatteries&gt; 
+    &lt;StopIfGoingOnBatteries&gt;true&lt;/StopIfGoingOnBatteries&gt; 
+    &lt;Enabled&gt;false&lt;/Enabled&gt; 
+    &lt;ExecutionTimeLimit&gt;PT2H&lt;/ExecutionTimeLimit&gt; 
+    &lt;Hidden&gt;true&lt;/Hidden&gt; 
+    &lt;MultipleInstancesPolicy&gt;IgnoreNew&lt;/MultipleInstancesPolicy&gt; 
+    &lt;StartWhenAvailable&gt;true&lt;/StartWhenAvailable&gt; 
+    &lt;RunOnlyIfIdle&gt;true&lt;/RunOnlyIfIdle&gt; 
+    &lt;IdleSettings&gt; 
+      &lt;StopOnIdleEnd&gt;true&lt;/StopOnIdleEnd&gt; 
+      &lt;RestartOnIdle&gt;true&lt;/RestartOnIdle&gt; 
+    &lt;/IdleSettings&gt; 
+    &lt;UseUnifiedSchedulingEngine&gt;true&lt;/UseUnifiedSchedulingEngine&gt; 
+  &lt;/Settings&gt; 
+  &lt;Triggers&gt; 
+    &lt;EventTrigger&gt; 
+       &lt;Subscription&gt;&amp;lt;QueryList&amp;gt;&amp;lt;Query Id="0" Path="System"&amp;gt;&amp;lt;Select Pa
+th="System"&amp;gt;*[System[Provider[@Name='Microsoft-Windows-WER-SystemErrorReporting']
+and (EventID=1000 or EventID=1001 or EventID=1006)]]&amp;lt;/Select&amp;gt;&amp;lt;/Query&amp;gt;
+  &amp;lt;/ 
+QueryList&amp;gt;&lt;/Subscription&gt; 
+    &lt;/EventTrigger&gt; 
+    . . . [cut for space reasons] . . . 
+  &lt;/Triggers&gt; 
+  &lt;Actions Context="LocalAdmin"&gt; 
+    &lt;ComHandler&gt; 
+      &lt;ClassId&gt;{8168E74A-B39F-46D8-ADCD-7BED477B80A3}&lt;/ClassId&gt; 
+      &lt;Data&gt;&lt;![CDATA[Event]]&gt;&lt;/Data&gt; 
+    &lt;/ComHandler&gt; 
+  &lt;/Actions&gt; 
+&lt;/Task&gt; </code></pre>
+<p class="zwts1">对于ProcessMemoryDiagnosticEvents任务，其中包含多个ETW触发器（这些触发器使得该任务只能在生成某些诊断事件后执行，实际上，触发器描述符也包含了以XPath格式指定的ETW查询）。唯一注册的一个操作是一个ComHandler，其中只包含了表示任务COM对象的CLSID（类ID）。打开注册表编辑器并进入HKEY_LOCAL_ MACHINE\ SOFTWARE\Classes\CLSIDkey，从“<strong style="color:#0092dd">编辑</strong>”菜单选择“<strong style="color:#0092dd">查找</strong>”，复制并粘贴任务描述符ClassID XML标签之后的CLSID（可以包含或不包含大括号）。这样就应该能找到实现了用于表示任务的ITaskHandler接口的DLL，该DLL由TaskHost客户端应用程序（Taskhostw.exe，详见下文“任务宿主客户端”一节）托管。</p>
+<p class="图"></p>
+<img src="../res/pubcloud/5B0A982E/ushu/UBda647ada3435/online/FBOLda82494f5f9f/Images/tx2408.png" style="width: 100%" />
+<p class="zwts1">打开HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\ Tasks注册表键后，应该可以在这里找到任务存储缓存中存储的任务描述符GUID。为此可使用任务的URI进行搜索。实际上，任务的GUID并未存储在XML配置文件中。注册表中与任务描述符有关的数据和任务存储影子副本（%systemroot%\System32\Tasks\ Microsoft\Windows\MemoryDiagnostic\ProcessMemoryDiagnosticEvents）中存储的XML配置文件完全相同。所有更改都会存储在二进制格式中。</p>
+<p class="zw">启用的任务需要与UBPM注册。任务计划程序会调用UBPM代理的RegisterTask函数，它首先连接到凭据存储并检索启动任务所需的凭据，然后处理所有操作和触发器列表（存储在一个内部列表中），将其转换为UBPM可理解的格式。最后，它会调用从UBPM.dll导出的UbpmTriggerConsumerRegister API。当正确的条件成功验证后，该任务就可以执行了。</p>
+
+<p class="epubit-contents-id" style="display: none">{"index":0,"parentId":"30d37bf5-6705-42ec-a13a-437f2515e861","id":"688c08b9-731f-451b-9683-bc0cc56455c3"}</p>

@@ -1,6 +1,0 @@
-<h3 class="bt3" id="sigil_toc_id_28">8.5.7　ARM64平台上的ARM32模拟</h3>
-<p class="zw">ARM64下模拟ARM32应用程序的方式与AMD64下模拟x86的方式极为类似。如上一节所述，ARM64v8 CPU能够在AArch64和Thumb-2执行状态之间动态切换（因此可以直接通过硬件执行32位指令）。然而与AMD64系统不同，该CPU无法在用户模式下通过某种特殊指令切换执行模式，因此需要WoW64层来调用NT内核以请求切换执行模式。为此需要使用ARM-on-ARM64 CPU模拟器（Wowarmhw.dll）导出的BtCpuSimulate函数将非易失AArch64寄存器保存到64位栈中，还原WoW64 CPU区域中存储的32位上下文，并最终发出一个明确定义的系统调用（该调用具备一个无效的Syscall编号：−1）。</p>
-<p class="zw">NT内核异常处理程序（在ARM64架构中，该异常处理程序也是Syscall处理程序）检测到由于系统调用而引发了异常，因此将检查Syscall编号。如果该编号是特殊的“−1”，NT内核就知道该请求是因为来自WoW64的执行模式变更所引发的。此时，NT内核会调用KiEnter32BitMode例程，借此将更低的EL（异常级别）的新执行状态设置为AArch32，消除异常，然后返回到用户模式。</p>
-<p class="zw">随后，代码会在AArch32状态下开始执行。与AMD64系统的x86模拟器类似，只有在引发异常或调用了系统调用的情况下，执行控制才会返回给模拟器。异常与系统调用的调度方式均与AMD64中的x86模拟器完全相同。</p>
-
-<p class="epubit-contents-id" style="display: none">{"index":6,"parentId":"14224151-eb07-4e67-90f1-8b8528879ccb","id":"da9a6bbc-32cf-4d73-87df-defe5349cdd6"}</p>

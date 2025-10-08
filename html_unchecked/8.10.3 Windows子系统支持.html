@@ -1,6 +1,0 @@
-<h3 class="bt3" id="sigil_toc_id_57">8.10.3　Windows子系统支持</h3>
-<p class="zw">负责让诸如Microsoft Visual Studio或WinDbg对用户模式应用程序进行调试的最后一个组件位于KernelBase.dll中，它提供了文档化的Windows API。除了将一个函数名转换为另一个函数名这种琐碎的工作外，调试基础架构中的这部分内容还负责另一个重要的管理工作：管理重复的文件和线程句柄。</p>
-<p class="zw">上文曾经提过，每次发送Load DLL事件时，内核都会复制一个映像文件的句柄并在事件结构中传递，这有些类似于Create process事件中对进程可执行文件句柄执行的操作。在每个等待调用中，KernelBase.dll会检查该事件是否会导致从内核复制一个新的进程或线程句柄（两个Create事件）。如果会，则KernelBase.dll将分配一个结构用于存储进程ID、线程ID以及该事件关联的线程或进程句柄。这个结构会被链接到TEB中的第一个DbgSsReserved数组索引。上文曾经提过，调试对象句柄也会存储在这里。同样，KernelBase.dll还会检查退出事件。在检测到此类事件后，它会在数据结构中为句柄添加“标记”。</p>
-<p class="zw">一旦调试器用完句柄并执行Continue调用，KernelBase.dll会解析这些结构，查找任何已退出线程对应的句柄，并为调试器关闭这些句柄。否则，这些线程和进程将永远无法退出，因为只要调试器还在运行，就始终存在指向它们并且被打开的句柄。</p>
-
-<p class="epubit-contents-id" style="display: none">{"index":2,"parentId":"558e2097-f40f-4c13-ae16-2a36e72d6cab","id":"aec2981d-4607-44b0-841f-aa467666b349"}</p>

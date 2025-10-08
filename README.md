@@ -6,6 +6,7 @@
 
 最新 EPUB 下载（来自 dedao-dl）：https://github.com/Anonymous220623/windows-internals-zh-2/releases/download/V0.0.1_EPUB/Windows.Internals.7th.Edition.2.v0.0.1.epub
 
-资源文件下载：[https://github.com/Anonymous220623/windows-internals-zh-2/releases/download/V0.0.1_resources/default.zip](https://github.com/Anonymous220623/windows-internals-zh-2/releases/download/V0.0.1_resources/default.zip)，原链接（联想网盘）：[https://meta.box.lenovo.com/v/link/view/d1c34427f98e491baa320cc72338e15a](https://meta.box.lenovo.com/v/link/view/d1c34427f98e491baa320cc72338e15a)
+资源文件下载：[https://github.com/Anonymous220623/windows-internals-zh-2/releases/download/V0.0.1_resources/default.zip](https://github.com/Anonymous220623/windows-internals-zh-2/releases/download/V0.0.1_resources/default.zip)   
+原链接（联想网盘）：[https://meta.box.lenovo.com/v/link/view/d1c34427f98e491baa320cc72338e15a](https://meta.box.lenovo.com/v/link/view/d1c34427f98e491baa320cc72338e15a)
 
 ![封面](assets/cover.jpg)
